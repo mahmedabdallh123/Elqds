@@ -21,14 +21,14 @@ except Exception:
 # ===============================
 APP_CONFIG = {
     # إعدادات التطبيق العامة
-    "APP_TITLE": "CMMS - Bail Yarn2",
+    "APP_TITLE": "CMMS - Elquds",
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
-    "REPO_NAME": "mahmedabdallh123/belyarn2",  # غيّر هذا لريبو الجديد
+    "REPO_NAME": "mahmedabdallh123/Elqds",  # غيّر هذا لريبو الجديد
     "BRANCH": "main",
-    "FILE_PATH": "bel2.xlsx",  # غيّر هذا لملف Excel الجديد
-    "LOCAL_FILE": "bel2.xlsx",  # غيّر هذا للملف المحلي الجديد
+    "FILE_PATH": "elquds.xlsx",  # غيّر هذا لملف Excel الجديد
+    "LOCAL_FILE": "elquds.xlsx",  # غيّر هذا للملف المحلي الجديد
     
     # إعدادات الأمان
     "MAX_ACTIVE_USERS": 2,
