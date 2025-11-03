@@ -25,22 +25,22 @@ APP_CONFIG = {
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
-    "REPO_NAME": "mahmedabdallh123/Elqds",  # غيّر هذا لريبو الجديد
+    "REPO_NAME": "mahmedabdallh123/Elqds",
     "BRANCH": "main",
-    "FILE_PATH": "elquds.xlsx",  # غيّر هذا لملف Excel الجديد
-    "LOCAL_FILE": "elquds.xlsx",  # غيّر هذا للملف المحلي الجديد
+    "FILE_PATH": "elquds.xlsx",
+    "LOCAL_FILE": "elquds.xlsx",
     
     # إعدادات الأمان
     "MAX_ACTIVE_USERS": 2,
     "SESSION_DURATION_MINUTES": 15,
     
     # إعدادات الواجهة
-    "SHOW_TECH_SUPPORT_TO_ALL": False,  # True = الكل يشوف الدعم الفني, False = فقط admin
+    "SHOW_TECH_SUPPORT_TO_ALL": False,
     "CUSTOM_TABS": ["📊 عرض وفحص الماكينات", "🛠 تعديل وإدارة البيانات", "👥 إدارة المستخدمين", "📞 الدعم الفني"]
 }
 
 # ===============================
-# 🗂 إعدادات الملفات (لا تحتاج للتعديل)
+# 🗂 إعدادات الملفات
 # ===============================
 USERS_FILE = "users.json"
 STATE_FILE = "state.json"
@@ -56,17 +56,68 @@ GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/
 def load_users():
     """تحميل بيانات المستخدمين من ملف JSON"""
     if not os.path.exists(USERS_FILE):
-        # انشئ ملف افتراضي اذا مش موجود (يوجد admin بكلمة مرور افتراضية "admin" — غيرها فورًا)
-        default = {"admin": {"password": "admin", "role": "admin", "created_at": datetime.now().isoformat()}}
+        # إنشاء مستخدمين افتراضيين مع الصلاحيات المطلوبة
+        default_users = {
+            "admin": {
+                "password": "admin123", 
+                "role": "admin", 
+                "created_at": datetime.now().isoformat(),
+                "permissions": ["all"]
+            },
+            "user1": {
+                "password": "user1123", 
+                "role": "editor", 
+                "created_at": datetime.now().isoformat(),
+                "permissions": ["view", "edit"]
+            },
+            "user2": {
+                "password": "user2123", 
+                "role": "viewer", 
+                "created_at": datetime.now().isoformat(),
+                "permissions": ["view"]
+            }
+        }
         with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(default, f, indent=4, ensure_ascii=False)
-        return default
+            json.dump(default_users, f, indent=4, ensure_ascii=False)
+        return default_users
     try:
         with open(USERS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            users = json.load(f)
+            # التأكد من وجود جميع الحقول المطلوبة لكل مستخدم
+            for username, user_data in users.items():
+                if "role" not in user_data:
+                    # تحديد الدور بناءً على اسم المستخدم إذا لم يكن موجوداً
+                    if username == "admin":
+                        user_data["role"] = "admin"
+                        user_data["permissions"] = ["all"]
+                    else:
+                        user_data["role"] = "viewer"
+                        user_data["permissions"] = ["view"]
+                
+                if "permissions" not in user_data:
+                    # تعيين الصلاحيات الافتراضية بناءً على الدور
+                    if user_data["role"] == "admin":
+                        user_data["permissions"] = ["all"]
+                    elif user_data["role"] == "editor":
+                        user_data["permissions"] = ["view", "edit"]
+                    else:
+                        user_data["permissions"] = ["view"]
+                        
+                if "created_at" not in user_data:
+                    user_data["created_at"] = datetime.now().isoformat()
+                    
+            return users
     except Exception as e:
         st.error(f"❌ خطأ في ملف users.json: {e}")
-        return {"admin": {"password": "admin", "role": "admin", "created_at": datetime.now().isoformat()}}
+        # إرجاع المستخدمين الافتراضيين في حالة الخطأ
+        return {
+            "admin": {
+                "password": "admin123", 
+                "role": "admin", 
+                "created_at": datetime.now().isoformat(),
+                "permissions": ["all"]
+            }
+        }
 
 def save_users(users):
     """حفظ بيانات المستخدمين إلى ملف JSON"""
@@ -136,7 +187,6 @@ def logout_action():
         state[username]["active"] = False
         state[username].pop("login_time", None)
         save_state(state)
-    # احذف متغيرات الجلسة
     keys = list(st.session_state.keys())
     for k in keys:
         st.session_state.pop(k, None)
@@ -151,6 +201,8 @@ def login_ui():
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
         st.session_state.username = None
+        st.session_state.user_role = None
+        st.session_state.user_permissions = []
 
     st.title(f"{APP_CONFIG['APP_ICON']} تسجيل الدخول - {APP_CONFIG['APP_TITLE']}")
 
@@ -177,14 +229,17 @@ def login_ui():
                 save_state(state)
                 st.session_state.logged_in = True
                 st.session_state.username = username_input
-                st.success(f"✅ تم تسجيل الدخول: {username_input}")
+                st.session_state.user_role = users[username_input].get("role", "viewer")
+                st.session_state.user_permissions = users[username_input].get("permissions", ["view"])
+                st.success(f"✅ تم تسجيل الدخول: {username_input} ({st.session_state.user_role})")
                 st.rerun()
             else:
                 st.error("❌ كلمة المرور غير صحيحة.")
         return False
     else:
         username = st.session_state.username
-        st.success(f"✅ مسجل الدخول كـ: {username}")
+        user_role = st.session_state.user_role
+        st.success(f"✅ مسجل الدخول كـ: {username} ({user_role})")
         rem = remaining_time(state, username)
         if rem:
             mins, secs = divmod(int(rem.total_seconds()), 60)
@@ -393,6 +448,38 @@ def highlight_cell(val, col_name):
 def style_table(row):
     return [highlight_cell(row[col], col) for col in row.index]
 
+def get_user_permissions(user_role, user_permissions):
+    """الحصول على صلاحيات المستخدم بناءً على الدور والصلاحيات"""
+    if "all" in user_permissions:
+        return {
+            "can_view": True,
+            "can_edit": True,
+            "can_manage_users": True,
+            "can_see_tech_support": True
+        }
+    elif "edit" in user_permissions:
+        return {
+            "can_view": True,
+            "can_edit": True,
+            "can_manage_users": False,
+            "can_see_tech_support": False
+        }
+    elif "view" in user_permissions:
+        return {
+            "can_view": True,
+            "can_edit": False,
+            "can_manage_users": False,
+            "can_see_tech_support": False
+        }
+    else:
+        # صلاحيات افتراضية للعرض فقط
+        return {
+            "can_view": True,
+            "can_edit": False,
+            "can_manage_users": False,
+            "can_see_tech_support": False
+        }
+
 # -------------------------------
 # 🖥 دالة فحص الماكينة
 # -------------------------------
@@ -593,10 +680,11 @@ with st.sidebar:
     else:
         state = cleanup_sessions(load_state())
         username = st.session_state.username
+        user_role = st.session_state.user_role
         rem = remaining_time(state, username)
         if rem:
             mins, secs = divmod(int(rem.total_seconds()), 60)
-            st.success(f"👋 {username} | ⏳ {mins:02d}:{secs:02d}")
+            st.success(f"👋 {username} | الدور: {user_role} | ⏳ {mins:02d}:{secs:02d}")
         else:
             logout_action()
 
@@ -628,22 +716,22 @@ sheets_edit = load_sheets_for_edit()
 # واجهة التبويبات الرئيسية
 st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
 
-# التحقق من الصلاحيات لعرض التبويبات المناسبة
+# التحقق من الصلاحيات
 username = st.session_state.get("username")
-is_admin = username == "admin"
+user_role = st.session_state.get("user_role", "viewer")
+user_permissions = st.session_state.get("user_permissions", ["view"])
+permissions = get_user_permissions(user_role, user_permissions)
 
-# تحديد التبويبات بناءً على نوع المستخدم والإعدادات
-if is_admin:
+# تحديد التبويبات بناءً على الصلاحيات
+if permissions["can_manage_users"]:  # admin
     tabs = st.tabs(APP_CONFIG["CUSTOM_TABS"])
-else:
-    # للمستخدمين العاديين: نعرض تبويب العرض فقط، وإضافة الدعم الفني إذا كان مسموحاً
-    regular_tabs = ["📊 عرض وفحص الماكينات"]
-    if APP_CONFIG["SHOW_TECH_SUPPORT_TO_ALL"]:
-        regular_tabs.append("📞 الدعم الفني")
-    tabs = st.tabs(regular_tabs)
+elif permissions["can_edit"]:  # editor
+    tabs = st.tabs(["📊 عرض وفحص الماكينات", "🛠 تعديل وإدارة البيانات"])
+else:  # viewer
+    tabs = st.tabs(["📊 عرض وفحص الماكينات"])
 
 # -------------------------------
-# Tab: عرض وفحص الماكينات
+# Tab: عرض وفحص الماكينات (لجميع المستخدمين)
 # -------------------------------
 with tabs[0]:
     st.header("📊 عرض وفحص الماكينات")
@@ -664,9 +752,9 @@ with tabs[0]:
             check_machine_status(card_num, current_tons, all_sheets)
 
 # -------------------------------
-# Tab: تعديل وإدارة البيانات - للمسؤول فقط
+# Tab: تعديل وإدارة البيانات - للمحررين والمسؤولين فقط
 # -------------------------------
-if is_admin and len(tabs) > 1:
+if permissions["can_edit"] and len(tabs) > 1:
     with tabs[1]:
         st.header("🛠 تعديل وإدارة البيانات")
 
@@ -886,7 +974,7 @@ if is_admin and len(tabs) > 1:
 # -------------------------------
 # Tab: إدارة المستخدمين - للمسؤول فقط
 # -------------------------------
-if is_admin and len(tabs) > 2:
+if permissions["can_manage_users"] and len(tabs) > 2:
     with tabs[2]:
         st.header("👥 إدارة المستخدمين")
         
@@ -902,6 +990,7 @@ if is_admin and len(tabs) > 2:
                 user_data.append({
                     "اسم المستخدم": username,
                     "الدور": info.get("role", "user"),
+                    "الصلاحيات": ", ".join(info.get("permissions", [])),
                     "تاريخ الإنشاء": info.get("created_at", "غير معروف")
                 })
             
@@ -919,7 +1008,7 @@ if is_admin and len(tabs) > 2:
         with col2:
             new_password = st.text_input("كلمة المرور:", type="password")
         with col3:
-            user_role = st.selectbox("الدور:", ["user", "admin"])
+            user_role = st.selectbox("الدور:", ["admin", "editor", "viewer"])
         
         if st.button("إضافة مستخدم", key="add_user"):
             if not new_username.strip() or not new_password.strip():
@@ -927,9 +1016,18 @@ if is_admin and len(tabs) > 2:
             elif new_username in users:
                 st.warning("⚠ هذا المستخدم موجود بالفعل.")
             else:
+                # تحديد الصلاحيات بناءً على الدور
+                if user_role == "admin":
+                    permissions_list = ["all"]
+                elif user_role == "editor":
+                    permissions_list = ["view", "edit"]
+                else:  # viewer
+                    permissions_list = ["view"]
+                
                 users[new_username] = {
                     "password": new_password,
                     "role": user_role,
+                    "permissions": permissions_list,
                     "created_at": datetime.now().isoformat()
                 }
                 if save_users(users):
@@ -993,11 +1091,11 @@ if is_admin and len(tabs) > 2:
                     else:
                         st.error("❌ حدث خطأ أثناء حفظ التغييرات.")
 
-
-# Tab 4: الدعم الفني (للمسؤول فقط أو إذا كان مسموحاً للجميع)
+# -------------------------------
+# Tab: الدعم الفني - للمسؤول فقط أو إذا كان مسموحاً للجميع
 # -------------------------------
 tech_support_tab_index = 3 if permissions["can_manage_users"] else (
-    1 if permissions["can_input"] and not permissions["can_manage_users"] else 1
+    2 if permissions["can_edit"] and not permissions["can_manage_users"] else 1
 )
 
 if ((permissions["can_manage_users"] and len(tabs) > 3) or 
@@ -1013,7 +1111,7 @@ if ((permissions["can_manage_users"] and len(tabs) > 3) or
         st.markdown("### مصنع بيل يارن للغزل")
         st.markdown("---")
         st.markdown("### معلومات الاتصال:")
-        st.markdown("- 📧 البريد الإلكتروني:medotatch124@gmail.com")
+        st.markdown("- 📧 البريد الإلكتروني: medotatch124@gmail.com")
         st.markdown("- 📞 هاتف: 01274424062")
         st.markdown("- 🏢 الموقع: مصنع بيل يارن للغزل")
         st.markdown("---")
@@ -1026,6 +1124,6 @@ if ((permissions["can_manage_users"] and len(tabs) > 3) or
         st.markdown("### إصدار النظام:")
         st.markdown("- الإصدار: 1.0")
         st.markdown("- آخر تحديث: 2025")
-        st.markdown("- النظام: نظام إدارة مكبس القطن")
+        st.markdown("- النظام: نظام سيرفيس كرد ترتشلر")
         
         st.info("ملاحظة: في حالة مواجهة أي مشاكل تقنية أو تحتاج إلى إضافة ميزات جديدة، يرجى التواصل مع قسم الدعم الفني.")
