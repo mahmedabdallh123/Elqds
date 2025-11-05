@@ -557,7 +557,7 @@ def check_machine_status(card_num, current_tons, all_sheets):
                 metadata_columns = {
                     "card", "Tones", "Min_Tones", "Max_Tones", "Date", 
                     "Other", "Servised by", "Event", "Correction",
-                    "Card", "TONES", "MIN_TONES", "MAX_TONES", "DATE",
+                    "Card", "TONES", "MIN_TONES", "MAX_TONES", "event", "DATE",
                     "OTHER", "EVENT", "CORRECTION", "SERVISED BY",
                     "servised by", "Servised By", 
                     "Serviced by", "Service by", "Serviced By", "Service By",
