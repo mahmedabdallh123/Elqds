@@ -21,7 +21,7 @@ except Exception:
 # ===============================
 APP_CONFIG = {
     # إعدادات التطبيق العامة
-    "APP_TITLE": "CMMS - Elquds",
+    "APP_TITLE": "CMMS - BELYARN",
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
