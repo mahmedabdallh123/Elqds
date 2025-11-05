@@ -21,7 +21,7 @@ except Exception:
 # ===============================
 APP_CONFIG = {
     # إعدادات التطبيق العامة
-    "APP_TITLE": "CMMS - BELYARN",
+    "APP_TITLE": "CMMS - Elqds",
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
@@ -481,7 +481,7 @@ def get_user_permissions(user_role, user_permissions):
         }
 
 # -------------------------------
-# 🖥 دالة فحص الماكينة
+# 🖥 دالة فحص الماكينة - معدلة لقراءة عمود Event بشكل صحيح
 # -------------------------------
 def check_machine_status(card_num, current_tons, all_sheets):
     if not all_sheets:
@@ -557,7 +557,7 @@ def check_machine_status(card_num, current_tons, all_sheets):
                 metadata_columns = {
                     "card", "Tones", "Min_Tones", "Max_Tones", "Date", 
                     "Other", "Servised by", "Event", "Correction",
-                    "Card", "TONES", "MIN_TONES", "MAX_TONES", "event", "DATE",
+                    "Card", "TONES", "MIN_TONES", "MAX_TONES", "DATE",
                     "OTHER", "EVENT", "CORRECTION", "SERVISED BY",
                     "servised by", "Servised By", 
                     "Serviced by", "Service by", "Serviced By", "Service By",
@@ -580,10 +580,58 @@ def check_machine_status(card_num, current_tons, all_sheets):
                         if val.lower() not in ["no", "false", "not done", "لم تتم", "x", "-"]:
                             done_services_set.add(col)
 
-                # جمع بيانات الحدث
+                # جمع بيانات الحدث - البحث عن عمود Event بأسماء مختلفة
                 current_date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
                 current_tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
                 current_other = str(row.get("Other", "")).strip() if pd.notna(row.get("Other")) else "-"
+                
+                # البحث عن عمود "Event" بأسماء مختلفة
+                event_value = "-"
+                event_columns = [
+                    "Event", "EVENT", "event", "Events", "events",
+                    "الحدث", "الأحداث", "event", "events"
+                ]
+                
+                for potential_col in event_columns:
+                    if potential_col in card_df.columns:
+                        value = row.get(potential_col)
+                        if pd.notna(value) and str(value).strip() != "":
+                            event_value = str(value).strip()
+                            break
+                
+                # إذا لم نجد باسم Event، نبحث بأسماء بديلة
+                if event_value == "-":
+                    for col in card_df.columns:
+                        col_normalized = normalize_name(col)
+                        if col_normalized in ["event", "events", "الحدث", "الأحداث"]:
+                            value = row.get(col)
+                            if pd.notna(value) and str(value).strip() != "":
+                                event_value = str(value).strip()
+                                break
+                
+                # البحث عن عمود "Correction" بأسماء مختلفة
+                correction_value = "-"
+                correction_columns = [
+                    "Correction", "CORRECTION", "correction", "Correct", "correct",
+                    "تصحيح", "تصويب", "تصحيحات", "correction", "correct"
+                ]
+                
+                for potential_col in correction_columns:
+                    if potential_col in card_df.columns:
+                        value = row.get(potential_col)
+                        if pd.notna(value) and str(value).strip() != "":
+                            correction_value = str(value).strip()
+                            break
+                
+                # إذا لم نجد باسم Correction، نبحث بأسماء بديلة
+                if correction_value == "-":
+                    for col in card_df.columns:
+                        col_normalized = normalize_name(col)
+                        if col_normalized in ["correction", "correct", "تصحيح", "تصويب"]:
+                            value = row.get(col)
+                            if pd.notna(value) and str(value).strip() != "":
+                                correction_value = str(value).strip()
+                                break
                 
                 # البحث عن عمود "Servised by"
                 servised_by_value = "-"
@@ -609,9 +657,6 @@ def check_machine_status(card_num, current_tons, all_sheets):
                                 servised_by_value = str(value).strip()
                                 break
 
-                current_event = str(row.get("Event", "")).strip() if pd.notna(row.get("Event")) else "-"
-                current_correction = str(row.get("Correction", "")).strip() if pd.notna(row.get("Correction")) else "-"
-
                 done_services = sorted(list(done_services_set))
                 done_norm = [normalize_name(c) for c in done_services]
                 
@@ -629,8 +674,8 @@ def check_machine_status(card_num, current_tons, all_sheets):
                     "Service Done": ", ".join(done_services) if done_services else "-",
                     "Service Didn't Done": ", ".join(not_done) if not_done else "-",
                     "Tones": current_tones,
-                    "Event": current_event,
-                    "Correction": current_correction,
+                    "Event": event_value,
+                    "Correction": correction_value,
                     "Servised by": servised_by_value,
                     "Date": current_date
                 })
@@ -665,9 +710,9 @@ def check_machine_status(card_num, current_tons, all_sheets):
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-# -------------------------------
+# ===============================
 # 🖥 الواجهة الرئيسية المدمجة
-# -------------------------------
+# ===============================
 # إعداد الصفحة
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 
@@ -716,7 +761,7 @@ sheets_edit = load_sheets_for_edit()
 # واجهة التبويبات الرئيسية
 st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
 
-# التحقق من الصلاحيات
+# التحقق من الصلاحيات - استخدم .get() لمنع الأخطاء
 username = st.session_state.get("username")
 user_role = st.session_state.get("user_role", "viewer")
 user_permissions = st.session_state.get("user_permissions", ["view"])
