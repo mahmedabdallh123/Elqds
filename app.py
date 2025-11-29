@@ -436,8 +436,6 @@ def highlight_cell(val, col_name):
         "Service Didn't Done": "background-color: #f8d7da; color:#721c24; font-weight:bold;",
         "Date": "background-color: #e7f1ff; color:#004085; font-weight:bold;",
         "Tones": "background-color: #e8f8f5; color:#0d5c4a; font-weight:bold;",
-        "Min_Tons": "background-color: #ebf5fb; color:#154360; font-weight:bold;",
-        "Max_Tons": "background-color: #f9ebea; color:#641e16; font-weight:bold;",
         "Event": "background-color: #e2f0d9; color:#2e6f32; font-weight:bold;",
         "Correction": "background-color: #fdebd0; color:#7d6608; font-weight:bold;",
         "Servised by": "background-color: #f0f0f0; color:#333; font-weight:bold;",
@@ -655,10 +653,10 @@ def check_service_status(card_num, current_tons, all_sheets):
     )
 
 # -------------------------------
-# 🖥 دالة فحص الإيفينت والكوريكشن فقط
+# 🖥 دالة فحص الإيفينت والكوريكشن فقط - منفصلة عن الـ Tons
 # -------------------------------
 def check_events_and_corrections(card_num, all_sheets):
-    """فحص الإيفينت والكوريكشن فقط"""
+    """فحص الإيفينت والكوريكشن فقط - منفصلة عن الـ Tons"""
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
@@ -685,7 +683,7 @@ def check_events_and_corrections(card_num, all_sheets):
     with col4:
         search_serviced_by = st.text_input("البحث بفني الخدمة:", "", key=f"search_serviced_by_{card_num}")
 
-    # فلترة البيانات
+    # فلترة البيانات - نبحث في جميع الصفوف بدون ربط بالـ Tons
     filtered_df = card_df.copy()
     
     if search_date:
@@ -712,14 +710,11 @@ def check_events_and_corrections(card_num, all_sheets):
             mask = filtered_df[servised_columns[0]].astype(str).str.contains(search_serviced_by, case=False, na=False)
             filtered_df = filtered_df[mask]
 
-    # استخراج البيانات المطلوبة
+    # استخراج البيانات المطلوبة - منفصلة عن الـ Tons
     events_results = []
     for _, row in filtered_df.iterrows():
-        # استخراج البيانات الأساسية
+        # استخراج البيانات الأساسية - بدون Tons
         card_num = row.get("card", "-")
-        min_tones = row.get("Min_Tones", "-")
-        max_tones = row.get("Max_Tones", "-")
-        tones = row.get("Tones", "-")
         date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
         
         # البحث عن عمود "Event"
@@ -741,12 +736,9 @@ def check_events_and_corrections(card_num, all_sheets):
             servised_by_value = str(row.get(servised_columns[0], "")).strip() if pd.notna(row.get(servised_columns[0])) else "-"
         
         # إضافة النتيجة فقط إذا كان هناك بيانات في Event أو Correction
-        if event_value != "-" or correction_value != "-":
+        if event_value != "-" or correction_value != "-" or servised_by_value != "-":
             events_results.append({
                 "Card Number": card_num,
-                "Min_Tons": min_tones,
-                "Max_Tons": max_tones,
-                "Tones": tones,
                 "Event": event_value,
                 "Correction": correction_value,
                 "Servised by": servised_by_value,
@@ -872,9 +864,6 @@ def advanced_search(all_sheets):
                         
                         all_results.append({
                             "Card": card_num,
-                            "Min_Tons": row.get("Min_Tones", "-"),
-                            "Max_Tons": row.get("Max_Tones", "-"),
-                            "Tones": row.get("Tones", "-"),
                             "Date": row.get("Date", "-"),
                             "Event": event_value,
                             "Correction": correction_value,
@@ -898,6 +887,175 @@ def advanced_search(all_sheets):
             )
         else:
             st.info("ℹ️ لم يتم العثور على نتائج مطابقة لمعايير البحث.")
+
+# -------------------------------
+# 🖥 دالة إضافة إيفينت جديد - منفصلة عن الـ Tons
+# -------------------------------
+def add_new_event(sheets_edit):
+    """إضافة إيفينت جديد منفصل عن الـ Tons"""
+    st.subheader("➕ إضافة إيفينت جديد")
+    
+    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="add_event_sheet")
+    df = sheets_edit[sheet_name].astype(str)
+    
+    st.markdown("أدخل بيانات الإيفينت الجديد:")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        card_num = st.text_input("رقم الماكينة:", key="new_event_card")
+        event_text = st.text_area("نص الإيفينت:", key="new_event_text")
+    with col2:
+        correction_text = st.text_area("نص الكوريكشن:", key="new_correction_text")
+        serviced_by = st.text_input("فني الخدمة:", key="new_serviced_by")
+    
+    event_date = st.text_input("التاريخ (مثال: 20\\5\\2025):", key="new_event_date")
+    
+    if st.button("💾 إضافة الإيفينت الجديد", key="add_new_event_btn"):
+        if not card_num.strip():
+            st.warning("⚠ الرجاء إدخال رقم الماكينة.")
+            return
+        
+        # إنشاء صف جديد
+        new_row = {}
+        
+        # إضافة البيانات الأساسية
+        new_row["card"] = card_num.strip()
+        if event_date.strip():
+            new_row["Date"] = event_date.strip()
+        
+        # إضافة بيانات الإيفينت والكوريكشن
+        event_columns = [col for col in df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
+        if event_columns and event_text.strip():
+            new_row[event_columns[0]] = event_text.strip()
+        
+        correction_columns = [col for col in df.columns if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
+        if correction_columns and correction_text.strip():
+            new_row[correction_columns[0]] = correction_text.strip()
+        
+        servised_columns = [col for col in df.columns if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]]
+        if servised_columns and serviced_by.strip():
+            new_row[servised_columns[0]] = serviced_by.strip()
+        
+        # إضافة الصف الجديد
+        new_row_df = pd.DataFrame([new_row]).astype(str)
+        df_new = pd.concat([df, new_row_df], ignore_index=True)
+        
+        sheets_edit[sheet_name] = df_new.astype(object)
+        
+        # حفظ تلقائي في GitHub
+        new_sheets = auto_save_to_github(
+            sheets_edit,
+            f"إضافة إيفينت جديد في {sheet_name}"
+        )
+        if new_sheets is not None:
+            sheets_edit = new_sheets
+            st.success("✅ تم إضافة الإيفينت الجديد بنجاح!")
+            st.rerun()
+
+# -------------------------------
+# 🖥 دالة تعديل الإيفينت والكوريكشن
+# -------------------------------
+def edit_events_and_corrections(sheets_edit):
+    """تعديل الإيفينت والكوريكشن"""
+    st.subheader("✏ تعديل الإيفينت والكوريكشن")
+    
+    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_events_sheet")
+    df = sheets_edit[sheet_name].astype(str)
+    
+    # عرض البيانات الحالية
+    st.markdown("### 📋 البيانات الحالية")
+    
+    # استخراج الأعمدة المطلوبة فقط
+    display_columns = ["card", "Date"]
+    
+    # إضافة أعمدة الإيفينت والكوريكشن والسيرفيسد باي
+    event_columns = [col for col in df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
+    if event_columns:
+        display_columns.append(event_columns[0])
+    
+    correction_columns = [col for col in df.columns if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
+    if correction_columns:
+        display_columns.append(correction_columns[0])
+    
+    servised_columns = [col for col in df.columns if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]]
+    if servised_columns:
+        display_columns.append(servised_columns[0])
+    
+    # عرض البيانات المحددة فقط
+    display_df = df[display_columns].copy()
+    st.dataframe(display_df, use_container_width=True)
+    
+    # اختيار الصف للتعديل
+    st.markdown("### ✏ اختر الصف للتعديل")
+    row_index = st.number_input("رقم الصف (ابدأ من 0):", min_value=0, max_value=len(df)-1, step=1, key="edit_row_index")
+    
+    if st.button("تحميل بيانات الصف", key="load_row_data"):
+        if 0 <= row_index < len(df):
+            st.session_state["editing_row"] = row_index
+            st.session_state["editing_data"] = df.iloc[row_index].to_dict()
+    
+    if "editing_data" in st.session_state:
+        editing_data = st.session_state["editing_data"]
+        
+        st.markdown("### تعديل البيانات")
+        col1, col2 = st.columns(2)
+        with col1:
+            new_card = st.text_input("رقم الماكينة:", value=editing_data.get("card", ""), key="edit_card")
+            new_date = st.text_input("التاريخ:", value=editing_data.get("Date", ""), key="edit_date")
+        with col2:
+            new_serviced_by = st.text_input("فني الخدمة:", value=editing_data.get("Servised by", ""), key="edit_serviced_by")
+        
+        # حقول الإيفينت والكوريكشن
+        event_col = None
+        correction_col = None
+        
+        for col in df.columns:
+            col_norm = normalize_name(col)
+            if col_norm in ["event", "events", "الحدث", "الأحداث"]:
+                event_col = col
+            elif col_norm in ["correction", "correct", "تصحيح", "تصويب"]:
+                correction_col = col
+        
+        if event_col:
+            new_event = st.text_area("الإيفينت:", value=editing_data.get(event_col, ""), key="edit_event")
+        if correction_col:
+            new_correction = st.text_area("الكوريكشن:", value=editing_data.get(correction_col, ""), key="edit_correction")
+        
+        if st.button("💾 حفظ التعديلات", key="save_edits_btn"):
+            # تحديث البيانات
+            df.at[row_index, "card"] = new_card
+            df.at[row_index, "Date"] = new_date
+            
+            if event_col:
+                df.at[row_index, event_col] = new_event
+            if correction_col:
+                df.at[row_index, correction_col] = new_correction
+            
+            servised_col = None
+            for col in df.columns:
+                if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]:
+                    servised_col = col
+                    break
+            
+            if servised_col:
+                df.at[row_index, servised_col] = new_serviced_by
+            
+            sheets_edit[sheet_name] = df.astype(object)
+            
+            # حفظ تلقائي في GitHub
+            new_sheets = auto_save_to_github(
+                sheets_edit,
+                f"تعديل إيفينت في {sheet_name} - الصف {row_index}"
+            )
+            if new_sheets is not None:
+                sheets_edit = new_sheets
+                st.success("✅ تم حفظ التعديلات بنجاح!")
+                # مسح بيانات الجلسة
+                if "editing_row" in st.session_state:
+                    del st.session_state["editing_row"]
+                if "editing_data" in st.session_state:
+                    del st.session_state["editing_data"]
+                st.rerun()
 
 # ===============================
 # 🖥 الواجهة الرئيسية المدمجة
@@ -1022,11 +1180,12 @@ if permissions["can_edit"] and len(tabs) > 3:
         if sheets_edit is None:
             st.warning("❗ الملف المحلي غير موجود. اضغط تحديث من GitHub في الشريط الجانبي أولًا.")
         else:
-            tab1, tab2, tab3, tab4 = st.tabs([
+            tab1, tab2, tab3, tab4, tab5 = st.tabs([
                 "عرض وتعديل شيت",
                 "إضافة صف جديد", 
                 "إضافة عمود جديد",
-                "🗑 حذف صف"
+                "➕ إضافة إيفينت جديد",
+                "✏ تعديل الإيفينت"
             ])
 
             # -------------------------------
@@ -1071,93 +1230,18 @@ if permissions["can_edit"] and len(tabs) > 3:
 
                 if st.button("💾 إضافة الصف الجديد", key=f"add_row_{sheet_name_add}"):
                     new_row_df = pd.DataFrame([new_data]).astype(str)
+                    df_new = pd.concat([df_add, new_row_df], ignore_index=True)
+                    
+                    sheets_edit[sheet_name_add] = df_new.astype(object)
 
-                    # البحث عن أعمدة الرينج
-                    min_col, max_col, card_col = None, None, None
-                    for c in df_add.columns:
-                        c_low = c.strip().lower()
-                        if c_low in ("min_tones", "min_tone", "min tones", "min"):
-                            min_col = c
-                        if c_low in ("max_tones", "max_tone", "max tones", "max"):
-                            max_col = c
-                        if c_low in ("card", "machine", "machine_no", "machine id"):
-                            card_col = c
-
-                    if not min_col or not max_col:
-                        st.error("⚠ لم يتم العثور على أعمدة Min_Tones و/أو Max_Tones في الشيت.")
-                    else:
-                        def to_num_or_none(x):
-                            try:
-                                return float(x)
-                            except:
-                                return None
-
-                        new_min_raw = str(new_data.get(min_col, "")).strip()
-                        new_max_raw = str(new_data.get(max_col, "")).strip()
-                        new_min_num = to_num_or_none(new_min_raw)
-                        new_max_num = to_num_or_none(new_max_raw)
-
-                        # البحث عن موضع الإدراج
-                        insert_pos = len(df_add)
-                        mask = pd.Series([False] * len(df_add))
-
-                        if card_col:
-                            new_card = str(new_data.get(card_col, "")).strip()
-                            if new_card != "":
-                                if new_min_num is not None and new_max_num is not None:
-                                    mask = (
-                                        (df_add[card_col].astype(str).str.strip() == new_card) &
-                                        (pd.to_numeric(df_add[min_col], errors='coerce') == new_min_num) &
-                                        (pd.to_numeric(df_add[max_col], errors='coerce') == new_max_num)
-                                    )
-                                else:
-                                    mask = (
-                                        (df_add[card_col].astype(str).str.strip() == new_card) &
-                                        (df_add[min_col].astype(str).str.strip() == new_min_raw) &
-                                        (df_add[max_col].astype(str).str.strip() == new_max_raw)
-                                    )
-                        else:
-                            if new_min_num is not None and new_max_num is not None:
-                                mask = (
-                                    (pd.to_numeric(df_add[min_col], errors='coerce') == new_min_num) &
-                                    (pd.to_numeric(df_add[max_col], errors='coerce') == new_max_num)
-                                )
-                            else:
-                                mask = (
-                                    (df_add[min_col].astype(str).str.strip() == new_min_raw) &
-                                    (df_add[max_col].astype(str).str.strip() == new_max_raw)
-                                )
-
-                        if mask.any():
-                            insert_pos = mask[mask].index[-1] + 1
-                        else:
-                            try:
-                                df_add["_min_num"] = pd.to_numeric(df_add[min_col], errors='coerce').fillna(-1)
-                                if new_min_num is not None:
-                                    insert_pos = int((df_add["_min_num"] < new_min_num).sum())
-                                else:
-                                    insert_pos = len(df_add)
-                                df_add = df_add.drop(columns=["_min_num"])
-                            except Exception:
-                                insert_pos = len(df_add)
-
-                        df_top = df_add.iloc[:insert_pos].reset_index(drop=True)
-                        df_bottom = df_add.iloc[insert_pos:].reset_index(drop=True)
-                        df_new = pd.concat(
-                            [df_top, new_row_df.reset_index(drop=True), df_bottom],
-                            ignore_index=True
-                        )
-
-                        sheets_edit[sheet_name_add] = df_new.astype(object)
-
-                        # حفظ تلقائي في GitHub
-                        new_sheets = auto_save_to_github(
-                            sheets_edit,
-                            f"إضافة صف جديد في {sheet_name_add} بالرينج {new_min_raw}-{new_max_raw}"
-                        )
-                        if new_sheets is not None:
-                            sheets_edit = new_sheets
-                            st.rerun()
+                    # حفظ تلقائي في GitHub
+                    new_sheets = auto_save_to_github(
+                        sheets_edit,
+                        f"إضافة صف جديد في {sheet_name_add}"
+                    )
+                    if new_sheets is not None:
+                        sheets_edit = new_sheets
+                        st.rerun()
 
             # -------------------------------
             # Tab 3: إضافة عمود جديد - معدل للحفظ التلقائي
@@ -1187,46 +1271,16 @@ if permissions["can_edit"] and len(tabs) > 3:
                         st.warning("⚠ الرجاء إدخال اسم العمود الجديد.")
 
             # -------------------------------
-            # Tab 4: حذف صف - معدل للحفظ التلقائي
+            # Tab 4: إضافة إيفينت جديد - منفصل عن الـ Tons
             # -------------------------------
             with tab4:
-                st.subheader("🗑 حذف صف من الشيت")
-                sheet_name_del = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="delete_sheet")
-                df_del = sheets_edit[sheet_name_del].astype(str).reset_index(drop=True)
+                add_new_event(sheets_edit)
 
-                st.markdown("### 📋 بيانات الشيت الحالية")
-                st.dataframe(df_del, use_container_width=True)
-
-                st.markdown("### ✏ اختر الصفوف التي تريد حذفها")
-                rows_to_delete = st.text_input("أدخل أرقام الصفوف مفصولة بفاصلة (مثلاً: 0,2,5):", key="rows_to_delete")
-                confirm_delete = st.checkbox("✅ أؤكد أني أريد حذف هذه الصفوف بشكل نهائي", key="confirm_delete")
-
-                if st.button("🗑 تنفيذ الحذف", key=f"delete_rows_{sheet_name_del}"):
-                    if not rows_to_delete.strip():
-                        st.warning("⚠ الرجاء إدخال رقم الصف أو أكثر.")
-                    elif not confirm_delete:
-                        st.warning("⚠ برجاء تأكيد الحذف أولاً.")
-                    else:
-                        try:
-                            rows_list = [int(x.strip()) for x in rows_to_delete.split(",") if x.strip().isdigit()]
-                            rows_list = [r for r in rows_list if 0 <= r < len(df_del)]
-
-                            if not rows_list:
-                                st.warning("⚠ لم يتم العثور على صفوف صحيحة.")
-                            else:
-                                df_new = df_del.drop(rows_list).reset_index(drop=True)
-                                sheets_edit[sheet_name_del] = df_new.astype(object)
-
-                                # حفظ تلقائي في GitHub
-                                new_sheets = auto_save_to_github(
-                                    sheets_edit, 
-                                    f"حذف الصفوف {rows_list} من {sheet_name_del}"
-                                )
-                                if new_sheets is not None:
-                                    sheets_edit = new_sheets
-                                    st.rerun()
-                        except Exception as e:
-                            st.error(f"حدث خطأ أثناء الحذف: {e}")
+            # -------------------------------
+            # Tab 5: تعديل الإيفينت والكوريكشن
+            # -------------------------------
+            with tab5:
+                edit_events_and_corrections(sheets_edit)
 
 # -------------------------------
 # Tab: إدارة المستخدمين - للمسؤول فقط
