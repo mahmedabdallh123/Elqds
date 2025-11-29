@@ -507,17 +507,17 @@ def check_service_status(card_num, current_tons, all_sheets):
         "اختر نطاق العرض:",
         ("الشريحة الحالية فقط", "كل الشرائح الأقل", "كل الشرائح الأعلى", "نطاق مخصص", "كل الشرائح"),
         horizontal=True,
-        key="service_view_option"
+        key=f"service_view_option_{card_num}"
     )
 
-    min_range = st.session_state.get("service_min_range", max(0, current_tons - 500))
-    max_range = st.session_state.get("service_max_range", current_tons + 500)
+    min_range = st.session_state.get(f"service_min_range_{card_num}", max(0, current_tons - 500))
+    max_range = st.session_state.get(f"service_max_range_{card_num}", current_tons + 500)
     if view_option == "نطاق مخصص":
         col1, col2 = st.columns(2)
         with col1:
-            min_range = st.number_input("من (طن):", min_value=0, step=100, value=min_range, key="service_min_range")
+            min_range = st.number_input("من (طن):", min_value=0, step=100, value=min_range, key=f"service_min_range_{card_num}")
         with col2:
-            max_range = st.number_input("إلى (طن):", min_value=min_range, step=100, value=max_range, key="service_max_range")
+            max_range = st.number_input("إلى (طن):", min_value=min_range, step=100, value=max_range, key=f"service_max_range_{card_num}")
 
     # اختيار الشرائح
     if view_option == "الشريحة الحالية فقط":
@@ -675,15 +675,15 @@ def check_events_and_corrections(card_num, all_sheets):
     
     col1, col2 = st.columns(2)
     with col1:
-        search_date = st.text_input("البحث بالتاريخ (مثال: 2024, 2025, 1\\2025):", "")
+        search_date = st.text_input("البحث بالتاريخ (مثال: 2024, 2025, 1\\2025):", "", key=f"search_date_{card_num}")
     with col2:
-        search_event = st.text_input("البحث بالإيفينت:", "")
+        search_event = st.text_input("البحث بالإيفينت:", "", key=f"search_event_{card_num}")
     
     col3, col4 = st.columns(2)
     with col3:
-        search_correction = st.text_input("البحث بالكوريكشن:", "")
+        search_correction = st.text_input("البحث بالكوريكشن:", "", key=f"search_correction_{card_num}")
     with col4:
-        search_serviced_by = st.text_input("البحث بفني الخدمة:", "")
+        search_serviced_by = st.text_input("البحث بفني الخدمة:", "", key=f"search_serviced_by_{card_num}")
 
     # فلترة البيانات
     filtered_df = card_df.copy()
@@ -785,19 +785,20 @@ def advanced_search(all_sheets):
     # خيارات البحث
     col1, col2 = st.columns(2)
     with col1:
-        search_card = st.number_input("رقم الماكينة (اختياري):", min_value=1, step=1, value=None)
-        search_text = st.text_input("نص البحث:", "")
+        search_card = st.number_input("رقم الماكينة (اختياري):", min_value=1, step=1, value=None, key="adv_search_card")
+        search_text = st.text_input("نص البحث:", "", key="adv_search_text")
     with col2:
-        search_date = st.text_input("البحث بالتاريخ:", "")
-        search_technician = st.text_input("البحث بفني الخدمة:", "")
+        search_date = st.text_input("البحث بالتاريخ:", "", key="adv_search_date")
+        search_technician = st.text_input("البحث بفني الخدمة:", "", key="adv_search_technician")
     
     search_type = st.radio(
         "نوع البحث:",
         ["الخدمات", "الأحداث والتصحيحات", "الك"],
-        horizontal=True
+        horizontal=True,
+        key="adv_search_type"
     )
     
-    if st.button("🔍 بدء البحث"):
+    if st.button("🔍 بدء البحث", key="adv_search_button"):
         all_results = []
         
         # تحديد الشيتات للبحث
@@ -923,12 +924,12 @@ with st.sidebar:
 
     st.markdown("---")
     st.write("🔧 أدوات:")
-    if st.button("🔄 تحديث الملف من GitHub"):
+    if st.button("🔄 تحديث الملف من GitHub", key="refresh_github"):
         if fetch_from_github_requests():
             st.rerun()
     
     # زر مسح الكاش
-    if st.button("🗑 مسح الكاش"):
+    if st.button("🗑 مسح الكاش", key="clear_cache"):
         try:
             st.cache_data.clear()
             st.rerun()
@@ -937,7 +938,7 @@ with st.sidebar:
     
     st.markdown("---")
     # زر لإعادة تسجيل الخروج
-    if st.button("🚪 تسجيل الخروج"):
+    if st.button("🚪 تسجيل الخروج", key="logout_btn"):
         logout_action()
 
 # تحميل الشيتات (عرض وتحليل)
@@ -1166,8 +1167,8 @@ if permissions["can_edit"] and len(tabs) > 3:
                 sheet_name_col = st.selectbox("اختر الشيت لإضافة عمود:", list(sheets_edit.keys()), key="add_col_sheet")
                 df_col = sheets_edit[sheet_name_col].astype(str)
                 
-                new_col_name = st.text_input("اسم العمود الجديد:")
-                default_value = st.text_input("القيمة الافتراضية لكل الصفوف (اختياري):", "")
+                new_col_name = st.text_input("اسم العمود الجديد:", key="new_col_name")
+                default_value = st.text_input("القيمة الافتراضية لكل الصفوف (اختياري):", "", key="default_value")
 
                 if st.button("💾 إضافة العمود الجديد", key=f"add_col_{sheet_name_col}"):
                     if new_col_name:
@@ -1197,8 +1198,8 @@ if permissions["can_edit"] and len(tabs) > 3:
                 st.dataframe(df_del, use_container_width=True)
 
                 st.markdown("### ✏ اختر الصفوف التي تريد حذفها")
-                rows_to_delete = st.text_input("أدخل أرقام الصفوف مفصولة بفاصلة (مثلاً: 0,2,5):")
-                confirm_delete = st.checkbox("✅ أؤكد أني أريد حذف هذه الصفوف بشكل نهائي")
+                rows_to_delete = st.text_input("أدخل أرقام الصفوف مفصولة بفاصلة (مثلاً: 0,2,5):", key="rows_to_delete")
+                confirm_delete = st.checkbox("✅ أؤكد أني أريد حذف هذه الصفوف بشكل نهائي", key="confirm_delete")
 
                 if st.button("🗑 تنفيذ الحذف", key=f"delete_rows_{sheet_name_del}"):
                     if not rows_to_delete.strip():
@@ -1260,11 +1261,11 @@ if permissions["can_manage_users"] and len(tabs) > 4:
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            new_username = st.text_input("اسم المستخدم الجديد:")
+            new_username = st.text_input("اسم المستخدم الجديد:", key="new_username")
         with col2:
-            new_password = st.text_input("كلمة المرور:", type="password")
+            new_password = st.text_input("كلمة المرور:", type="password", key="new_password")
         with col3:
-            user_role = st.selectbox("الدور:", ["admin", "editor", "viewer"])
+            user_role = st.selectbox("الدور:", ["admin", "editor", "viewer"], key="user_role")
         
         if st.button("إضافة مستخدم", key="add_user"):
             if not new_username.strip() or not new_password.strip():
