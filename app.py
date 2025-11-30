@@ -734,13 +734,31 @@ def check_events_and_corrections(card_num, all_sheets):
                 correction_value = str(row[correction_col]).strip()
                 break
         
-        # البحث عن عمود "Servised by"
+        # البحث عن عمود "Servised by" - حل المشكلة هنا
         servised_by_value = "-"
-        servised_columns = [col for col in card_df.columns if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]]
-        for servised_col in servised_columns:
-            if servised_col in row and pd.notna(row[servised_col]) and str(row[servised_col]).strip() != "":
-                servised_by_value = str(row[servised_col]).strip()
-                break
+        servised_by_columns = [
+            "Servised by", "SERVISED BY", "servised by", "Servised By",
+            "Serviced by", "Service by", "Serviced By", "Service By",
+            "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة"
+        ]
+        
+        # البحث في الأعمدة المعروفة أولاً
+        for potential_col in servised_by_columns:
+            if potential_col in card_df.columns:
+                value = row.get(potential_col)
+                if pd.notna(value) and str(value).strip() != "":
+                    servised_by_value = str(value).strip()
+                    break
+        
+        # إذا لم نجد في الأعمدة المعروفة، نبحث في جميع الأعمدة
+        if servised_by_value == "-":
+            for col in card_df.columns:
+                col_normalized = normalize_name(col)
+                if col_normalized in ["servisedby", "servicedby", "serviceby", "خدمبواسطة", "فني", "فني الخدمة"]:
+                    value = row.get(col)
+                    if pd.notna(value) and str(value).strip() != "":
+                        servised_by_value = str(value).strip()
+                        break
 
         # إضافة النتيجة فقط إذا كان هناك بيانات في Event أو Correction أو Servised by
         if event_value != "-" or correction_value != "-" or servised_by_value != "-":
@@ -955,9 +973,22 @@ def add_new_event(sheets_edit):
         if correction_columns and correction_text.strip():
             new_row[correction_columns[0]] = correction_text.strip()
         
+        # البحث عن عمود Servised by الصحيح
+        servised_col = None
         servised_columns = [col for col in df.columns if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]]
-        if servised_columns and serviced_by.strip():
-            new_row[servised_columns[0]] = serviced_by.strip()
+        if servised_columns:
+            servised_col = servised_columns[0]
+        else:
+            # إذا لم نجد عمود servised by، نستخدم أول عمود متاح أو ننشئ واحد
+            for col in df.columns:
+                if "servis" in normalize_name(col) or "service" in normalize_name(col) or "فني" in col:
+                    servised_col = col
+                    break
+            if not servised_col:
+                servised_col = "Servised by"
+        
+        if serviced_by.strip():
+            new_row[servised_col] = serviced_by.strip()
         
         # إضافة الصف الجديد
         new_row_df = pd.DataFrame([new_row]).astype(str)
@@ -1056,14 +1087,15 @@ def edit_events_and_corrections(sheets_edit):
             if correction_col:
                 df.at[row_index, correction_col] = new_correction
             
+            # البحث عن عمود Servised by الصحيح
             servised_col = None
             for col in df.columns:
                 if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]:
                     servised_col = col
                     break
             
-            if servised_col:
-                df.at[row_index, servised_col] = new_serviced_by
+            if servised_col and new_serviced_by.strip():
+                df.at[row_index, servised_col] = new_serviced_by.strip()
             
             sheets_edit[sheet_name] = df.astype(object)
             
@@ -1080,92 +1112,6 @@ def edit_events_and_corrections(sheets_edit):
                     del st.session_state["editing_row"]
                 if "editing_data" in st.session_state:
                     del st.session_state["editing_data"]
-                st.rerun()
-
-# -------------------------------
-# 🖥 دالة تعديل السيرفيس منفصل عن الإيفينت
-# -------------------------------
-def edit_services_separate(sheets_edit):
-    """تعديل السيرفيس منفصل عن الإيفينت والكوريكشن"""
-    st.subheader("🔧 تعديل السيرفيس (منفصل عن الحدث)")
-    
-    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_services_sheet")
-    df = sheets_edit[sheet_name].astype(str)
-    
-    # عرض البيانات الحالية - فقط أعمدة السيرفيس
-    st.markdown("### 📋 البيانات الحالية (السيرفيس فقط)")
-    
-    # تحديد أعمدة السيرفيس (استبعاد أعمدة الإيفينت والكوريكشن)
-    service_columns = []
-    excluded_columns = {"card", "Date", "Tones", "Min_Tones", "Max_Tones", "Other"}
-    excluded_normalized = {normalize_name(col) for col in excluded_columns}
-    
-    # إضافة أعمدة الإيفينت والكوريكشن للمستثنيات
-    excluded_normalized.update(["event", "events", "الحدث", "الأحداث", "correction", "correct", "تصحيح", "تصويب", 
-                              "servisedby", "servicedby", "serviceby", "خدمبواسطة"])
-    
-    for col in df.columns:
-        col_norm = normalize_name(col)
-        if col_norm not in excluded_normalized:
-            service_columns.append(col)
-    
-    # عرض أعمدة السيرفيس فقط مع بعض الأعمدة الأساسية
-    display_columns = ["card", "Date", "Tones"] + service_columns
-    display_df = df[display_columns].copy()
-    st.dataframe(display_df, use_container_width=True)
-    
-    # اختيار الصف للتعديل
-    st.markdown("### ✏ اختر الصف لتعديل السيرفيس")
-    row_index = st.number_input("رقم الصف (ابدأ من 0):", min_value=0, max_value=len(df)-1, step=1, key="edit_service_row_index")
-    
-    if st.button("تحميل بيانات السيرفيس", key="load_service_data"):
-        if 0 <= row_index < len(df):
-            st.session_state["editing_service_row"] = row_index
-            st.session_state["editing_service_data"] = df.iloc[row_index].to_dict()
-    
-    if "editing_service_data" in st.session_state:
-        editing_data = st.session_state["editing_service_data"]
-        
-        st.markdown("### تعديل بيانات السيرفيس")
-        col1, col2 = st.columns(2)
-        with col1:
-            new_card = st.text_input("رقم الماكينة:", value=editing_data.get("card", ""), key="edit_service_card")
-            new_date = st.text_input("التاريخ:", value=editing_data.get("Date", ""), key="edit_service_date")
-            new_tones = st.text_input("عدد الأطنان:", value=editing_data.get("Tones", ""), key="edit_service_tones")
-        
-        with col2:
-            st.markdown("#### حالة الخدمات:")
-            # إنشاء حقول لكل خدمة
-            service_updates = {}
-            for col in service_columns:
-                current_value = editing_data.get(col, "")
-                service_updates[col] = st.text_input(f"{col}:", value=current_value, key=f"edit_service_{col}")
-        
-        if st.button("💾 حفظ تعديلات السيرفيس", key="save_service_edits_btn"):
-            # تحديث البيانات الأساسية
-            df.at[row_index, "card"] = new_card
-            df.at[row_index, "Date"] = new_date
-            df.at[row_index, "Tones"] = new_tones
-            
-            # تحديث بيانات السيرفيس
-            for col, value in service_updates.items():
-                df.at[row_index, col] = value
-            
-            sheets_edit[sheet_name] = df.astype(object)
-            
-            # حفظ تلقائي في GitHub
-            new_sheets = auto_save_to_github(
-                sheets_edit,
-                f"تعديل سيرفيس في {sheet_name} - الصف {row_index}"
-            )
-            if new_sheets is not None:
-                sheets_edit = new_sheets
-                st.success("✅ تم حفظ تعديلات السيرفيس بنجاح!")
-                # مسح بيانات الجلسة
-                if "editing_service_row" in st.session_state:
-                    del st.session_state["editing_service_row"]
-                if "editing_service_data" in st.session_state:
-                    del st.session_state["editing_service_data"]
                 st.rerun()
 
 # ===============================
@@ -1291,13 +1237,12 @@ if permissions["can_edit"] and len(tabs) > 3:
         if sheets_edit is None:
             st.warning("❗ الملف المحلي غير موجود. اضغط تحديث من GitHub في الشريط الجانبي أولًا.")
         else:
-            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            tab1, tab2, tab3, tab4, tab5 = st.tabs([
                 "عرض وتعديل شيت",
                 "إضافة صف جديد", 
                 "إضافة عمود جديد",
                 "➕ إضافة حدث جديد",
-                "✏ تعديل الحدث",
-                "🔧 تعديل السيرفيس"
+                "✏ تعديل الحدث"
             ])
 
             # -------------------------------
@@ -1393,12 +1338,6 @@ if permissions["can_edit"] and len(tabs) > 3:
             # -------------------------------
             with tab5:
                 edit_events_and_corrections(sheets_edit)
-
-            # -------------------------------
-            # Tab 6: تعديل السيرفيس منفصل عن الإيفينت
-            # -------------------------------
-            with tab6:
-                edit_services_separate(sheets_edit)
 
 # -------------------------------
 # Tab: إدارة المستخدمين - للمسؤول فقط
