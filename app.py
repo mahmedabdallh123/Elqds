@@ -27,8 +27,8 @@ APP_CONFIG = {
     # إعدادات GitHub
     "REPO_NAME": "mahmedabdallh123/Elqds",
     "BRANCH": "main",
-    "FILE_PATH": "elquds2.xlsx",
-    "LOCAL_FILE": "elquds2.xlsx",
+    "FILE_PATH": "elquds.xlsx",
+    "LOCAL_FILE": "elquds.xlsx",
     
     # إعدادات الأمان
     "MAX_ACTIVE_USERS": 2,
@@ -675,11 +675,11 @@ def check_events_and_corrections(card_num, all_sheets):
     with col1:
         search_date = st.text_input("البحث بالتاريخ (مثال: 2024, 2025, 1\\2025):", "", key=f"search_date_{card_num}")
     with col2:
-        search_event = st.text_input("البحث بالإيفينت:", "", key=f"search_event_{card_num}")
+        search_event = st.text_input("البحث بالحدث:", "", key=f"search_event_{card_num}")
     
     col3, col4 = st.columns(2)
     with col3:
-        search_correction = st.text_input("البحث بالكوريكشن:", "", key=f"search_correction_{card_num}")
+        search_correction = st.text_input("البحث بالتصحيح:", "", key=f"search_correction_{card_num}")
     with col4:
         search_serviced_by = st.text_input("البحث بفني الخدمة:", "", key=f"search_serviced_by_{card_num}")
 
@@ -716,6 +716,7 @@ def check_events_and_corrections(card_num, all_sheets):
         # استخراج البيانات الأساسية - بدون Tons
         card_num_value = str(row.get("card", "")).strip() if pd.notna(row.get("card")) else "-"
         date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
+        tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
         
         # البحث عن عمود "Event"
         event_value = "-"
@@ -748,6 +749,7 @@ def check_events_and_corrections(card_num, all_sheets):
                 "Event": event_value,
                 "Correction": correction_value,
                 "Servised by": servised_by_value,
+                "Tones": tones,
                 "Date": date
             })
 
@@ -885,6 +887,7 @@ def advanced_search(all_sheets):
                             "Event": event_value,
                             "Correction": correction_value,
                             "Servised by": servised_by_value,
+                            "Tones": row.get("Tones", "-"),
                             "Type": "Event/Correction"
                         })
         
@@ -910,24 +913,25 @@ def advanced_search(all_sheets):
 # -------------------------------
 def add_new_event(sheets_edit):
     """إضافة إيفينت جديد منفصل عن الـ Tons"""
-    st.subheader("➕ إضافة إيفينت جديد")
+    st.subheader("➕ إضافة حدث جديد")
     
     sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="add_event_sheet")
     df = sheets_edit[sheet_name].astype(str)
     
-    st.markdown("أدخل بيانات الإيفينت الجديد:")
+    st.markdown("أدخل بيانات الحدث الجديد:")
     
     col1, col2 = st.columns(2)
     with col1:
         card_num = st.text_input("رقم الماكينة:", key="new_event_card")
-        event_text = st.text_area("نص الإيفينت:", key="new_event_text")
+        event_text = st.text_area("الحدث:", key="new_event_text")
+        tones = st.text_input("عدد الأطنان:", key="new_event_tones")
     with col2:
-        correction_text = st.text_area("نص الكوريكشن:", key="new_correction_text")
+        correction_text = st.text_area("التصحيح:", key="new_correction_text")
         serviced_by = st.text_input("فني الخدمة:", key="new_serviced_by")
     
     event_date = st.text_input("التاريخ (مثال: 20\\5\\2025):", key="new_event_date")
     
-    if st.button("💾 إضافة الإيفينت الجديد", key="add_new_event_btn"):
+    if st.button("💾 إضافة الحدث الجديد", key="add_new_event_btn"):
         if not card_num.strip():
             st.warning("⚠ الرجاء إدخال رقم الماكينة.")
             return
@@ -939,6 +943,8 @@ def add_new_event(sheets_edit):
         new_row["card"] = card_num.strip()
         if event_date.strip():
             new_row["Date"] = event_date.strip()
+        if tones.strip():
+            new_row["Tones"] = tones.strip()
         
         # إضافة بيانات الإيفينت والكوريكشن
         event_columns = [col for col in df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
@@ -962,11 +968,11 @@ def add_new_event(sheets_edit):
         # حفظ تلقائي في GitHub
         new_sheets = auto_save_to_github(
             sheets_edit,
-            f"إضافة إيفينت جديد في {sheet_name}"
+            f"إضافة حدث جديد في {sheet_name}"
         )
         if new_sheets is not None:
             sheets_edit = new_sheets
-            st.success("✅ تم إضافة الإيفينت الجديد بنجاح!")
+            st.success("✅ تم إضافة الحدث الجديد بنجاح!")
             st.rerun()
 
 # -------------------------------
@@ -974,16 +980,16 @@ def add_new_event(sheets_edit):
 # -------------------------------
 def edit_events_and_corrections(sheets_edit):
     """تعديل الإيفينت والكوريكشن"""
-    st.subheader("✏ تعديل الإيفينت والكوريكشن")
+    st.subheader("✏ تعديل الحدث والتصحيح")
     
     sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_events_sheet")
     df = sheets_edit[sheet_name].astype(str)
     
     # عرض البيانات الحالية - فقط الأعمدة المطلوبة
-    st.markdown("### 📋 البيانات الحالية (الإيفينت والكوريكشن فقط)")
+    st.markdown("### 📋 البيانات الحالية (الحدث والتصحيح فقط)")
     
     # استخراج الأعمدة المطلوبة فقط
-    display_columns = ["card", "Date"]
+    display_columns = ["card", "Date", "Tones"]
     
     # إضافة أعمدة الإيفينت والكوريكشن والسيرفيسد باي
     event_columns = [col for col in df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
@@ -1019,6 +1025,7 @@ def edit_events_and_corrections(sheets_edit):
         with col1:
             new_card = st.text_input("رقم الماكينة:", value=editing_data.get("card", ""), key="edit_card")
             new_date = st.text_input("التاريخ:", value=editing_data.get("Date", ""), key="edit_date")
+            new_tones = st.text_input("عدد الأطنان:", value=editing_data.get("Tones", ""), key="edit_tones")
         with col2:
             new_serviced_by = st.text_input("فني الخدمة:", value=editing_data.get("Servised by", ""), key="edit_serviced_by")
         
@@ -1034,14 +1041,15 @@ def edit_events_and_corrections(sheets_edit):
                 correction_col = col
         
         if event_col:
-            new_event = st.text_area("الإيفينت:", value=editing_data.get(event_col, ""), key="edit_event")
+            new_event = st.text_area("الحدث:", value=editing_data.get(event_col, ""), key="edit_event")
         if correction_col:
-            new_correction = st.text_area("الكوريكشن:", value=editing_data.get(correction_col, ""), key="edit_correction")
+            new_correction = st.text_area("التصحيح:", value=editing_data.get(correction_col, ""), key="edit_correction")
         
         if st.button("💾 حفظ التعديلات", key="save_edits_btn"):
             # تحديث البيانات
             df.at[row_index, "card"] = new_card
             df.at[row_index, "Date"] = new_date
+            df.at[row_index, "Tones"] = new_tones
             
             if event_col:
                 df.at[row_index, event_col] = new_event
@@ -1062,7 +1070,7 @@ def edit_events_and_corrections(sheets_edit):
             # حفظ تلقائي في GitHub
             new_sheets = auto_save_to_github(
                 sheets_edit,
-                f"تعديل إيفينت في {sheet_name} - الصف {row_index}"
+                f"تعديل حدث في {sheet_name} - الصف {row_index}"
             )
             if new_sheets is not None:
                 sheets_edit = new_sheets
@@ -1079,7 +1087,7 @@ def edit_events_and_corrections(sheets_edit):
 # -------------------------------
 def edit_services_separate(sheets_edit):
     """تعديل السيرفيس منفصل عن الإيفينت والكوريكشن"""
-    st.subheader("🔧 تعديل السيرفيس (منفصل عن الإيفينت)")
+    st.subheader("🔧 تعديل السيرفيس (منفصل عن الحدث)")
     
     sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_services_sheet")
     df = sheets_edit[sheet_name].astype(str)
@@ -1287,8 +1295,8 @@ if permissions["can_edit"] and len(tabs) > 3:
                 "عرض وتعديل شيت",
                 "إضافة صف جديد", 
                 "إضافة عمود جديد",
-                "➕ إضافة إيفينت جديد",
-                "✏ تعديل الإيفينت",
+                "➕ إضافة حدث جديد",
+                "✏ تعديل الحدث",
                 "🔧 تعديل السيرفيس"
             ])
 
