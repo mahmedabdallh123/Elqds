@@ -780,357 +780,447 @@ def check_events_and_corrections(card_num, all_sheets):
 
 # -------------------------------
 # 🖥 دالة البحث المتقدم مع التخصيص الكامل
-# -------------------------------
-def advanced_search(all_sheets):
-    """بحث متقدم مع تخصيص كامل"""
-    st.header("🔍 البحث المتقدم")
+<!-- البحث المتقدم -->
+<div class="advanced-search">
+  <h2>البحث المتقدم</h2>
+  
+  <form id="advancedSearchForm">
     
-    if not all_sheets:
-        st.error("❌ لم يتم تحميل أي شيتات.")
-        return
+    <!-- معايير البحث الأساسية -->
+    <div class="search-section">
+      <h3>معايير البحث الأساسية</h3>
+      
+      <div class="form-group">
+        <label for="technicianName">اسم الفني:</label>
+        <input type="text" 
+               id="technicianName" 
+               name="technicianName" 
+               placeholder="اكتب اسم الفني..."
+               class="form-control">
+      </div>
+      
+      <div class="form-group">
+        <label for="machineNumber">رقم الماكينة (اختياري):</label>
+        <input type="text" 
+               id="machineNumber" 
+               name="machineNumber" 
+               placeholder="رقم الماكينة..."
+               class="form-control">
+      </div>
+    </div>
     
-    # خيارات البحث الرئيسية
-    st.subheader("🔎 معايير البحث")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        search_type = st.selectbox(
-            "نوع البحث:",
-            ["الكل", "الخدمات", "الأحداث", "الخدمات والأحداث"],
-            key="adv_search_type"
-        )
-    
-    with col2:
-        search_card = st.number_input(
-            "رقم الماكينة (اختياري):", 
-            min_value=1, 
-            step=1, 
-            value=None,
-            key="adv_search_card"
-        )
-    
-    with col3:
-        search_text = st.text_input(
-            "كلمة البحث (نص):",
-            "",
-            key="adv_search_text",
-            help="ابحث في أي نص (سير، عيار، كوريكشن، إلخ)"
-        )
-    
-    with col4:
-        search_technician = st.text_input(
-            "فني الخدمة:",
-            "",
-            key="adv_search_technician",
-            help="ابحث باسم فني الخدمة"
-        )
-    
-    # خيارات تخصيص إضافية
-    st.subheader("⚙️ خيارات التخصيص")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        search_date = st.text_input(
-            "التاريخ:",
-            "",
-            key="adv_search_date",
-            help="مثال: 2024, 2025, 1\\2025"
-        )
-    
-    with col2:
-        specific_service = st.selectbox(
-            "خدمة محددة:",
-            ["الكل", "سير", "عيار", "كوريكشن", "كورسينج", "فيلينج", "كليننج", "بوليش", "اكستراكت"],
-            key="adv_specific_service"
-        )
-    
-    with col3:
-        exact_match = st.checkbox("بحث مطابق للنص", key="adv_exact_match")
-        show_empty = st.checkbox("عرض البيانات الفارغة", key="adv_show_empty")
-    
-    if st.button("🔍 بدء البحث", key="adv_search_button", type="primary"):
-        all_results = []
+    <!-- نوع البحث -->
+    <div class="search-section">
+      <h3>نوع البحث</h3>
+      
+      <div class="radio-group">
+        <label class="radio-label">
+          <input type="radio" 
+                 name="searchType" 
+                 value="events" 
+                 checked>
+          <span class="radio-text">الأحداث فقط</span>
+          <span class="radio-description">(Event, Correction, Date, Serviced By, Tons)</span>
+        </label>
         
-        # تحديد الشيتات للبحث
-        if search_card:
-            # البحث في ماكينة محددة
-            services_sheet = f"Card{search_card}_Services"
-            events_sheet = f"Card{search_card}_Events"
-            old_sheet = f"Card{search_card}"
-            
-            sheets_to_search = []
-            if services_sheet in all_sheets:
-                sheets_to_search.append((services_sheet, "services"))
-            if events_sheet in all_sheets:
-                sheets_to_search.append((events_sheet, "events"))
-            elif old_sheet in all_sheets:
-                sheets_to_search.append((old_sheet, "mixed"))
-        else:
-            # البحث في جميع الشيتات
-            sheets_to_search = []
-            for sheet_name in all_sheets.keys():
-                if sheet_name == "ServicePlan":
-                    continue
-                if sheet_name.endswith("_Services"):
-                    sheets_to_search.append((sheet_name, "services"))
-                elif sheet_name.endswith("_Events"):
-                    sheets_to_search.append((sheet_name, "events"))
-                elif sheet_name.startswith("Card"):
-                    sheets_to_search.append((sheet_name, "mixed"))
+        <label class="radio-label">
+          <input type="radio" 
+                 name="searchType" 
+                 value="services">
+          <span class="radio-text">الخدمات فقط</span>
+          <span class="radio-description">(Service Done, Date, Range, Tons)</span>
+        </label>
         
-        for sheet_name, sheet_type in sheets_to_search:
-            df = all_sheets[sheet_name]
-            card_num = sheet_name.replace("Card", "").replace("_Services", "").replace("_Events", "")
-            
-            # البحث حسب النوع
-            if search_type == "الخدمات" and sheet_type not in ["services", "mixed"]:
-                continue
-            elif search_type == "الأحداث" and sheet_type not in ["events", "mixed"]:
-                continue
-            
-            # البحث في كل صف
-            for idx, row in df.iterrows():
-                # تطبيق شروط البحث
-                if not matches_search_criteria(row, search_text, search_technician, 
-                                              search_date, specific_service, exact_match, 
-                                              show_empty, sheet_type):
-                    continue
-                
-                # استخراج النتائج حسب نوع الشيت
-                if sheet_type == "services" or (sheet_type == "mixed" and has_services_data(row)):
-                    service_results = extract_service_results(row, card_num, specific_service)
-                    if service_results:
-                        all_results.extend(service_results)
-                
-                if sheet_type == "events" or (sheet_type == "mixed" and has_events_data(row)):
-                    event_results = extract_event_results(row, card_num)
-                    if event_results:
-                        all_results.extend(event_results)
-        
-        if all_results:
-            results_df = pd.DataFrame(all_results)
-            
-            # إزالة التكرارات
-            results_df = results_df.drop_duplicates()
-            
-            # ترتيب النتائج
-            if "Date" in results_df.columns:
-                results_df = results_df.sort_values(by=["Card", "Date"], ascending=[True, False])
-            
-            st.markdown("### 📋 نتائج البحث")
-            st.dataframe(results_df, use_container_width=True, height=400)
-            
-            # إحصائيات البحث
-            st.markdown("### 📊 إحصائيات البحث")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("عدد النتائج", len(results_df))
-            
-            with col2:
-                if "Card" in results_df.columns:
-                    unique_cards = results_df["Card"].nunique()
-                    st.metric("عدد الماكينات", unique_cards)
-                else:
-                    st.metric("عدد الماكينات", 0)
-            
-            with col3:
-                if "Servised by" in results_df.columns:
-                    unique_techs = results_df["Servised by"][results_df["Servised by"] != "-"].nunique()
-                    st.metric("عدد الفنيين", unique_techs)
-                else:
-                    st.metric("عدد الفنيين", 0)
-            
-            with col4:
-                if "Type" in results_df.columns:
-                    service_count = len(results_df[results_df["Type"] == "Service"])
-                    event_count = len(results_df[results_df["Type"] == "Event"])
-                    st.metric("الخدمات / الأحداث", f"{service_count} / {event_count}")
-            
-            # تنزيل النتائج
-            buffer = io.BytesIO()
-            results_df.to_excel(buffer, index=False, engine="openpyxl")
-            st.download_button(
-                label="💾 حفظ نتائج البحث",
-                data=buffer.getvalue(),
-                file_name="Advanced_Search_Results.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.info("ℹ️ لم يتم العثور على نتائج مطابقة لمعايير البحث.")
+        <label class="radio-label">
+          <input type="radio" 
+                 name="searchType" 
+                 value="both">
+          <span class="radio-text">الكل معًا</span>
+          <span class="radio-description">(جميع الأعمدة معًا)</span>
+        </label>
+      </div>
+    </div>
+    
+    <!-- خيارات إضافية -->
+    <div class="search-section">
+      <h3>خيارات إضافية</h3>
+      
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" 
+                 id="exactMatch" 
+                 name="exactMatch">
+          <span>بحث مطابق للنص بالضبط</span>
+        </label>
+      </div>
+      
+      <div class="form-group date-range">
+        <label>الفترة الزمنية (اختياري):</label>
+        <div class="date-inputs">
+          <input type="date" id="startDate" name="startDate" class="form-control">
+          <span>إلى</span>
+          <input type="date" id="endDate" name="endDate" class="form-control">
+        </div>
+      </div>
+    </div>
+    
+    <!-- عرض النتائج -->
+    <div class="search-section">
+      <h3>عرض النتائج</h3>
+      
+      <div class="form-group">
+        <label for="resultsPerPage">عدد النتائج في الصفحة:</label>
+        <select id="resultsPerPage" name="resultsPerPage" class="form-control">
+          <option value="10">١٠</option>
+          <option value="25">٢٥</option>
+          <option value="50">٥٠</option>
+          <option value="100">١٠٠</option>
+        </select>
+      </div>
+    </div>
+    
+    <!-- أزرار التحكم -->
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">
+        🔍 بحث
+      </button>
+      <button type="reset" class="btn btn-secondary">
+        🗑️ مسح الكل
+      </button>
+    </div>
+  </form>
+</div>
 
-def matches_search_criteria(row, search_text, search_technician, search_date, 
-                           specific_service, exact_match, show_empty, sheet_type):
-    """التحقق من تطابق الصف مع معايير البحث"""
-    # التحقق من النص
-    if search_text and not text_matches_row(row, search_text, exact_match):
-        return False
-    
-    # التحقق من فني الخدمة
-    if search_technician:
-        tech_value = get_servised_by_value(row)
-        if not tech_value or search_technician.lower() not in tech_value.lower():
-            return False
-    
-    # التحقق من التاريخ
-    if search_date:
-        date_match = False
-        for col in row.index:
-            if "date" in normalize_name(col) and pd.notna(row[col]):
-                if search_date.lower() in str(row[col]).lower():
-                    date_match = True
-                    break
-        if not date_match:
-            return False
-    
-    # التحقق من الخدمة المحددة
-    if specific_service != "الكل" and sheet_type in ["services", "mixed"]:
-        service_match = False
-        for col in row.index:
-            col_normalized = normalize_name(col)
-            if specific_service.lower() in col_normalized:
-                val = str(row[col]).strip()
-                if val and val.lower() not in ["nan", "none", "", "0"]:
-                    service_match = True
-                    break
-        if not service_match:
-            return False
-    
-    # التحقق من البيانات الفارغة
-    if not show_empty and is_empty_row(row, sheet_type):
-        return False
-    
-    return True
+<!-- منطقة عرض النتائج -->
+<div class="search-results" id="searchResults">
+  <!-- سيتم ملء الجدول ديناميكيًا حسب نوع البحث -->
+</div>
 
-def text_matches_row(row, search_text, exact_match):
-    """التحقق إذا كان النص موجود في أي عمود"""
-    for col in row.index:
-        cell_value = str(row[col]).strip()
-        if not cell_value or cell_value.lower() in ["nan", "none", ""]:
-            continue
-        
-        if exact_match:
-            if search_text.lower() == cell_value.lower():
-                return True
-        else:
-            if search_text.lower() in cell_value.lower():
-                return True
-    
-    return False
+<style>
+.advanced-search {
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 10px;
+  margin-bottom: 30px;
+  border: 1px solid #dee2e6;
+}
 
-def is_empty_row(row, sheet_type):
-    """التحقق إذا كان الصف فارغ"""
-    for col in row.index:
-        val = str(row[col]).strip()
-        if val and val.lower() not in ["nan", "none", ""]:
-            return False
-    return True
+.search-section {
+  margin-bottom: 25px;
+  padding-bottom: 20px;
+  border-bottom: 1px dashed #ccc;
+}
 
-def has_services_data(row):
-    """التحقق إذا كان الصف يحتوي على بيانات خدمات"""
-    return pd.notna(row.get("Min_Tones")) and pd.notna(row.get("Max_Tones"))
+.search-section:last-child {
+  border-bottom: none;
+}
 
-def has_events_data(row):
-    """التحقق إذا كان الصف يحتوي على بيانات أحداث"""
-    event_columns = [col for col in row.index if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
-    correction_columns = [col for col in row.index if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
-    
-    for col in event_columns + correction_columns:
-        if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
-            return True
-    
-    return False
+h2, h3 {
+  color: #2c3e50;
+  margin-bottom: 15px;
+}
 
-def extract_service_results(row, card_num, specific_service):
-    """استخراج نتائج الخدمات"""
-    results = []
-    
-    metadata_columns = {
-        "card", "Tones", "Min_Tones", "Max_Tones", "Date", 
-        "Other", "Servised by", "Event", "Correction",
-        "Card", "TONES", "MIN_TONES", "MAX_TONES", "DATE",
-        "OTHER", "EVENT", "CORRECTION", "SERVISED BY",
-        "servised by", "Servised By", 
-        "Serviced by", "Service by", "Serviced By", "Service By",
-        "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة"
-    }
-    
-    all_columns = set(row.index)
-    service_columns = all_columns - metadata_columns
-    
-    for col in service_columns:
-        val = str(row.get(col, "")).strip()
-        
-        # تخطي الخلايا الفارغة
-        if not val or val.lower() in ["nan", "none", "", "null", "0"]:
-            continue
-        
-        # فلترة حسب الخدمة المحددة
-        if specific_service != "الكل":
-            col_normalized = normalize_name(col)
-            if specific_service.lower() not in col_normalized:
-                continue
-        
-        servised_by_value = get_servised_by_value(row)
-        
-        results.append({
-            "Card": card_num,
-            "Service Type": col,
-            "Service Status": val,
-            "Servised by": servised_by_value,
-            "Date": row.get("Date", "-"),
-            "Tones": row.get("Tones", "-"),
-            "Min_Tones": row.get("Min_Tones", "-"),
-            "Max_Tones": row.get("Max_Tones", "-"),
-            "Type": "Service"
-        })
-    
-    return results
+h2 {
+  text-align: center;
+  color: #1a5276;
+}
 
-def extract_event_results(row, card_num):
-    """استخراج نتائج الأحداث"""
-    results = []
-    
-    event_columns = [col for col in row.index if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
-    correction_columns = [col for col in row.index if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
-    
-    has_event = any(pd.notna(row.get(col, "")) and str(row.get(col, "")).strip() != "" for col in event_columns)
-    has_correction = any(pd.notna(row.get(col, "")) and str(row.get(col, "")).strip() != "" for col in correction_columns)
-    
-    if not has_event and not has_correction:
-        return results
-    
-    # استخراج أحداث متعددة
-    event_values = []
-    for col in event_columns:
-        if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
-            event_values.append(str(row[col]).strip())
-    
-    correction_values = []
-    for col in correction_columns:
-        if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
-            correction_values.append(str(row[col]).strip())
-    
-    servised_by_value = get_servised_by_value(row)
-    
-    event_text = "، ".join(event_values) if event_values else "-"
-    correction_text = "، ".join(correction_values) if correction_values else "-"
-    
-    results.append({
-        "Card": card_num,
-        "Date": row.get("Date", "-"),
-        "Event": event_text,
-        "Correction": correction_text,
-        "Servised by": servised_by_value,
-        "Tones": row.get("Tones", "-"),
-        "Type": "Event"
-    })
-    
-    return results
+.form-group {
+  margin-bottom: 15px;
+}
 
+label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 600;
+  color: #34495e;
+}
+
+.form-control {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #bdc3c7;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: flex-start;
+  cursor: pointer;
+  padding: 10px;
+  background: #fff;
+  border-radius: 5px;
+  border: 1px solid #e0e0e0;
+  transition: all 0.3s;
+}
+
+.radio-label:hover {
+  background: #f0f8ff;
+  border-color: #3498db;
+}
+
+.radio-label input[type="radio"] {
+  margin-top: 3px;
+  margin-right: 10px;
+}
+
+.radio-text {
+  font-weight: 600;
+  margin-right: 5px;
+  color: #2c3e50;
+}
+
+.radio-description {
+  color: #7f8c8d;
+  font-size: 0.9em;
+  font-style: italic;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  margin-left: 10px;
+}
+
+.date-range .date-inputs {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-top: 5px;
+}
+
+.date-range span {
+  color: #666;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-top: 25px;
+}
+
+.btn {
+  padding: 10px 25px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.btn-primary {
+  background: #3498db;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #2980b9;
+}
+
+.btn-secondary {
+  background: #95a5a6;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #7f8c8d;
+}
+
+.search-results {
+  margin-top: 30px;
+  overflow-x: auto;
+}
+
+/* تصميم الجداول حسب نوع البحث */
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.results-table th {
+  background: #2c3e50;
+  color: white;
+  padding: 12px;
+  text-align: right;
+}
+
+.results-table td {
+  padding: 10px;
+  border-bottom: 1px solid #ecf0f1;
+}
+
+.results-table tr:hover {
+  background: #f5f5f5;
+}
+
+/* تصميم متجاوب */
+@media (max-width: 768px) {
+  .date-range .date-inputs {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .form-actions {
+    flex-direction: column;
+  }
+  
+  .btn {
+    width: 100%;
+  }
+}
+</style>
+
+<script>
+// دالة لتغيير عرض الجدول حسب نوع البحث
+function updateResultsTable(searchType) {
+  const resultsContainer = document.getElementById('searchResults');
+  
+  let tableHTML = '';
+  
+  switch(searchType) {
+    case 'events':
+      tableHTML = `
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>التاريخ</th>
+              <th>الحدث</th>
+              <th>التصحيح</th>
+              <th>تم الخدمة بواسطة</th>
+              <th>الأطنان</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody">
+            <!-- سيتم ملء النتائج هنا -->
+          </tbody>
+        </table>
+      `;
+      break;
+      
+    case 'services':
+      tableHTML = `
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>التاريخ</th>
+              <th>الخدمة المقدمة</th>
+              <th>المدى</th>
+              <th>الأطنان</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody">
+            <!-- سيتم ملء النتائج هنا -->
+          </tbody>
+        </table>
+      `;
+      break;
+      
+    case 'both':
+      tableHTML = `
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>التاريخ</th>
+              <th>الحدث</th>
+              <th>التصحيح</th>
+              <th>الخدمة المقدمة</th>
+              <th>المدى</th>
+              <th>الأطنان</th>
+              <th>تم الخدمة بواسطة</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody">
+            <!-- سيتم ملء النتائج هنا -->
+          </tbody>
+        </table>
+      `;
+      break;
+  }
+  
+  resultsContainer.innerHTML = tableHTML;
+}
+
+// تغيير الجدول عند تغيير نوع البحث
+document.querySelectorAll('input[name="searchType"]').forEach(radio => {
+  radio.addEventListener('change', function() {
+    updateResultsTable(this.value);
+  });
+});
+
+// معالجة نموذج البحث
+document.getElementById('advancedSearchForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  
+  const formData = {
+    technicianName: document.getElementById('technicianName').value,
+    machineNumber: document.getElementById('machineNumber').value,
+    searchType: document.querySelector('input[name="searchType"]:checked').value,
+    exactMatch: document.getElementById('exactMatch').checked,
+    startDate: document.getElementById('startDate').value,
+    endDate: document.getElementById('endDate').value,
+    resultsPerPage: document.getElementById('resultsPerPage').value
+  };
+  
+  // هنا تضمن استدعاء API البحث الخاص بك
+  console.log('بيانات البحث:', formData);
+  
+  // مثال: عرض بيانات وهمية
+  const mockData = {
+    events: [
+      ['2024-01-15', 'صيانة دورية', 'تم إصلاح العطل', 'أحمد محمد', '50 طن'],
+      ['2024-01-10', 'فحص شامل', 'لا يوجد أخطاء', 'محمد علي', '30 طن']
+    ],
+    services: [
+      ['2024-01-14', 'تنظيف وتشحيم', '100-150 ساعة', '45 طن'],
+      ['2024-01-08', 'تبديل فلاتر', '50-100 ساعة', '60 طن']
+    ],
+    both: [
+      ['2024-01-15', 'صيانة دورية', 'تم إصلاح العطل', 'تنظيف كامل', '100-150', '50 طن', 'أحمد محمد'],
+      ['2024-01-10', 'فحص شامل', 'لا يوجد أخطاء', 'تشحيم', '50-100', '30 طن', 'محمد علي']
+    ]
+  };
+  
+  // تحديث الجدول بالبيانات الوهمية
+  updateTableWithData(formData.searchType, mockData[formData.searchType]);
+});
+
+function updateTableWithData(searchType, data) {
+  updateResultsTable(searchType);
+  
+  const tbody = document.getElementById('resultsBody');
+  tbody.innerHTML = '';
+  
+  data.forEach(row => {
+    const tr = document.createElement('tr');
+    row.forEach(cell => {
+      const td = document.createElement('td');
+      td.textContent = cell;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+// تهيئة الجدول الافتراضي
+document.addEventListener('DOMContentLoaded', function() {
+  updateResultsTable('events');
+});
+</script>
 # -------------------------------
 # 🖥 دالة إضافة إيفينت جديد
 # -------------------------------
