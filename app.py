@@ -36,7 +36,7 @@ APP_CONFIG = {
     
     # إعدادات الواجهة
     "SHOW_TECH_SUPPORT_TO_ALL": False,
-    "CUSTOM_TABS": ["📊 فحص السيرفيس", "📋 فحص الإيفينت والكوريكشن", "🔍 بحث متقدم", "🛠 تعديل وإدارة البيانات", "👥 إدارة المستخدمين", "📞 الدعم الفني"]
+    "CUSTOM_TABS": ["📊 فحص السيرفيس", "📋 فحص الإيفينت والكوريكشن", "🛠 تعديل وإدارة البيانات", "👥 إدارة المستخدمين", "📞 الدعم الفني"]
 }
 
 # ===============================
@@ -479,10 +479,10 @@ def get_user_permissions(user_role, user_permissions):
         }
 
 # -------------------------------
-# 🖥 دالة فحص السيرفيس فقط - معدلة للفصل بين السيرفيس والإيفينت
+# 🖥 دالة فحص السيرفيس فقط - من الشيتات الجديدة
 # -------------------------------
 def check_service_status(card_num, current_tons, all_sheets):
-    """فحص حالة السيرفيس فقط بدون الإيفينت والكوريكشن"""
+    """فحص حالة السيرفيس فقط"""
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
@@ -492,13 +492,27 @@ def check_service_status(card_num, current_tons, all_sheets):
         return
     
     service_plan_df = all_sheets["ServicePlan"]
-    card_sheet_name = f"Card{card_num}"
+    card_services_sheet_name = f"Card{card_num}_Services"
     
-    if card_sheet_name not in all_sheets:
-        st.warning(f"⚠ لا يوجد شيت باسم {card_sheet_name}")
-        return
-    
-    card_df = all_sheets[card_sheet_name]
+    # إذا لم يكن هناك شيت خدمات منفصل، نبحث في الشيت القديم
+    if card_services_sheet_name not in all_sheets:
+        # محاولة البحث في الشيت القديم
+        card_old_sheet_name = f"Card{card_num}"
+        if card_old_sheet_name in all_sheets:
+            card_df = all_sheets[card_old_sheet_name]
+            # فلترة فقط الصفوف التي لها Min_Tones و Max_Tones
+            services_df = card_df[
+                (card_df.get("Min_Tones", pd.NA).notna()) & 
+                (card_df.get("Max_Tones", pd.NA).notna()) &
+                (card_df.get("Min_Tones", "") != "") & 
+                (card_df.get("Max_Tones", "") != "")
+            ].copy()
+        else:
+            st.warning(f"⚠ لا يوجد شيت باسم {card_services_sheet_name} أو {card_old_sheet_name}")
+            return
+    else:
+        card_df = all_sheets[card_services_sheet_name]
+        services_df = card_df.copy()
 
     st.subheader("⚙ نطاق العرض")
     view_option = st.radio(
@@ -541,20 +555,15 @@ def check_service_status(card_num, current_tons, all_sheets):
         needed_parts = split_needed_services(needed_service_raw)
         needed_norm = [normalize_name(p) for p in needed_parts]
 
-        # البحث فقط في الصفوف التي تحتوي على بيانات سيرفيس (لها Min_Tones و Max_Tones)
-        mask = (
-            (card_df.get("Min_Tones", pd.NA).notna()) & 
-            (card_df.get("Max_Tones", pd.NA).notna()) &
-            (card_df.get("Min_Tones", 0).fillna(0) <= slice_max) & 
-            (card_df.get("Max_Tones", 0).fillna(0) >= slice_min)
-        )
-        matching_rows = card_df[mask]
+        # البحث في خدمات الماكينة
+        mask = (services_df.get("Min_Tones", 0).fillna(0) <= slice_max) & (services_df.get("Max_Tones", 0).fillna(0) >= slice_min)
+        matching_rows = services_df[mask]
 
         if not matching_rows.empty:
             for _, row in matching_rows.iterrows():
                 done_services_set = set()
                 
-                # تحديد الأعمدة التي تحتوي على خدمات منجزة
+                # تحديد الأعمدة التي تحتوي على خدمات منجزة (استبعاد أعمدة البيانات الوصفية)
                 metadata_columns = {
                     "card", "Tones", "Min_Tones", "Max_Tones", "Date", 
                     "Other", "Servised by", "Event", "Correction",
@@ -565,7 +574,7 @@ def check_service_status(card_num, current_tons, all_sheets):
                     "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة"
                 }
                 
-                all_columns = set(card_df.columns)
+                all_columns = set(services_df.columns)
                 service_columns = all_columns - metadata_columns
                 
                 final_service_columns = set()
@@ -585,30 +594,9 @@ def check_service_status(card_num, current_tons, all_sheets):
                 current_date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
                 current_tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
                 
-                # البحث عن عمود "Servised by"
-                servised_by_value = "-"
-                servised_by_columns = [
-                    "Servised by", "SERVISED BY", "servised by", "Servised By",
-                    "Serviced by", "Service by", "Serviced By", "Service By",
-                    "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة"
-                ]
+                # البحث عن فني الخدمة
+                servised_by_value = get_servised_by_value(row)
                 
-                for potential_col in servised_by_columns:
-                    if potential_col in card_df.columns:
-                        value = row.get(potential_col)
-                        if pd.notna(value) and str(value).strip() != "":
-                            servised_by_value = str(value).strip()
-                            break
-                
-                if servised_by_value == "-":
-                    for col in card_df.columns:
-                        col_normalized = normalize_name(col)
-                        if col_normalized in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]:
-                            value = row.get(col)
-                            if pd.notna(value) and str(value).strip() != "":
-                                servised_by_value = str(value).strip()
-                                break
-
                 done_services = sorted(list(done_services_set))
                 done_norm = [normalize_name(c) for c in done_services]
                 
@@ -630,7 +618,7 @@ def check_service_status(card_num, current_tons, all_sheets):
                     "Date": current_date
                 })
         else:
-            # إذا لم توجد سجلات سيرفيس، نضيف سجل للشريحة بدون خدمات منجزة
+            # إذا لم توجد سجلات سيرفيس
             all_results.append({
                 "Card Number": card_num,
                 "Min_Tons": slice_min,
@@ -646,34 +634,49 @@ def check_service_status(card_num, current_tons, all_sheets):
     result_df = pd.DataFrame(all_results).dropna(how="all").reset_index(drop=True)
 
     st.markdown("### 📋 نتائج فحص السيرفيس")
-    st.dataframe(result_df.style.apply(style_table, axis=1), use_container_width=True)
+    if not result_df.empty:
+        st.dataframe(result_df.style.apply(style_table, axis=1), use_container_width=True)
 
-    # تنزيل النتائج
-    buffer = io.BytesIO()
-    result_df.to_excel(buffer, index=False, engine="openpyxl")
-    st.download_button(
-        label="💾 حفظ النتائج كـ Excel",
-        data=buffer.getvalue(),
-        file_name=f"Service_Report_Card{card_num}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        # تنزيل النتائج
+        buffer = io.BytesIO()
+        result_df.to_excel(buffer, index=False, engine="openpyxl")
+        st.download_button(
+            label="💾 حفظ النتائج كـ Excel",
+            data=buffer.getvalue(),
+            file_name=f"Service_Report_Card{card_num}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.info("ℹ️ لا توجد خدمات مسجلة لهذه الماكينة.")
 
 # -------------------------------
-# 🖥 دالة فحص الإيفينت والكوريكشن فقط - منفصلة تماماً عن السيرفيس
+# 🖥 دالة فحص الإيفينت والكوريكشن فقط - من الشيتات الجديدة
 # -------------------------------
 def check_events_and_corrections(card_num, all_sheets):
-    """فحص الإيفينت والكوريكشن فقط - منفصلة تماماً عن السيرفيس"""
+    """فحص الإيفينت والكوريكشن فقط"""
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
     
-    card_sheet_name = f"Card{card_num}"
+    card_events_sheet_name = f"Card{card_num}_Events"
     
-    if card_sheet_name not in all_sheets:
-        st.warning(f"⚠ لا يوجد شيت باسم {card_sheet_name}")
-        return
-    
-    card_df = all_sheets[card_sheet_name]
+    # إذا لم يكن هناك شيت أحداث منفصل، نبحث في الشيت القديم
+    if card_events_sheet_name not in all_sheets:
+        # محاولة البحث في الشيت القديم
+        card_old_sheet_name = f"Card{card_num}"
+        if card_old_sheet_name in all_sheets:
+            card_df = all_sheets[card_old_sheet_name]
+            # فلترة فقط الصفوف التي ليس لها Min_Tones و Max_Tones (أي أحداث)
+            events_df = card_df[
+                (card_df.get("Min_Tones", pd.NA).isna()) | 
+                (card_df.get("Max_Tones", pd.NA).isna()) |
+                ((card_df.get("Min_Tones", "") == "") & (card_df.get("Max_Tones", "") == ""))
+            ].copy()
+        else:
+            st.warning(f"⚠ لا يوجد شيت باسم {card_events_sheet_name} أو {card_old_sheet_name}")
+            return
+    else:
+        events_df = all_sheets[card_events_sheet_name].copy()
 
     st.subheader("🔍 خيارات البحث")
     
@@ -689,73 +692,57 @@ def check_events_and_corrections(card_num, all_sheets):
     with col4:
         search_serviced_by = st.text_input("البحث بفني الخدمة:", "", key=f"search_serviced_by_{card_num}")
 
-    # فلترة البيانات - البحث فقط في الصفوف التي ليس لها Min_Tones و Max_Tones (أي أحداث)
-    filtered_df = card_df.copy()
-    
-    # إزالة صفوف السيرفيس (التي لها Min_Tones و Max_Tones)
-    filtered_df = filtered_df[
-        (filtered_df.get("Min_Tones", pd.NA).isna()) | 
-        (filtered_df.get("Max_Tones", pd.NA).isna()) |
-        ((filtered_df.get("Min_Tones", "") == "") & (filtered_df.get("Max_Tones", "") == ""))
-    ]
+    # فلترة البيانات
+    filtered_df = events_df.copy()
     
     if search_date:
         filtered_df = filtered_df[filtered_df.astype(str).apply(lambda row: row.str.contains(search_date, case=False, na=False).any(), axis=1)]
     
     if search_event:
-        # البحث في عمود Event بأسماء مختلفة
         event_columns = [col for col in filtered_df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
         if event_columns:
             mask = filtered_df[event_columns[0]].astype(str).str.contains(search_event, case=False, na=False)
             filtered_df = filtered_df[mask]
     
     if search_correction:
-        # البحث في عمود Correction بأسماء مختلفة
         correction_columns = [col for col in filtered_df.columns if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
         if correction_columns:
             mask = filtered_df[correction_columns[0]].astype(str).str.contains(search_correction, case=False, na=False)
             filtered_df = filtered_df[mask]
     
     if search_serviced_by:
-        # البحث في عمود Servised by بأسماء مختلفة
         servised_columns = [col for col in filtered_df.columns if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]]
         if servised_columns:
             mask = filtered_df[servised_columns[0]].astype(str).str.contains(search_serviced_by, case=False, na=False)
             filtered_df = filtered_df[mask]
 
-    # استخراج البيانات المطلوبة - منفصلة عن السيرفيس
+    # استخراج البيانات المطلوبة
     events_results = []
     for _, row in filtered_df.iterrows():
-        # استخراج البيانات الأساسية
         card_num_value = str(row.get("card", "")).strip() if pd.notna(row.get("card")) else "-"
         date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
         tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
         
-        # البحث عن عمود "Event"
+        # البحث عن الحدث
         event_value = "-"
-        event_columns = [col for col in card_df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
+        event_columns = [col for col in events_df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
         for event_col in event_columns:
             if event_col in row and pd.notna(row[event_col]) and str(row[event_col]).strip() != "":
                 event_value = str(row[event_col]).strip()
                 break
         
-        # البحث عن عمود "Correction"
+        # البحث عن التصحيح
         correction_value = "-"
-        correction_columns = [col for col in card_df.columns if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
+        correction_columns = [col for col in events_df.columns if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
         for correction_col in correction_columns:
             if correction_col in row and pd.notna(row[correction_col]) and str(row[correction_col]).strip() != "":
                 correction_value = str(row[correction_col]).strip()
                 break
         
-        # البحث عن عمود "Servised by"
-        servised_by_value = "-"
-        servised_columns = [col for col in card_df.columns if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]]
-        for servised_col in servised_columns:
-            if servised_col in row and pd.notna(row[servised_col]) and str(row[servised_col]).strip() != "":
-                servised_by_value = str(row[servised_col]).strip()
-                break
+        # البحث عن فني الخدمة
+        servised_by_value = get_servised_by_value(row)
 
-        # إضافة النتيجة فقط إذا كان هناك بيانات في Event أو Correction أو Servised by
+        # إضافة النتيجة
         if event_value != "-" or correction_value != "-" or servised_by_value != "-":
             events_results.append({
                 "Card Number": card_num_value,
@@ -766,17 +753,17 @@ def check_events_and_corrections(card_num, all_sheets):
                 "Date": date
             })
 
-    events_df = pd.DataFrame(events_results).dropna(how="all").reset_index(drop=True)
+    events_df_result = pd.DataFrame(events_results).dropna(how="all").reset_index(drop=True)
 
-    if events_df.empty:
+    if events_df_result.empty:
         st.info("ℹ️ لا توجد أحداث أو تصحيحات مطابقة لمعايير البحث.")
     else:
         st.markdown("### 📋 نتائج فحص الإيفينت والكوريكشن")
-        st.dataframe(events_df.style.apply(style_table, axis=1), use_container_width=True)
+        st.dataframe(events_df_result.style.apply(style_table, axis=1), use_container_width=True)
 
         # تنزيل النتائج
         buffer = io.BytesIO()
-        events_df.to_excel(buffer, index=False, engine="openpyxl")
+        events_df_result.to_excel(buffer, index=False, engine="openpyxl")
         st.download_button(
             label="💾 حفظ النتائج كـ Excel",
             data=buffer.getvalue(),
@@ -784,17 +771,43 @@ def check_events_and_corrections(card_num, all_sheets):
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
+def get_servised_by_value(row):
+    """استخراج قيمة فني الخدمة من الصف"""
+    # قائمة بالأعمدة المحتملة لفني الخدمة
+    servised_columns = [
+        "Servised by", "SERVISED BY", "servised by", "Servised By",
+        "Serviced by", "Service by", "Serviced By", "Service By",
+        "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة"
+    ]
+    
+    # البحث في الأعمدة المعروفة
+    for col in servised_columns:
+        if col in row.index:
+            value = str(row[col]).strip()
+            if value and value.lower() not in ["nan", "none", ""]:
+                return value
+    
+    # البحث في جميع الأعمدة التي قد تحتوي على فني الخدمة
+    for col in row.index:
+        col_normalized = normalize_name(col)
+        if any(keyword in col_normalized for keyword in ["servisedby", "servicedby", "serviceby", "خدمبواسطة", "فني"]):
+            value = str(row[col]).strip()
+            if value and value.lower() not in ["nan", "none", ""]:
+                return value
+    
+    return "-"
+
 # -------------------------------
-# 🖥 دالة إضافة إيفينت جديد - منفصل تماماً عن السيرفيس
+# 🖥 دالة إضافة إيفينت جديد - في الشيت المنفصل
 # -------------------------------
 def add_new_event(sheets_edit):
-    """إضافة إيفينت جديد منفصل تماماً عن السيرفيس"""
-    st.subheader("➕ إضافة حدث جديد (منفصل عن السيرفيس)")
+    """إضافة إيفينت جديد في شيت منفصل"""
+    st.subheader("➕ إضافة حدث جديد")
     
     sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="add_event_sheet")
     df = sheets_edit[sheet_name].astype(str)
     
-    st.markdown("أدخل بيانات الحدث الجديد (منفصل عن السيرفيس):")
+    st.markdown("أدخل بيانات الحدث الجديد:")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -811,40 +824,33 @@ def add_new_event(sheets_edit):
             st.warning("⚠ الرجاء إدخال رقم الماكينة.")
             return
         
-        # إنشاء صف جديد منفصل تماماً عن السيرفيس
+        # إنشاء صف جديد
         new_row = {}
         
-        # إضافة البيانات الأساسية للأحداث (بدون Min_Tones و Max_Tones)
+        # إضافة البيانات الأساسية للأحداث
         new_row["card"] = card_num.strip()
         if event_date.strip():
             new_row["Date"] = event_date.strip()
-        
-        # ترك Min_Tones و Max_Tones فارغين ليتم فصلهم عن السيرفيس
-        new_row["Min_Tones"] = ""
-        new_row["Max_Tones"] = ""
         
         # إضافة بيانات الإيفينت والكوريكشن
         event_columns = [col for col in df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
         if event_columns and event_text.strip():
             new_row[event_columns[0]] = event_text.strip()
         elif not event_columns and event_text.strip():
-            # إذا لم يكن هناك عمود أحداث، ننشئ واحد
             new_row["Event"] = event_text.strip()
         
         correction_columns = [col for col in df.columns if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
         if correction_columns and correction_text.strip():
             new_row[correction_columns[0]] = correction_text.strip()
         elif not correction_columns and correction_text.strip():
-            # إذا لم يكن هناك عمود تصحيحات، ننشئ واحد
             new_row["Correction"] = correction_text.strip()
         
-        # البحث عن عمود Servised by الصحيح
+        # البحث عن عمود Servised by
         servised_col = None
         servised_columns = [col for col in df.columns if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]]
         if servised_columns:
             servised_col = servised_columns[0]
         else:
-            # إذا لم نجد عمود servised by، نستخدم أول عمود متاح أو ننشئ واحد
             for col in df.columns:
                 if "servis" in normalize_name(col) or "service" in normalize_name(col) or "فني" in col:
                     servised_col = col
@@ -864,56 +870,44 @@ def add_new_event(sheets_edit):
         # حفظ تلقائي في GitHub
         new_sheets = auto_save_to_github(
             sheets_edit,
-            f"إضافة حدث جديد (منفصل) في {sheet_name}"
+            f"إضافة حدث جديد في {sheet_name}"
         )
         if new_sheets is not None:
             sheets_edit = new_sheets
-            st.success("✅ تم إضافة الحدث الجديد بنجاح (منفصل عن السيرفيس)!")
+            st.success("✅ تم إضافة الحدث الجديد بنجاح!")
             st.rerun()
 
 # -------------------------------
-# 🖥 دالة تعديل الإيفينت والكوريكشن - منفصلة عن السيرفيس
+# 🖥 دالة تعديل الإيفينت والكوريكشن
 # -------------------------------
 def edit_events_and_corrections(sheets_edit):
-    """تعديل الإيفينت والكوريكشن (منفصلة عن السيرفيس)"""
-    st.subheader("✏ تعديل الحدث والتصحيح (منفصل عن السيرفيس)")
+    """تعديل الإيفينت والكوريكشن"""
+    st.subheader("✏ تعديل الحدث والتصحيح")
     
     sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_events_sheet")
     df = sheets_edit[sheet_name].astype(str)
     
-    # عرض البيانات الحالية - فقط الأحداث المنفصلة (بدون Min_Tones و Max_Tones)
-    st.markdown("### 📋 البيانات الحالية (الأحداث المنفصلة عن السيرفيس)")
+    # عرض البيانات الحالية
+    st.markdown("### 📋 البيانات الحالية (الحدث والتصحيح)")
     
-    # فلترة البيانات: فقط الصفوف التي ليس لها Min_Tones و Max_Tones (أي أحداث)
-    events_df = df[
-        (df.get("Min_Tones", pd.NA).isna()) | 
-        (df.get("Max_Tones", pd.NA).isna()) |
-        ((df.get("Min_Tones", "") == "") & (df.get("Max_Tones", "") == ""))
-    ].copy()
-    
-    # استخراج الأعمدة المطلوبة فقط
+    # استخراج الأعمدة المطلوبة
     display_columns = ["card", "Date"]
     
-    # إضافة أعمدة الإيفينت والكوريكشن والسيرفيسد باي
-    event_columns = [col for col in events_df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
+    event_columns = [col for col in df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
     if event_columns:
         display_columns.append(event_columns[0])
     
-    correction_columns = [col for col in events_df.columns if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
+    correction_columns = [col for col in df.columns if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
     if correction_columns:
         display_columns.append(correction_columns[0])
     
-    servised_columns = [col for col in events_df.columns if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]]
+    servised_columns = [col for col in df.columns if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]]
     if servised_columns:
         display_columns.append(servised_columns[0])
     
-    # عرض البيانات المحددة فقط
-    display_df = events_df[display_columns].copy()
+    # عرض البيانات
+    display_df = df[display_columns].copy()
     st.dataframe(display_df, use_container_width=True)
-    
-    if len(events_df) == 0:
-        st.info("ℹ️ لا توجد أحداث منفصلة عن السيرفيس في هذا الشيت.")
-        return
     
     # اختيار الصف للتعديل
     st.markdown("### ✏ اختر الصف للتعديل")
@@ -927,7 +921,7 @@ def edit_events_and_corrections(sheets_edit):
     if "editing_data" in st.session_state:
         editing_data = st.session_state["editing_data"]
         
-        st.markdown("### تعديل بيانات الحدث (منفصل عن السيرفيس)")
+        st.markdown("### تعديل البيانات")
         col1, col2 = st.columns(2)
         with col1:
             new_card = st.text_input("رقم الماكينة:", value=editing_data.get("card", ""), key="edit_card")
@@ -952,20 +946,16 @@ def edit_events_and_corrections(sheets_edit):
             new_correction = st.text_area("التصحيح:", value=editing_data.get(correction_col, ""), key="edit_correction")
         
         if st.button("💾 حفظ التعديلات", key="save_edits_btn"):
-            # تحديث البيانات مع التأكد من أن الحدث يبقى منفصلاً عن السيرفيس
+            # تحديث البيانات
             df.at[row_index, "card"] = new_card
             df.at[row_index, "Date"] = new_date
-            
-            # التأكد من أن Min_Tones و Max_Tones فارغين (ليظل منفصلاً عن السيرفيس)
-            df.at[row_index, "Min_Tones"] = ""
-            df.at[row_index, "Max_Tones"] = ""
             
             if event_col:
                 df.at[row_index, event_col] = new_event
             if correction_col:
                 df.at[row_index, correction_col] = new_correction
             
-            # البحث عن عمود Servised by الصحيح
+            # البحث عن عمود Servised by
             servised_col = None
             for col in df.columns:
                 if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]:
@@ -980,7 +970,7 @@ def edit_events_and_corrections(sheets_edit):
             # حفظ تلقائي في GitHub
             new_sheets = auto_save_to_github(
                 sheets_edit,
-                f"تعديل حدث (منفصل) في {sheet_name} - الصف {row_index}"
+                f"تعديل حدث في {sheet_name} - الصف {row_index}"
             )
             if new_sheets is not None:
                 sheets_edit = new_sheets
@@ -1118,18 +1108,16 @@ if permissions["can_edit"] and len(tabs) > 2:
             ])
 
             # -------------------------------
-            # Tab 1: تعديل بيانات وعرض - معدل للحفظ التلقائي
+            # Tab 1: تعديل بيانات وعرض
             # -------------------------------
             with tab1:
                 st.subheader("✏ تعديل البيانات")
                 sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_sheet")
                 df = sheets_edit[sheet_name].astype(str)
 
-                # استخدام data_editor مع التعديل التلقائي
                 edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True, 
                                          key=f"editor_{sheet_name}")
                 
-                # حفظ تلقائي عند التعديل
                 if not edited_df.equals(df):
                     st.info("🔄 يتم حفظ التغييرات تلقائياً...")
                     sheets_edit[sheet_name] = edited_df.astype(object)
@@ -1142,7 +1130,7 @@ if permissions["can_edit"] and len(tabs) > 2:
                         st.rerun()
 
             # -------------------------------
-            # Tab 2: إضافة صف جديد - معدل للحفظ التلقائي
+            # Tab 2: إضافة صف جديد
             # -------------------------------
             with tab2:
                 st.subheader("➕ إضافة صف جديد")
@@ -1163,7 +1151,6 @@ if permissions["can_edit"] and len(tabs) > 2:
                     
                     sheets_edit[sheet_name_add] = df_new.astype(object)
 
-                    # حفظ تلقائي في GitHub
                     new_sheets = auto_save_to_github(
                         sheets_edit,
                         f"إضافة صف جديد في {sheet_name_add}"
@@ -1173,7 +1160,7 @@ if permissions["can_edit"] and len(tabs) > 2:
                         st.rerun()
 
             # -------------------------------
-            # Tab 3: إضافة عمود جديد - معدل للحفظ التلقائي
+            # Tab 3: إضافة عمود جديد
             # -------------------------------
             with tab3:
                 st.subheader("🆕 إضافة عمود جديد")
@@ -1188,7 +1175,6 @@ if permissions["can_edit"] and len(tabs) > 2:
                         df_col[new_col_name] = default_value
                         sheets_edit[sheet_name_col] = df_col.astype(object)
                         
-                        # حفظ تلقائي في GitHub
                         new_sheets = auto_save_to_github(
                             sheets_edit,
                             f"إضافة عمود جديد '{new_col_name}' إلى {sheet_name_col}"
@@ -1200,13 +1186,13 @@ if permissions["can_edit"] and len(tabs) > 2:
                         st.warning("⚠ الرجاء إدخال اسم العمود الجديد.")
 
             # -------------------------------
-            # Tab 4: إضافة إيفينت جديد - منفصل عن السيرفيس
+            # Tab 4: إضافة إيفينت جديد
             # -------------------------------
             with tab4:
                 add_new_event(sheets_edit)
 
             # -------------------------------
-            # Tab 5: تعديل الإيفينت والكوريكشن - منفصلة عن السيرفيس
+            # Tab 5: تعديل الإيفينت والكوريكشن
             # -------------------------------
             with tab5:
                 edit_events_and_corrections(sheets_edit)
