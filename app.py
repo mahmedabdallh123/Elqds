@@ -779,468 +779,107 @@ def check_events_and_corrections(card_num, all_sheets):
         )
 
 # -------------------------------
-# 🖥 دالة البحث المتقدم مع التخصيص الكامل
-from flask import Flask, render_template_string
+import streamlit as st
+import pandas as pd
 
-app = Flask(__name__)
+# 🎯 تخصيص صفحة Streamlit
+st.set_page_config(
+    page_title="البحث المتقدم",
+    page_icon="🔍",
+    layout="wide"
+)
 
-@app.route('/advanced_search')
-def advanced_search():
-    # استخدم Unicode escape للأرقام العربية لتجنب الخطأ
-    html = '''
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>البحث المتقدم</title>
-    <style>
-        .advanced-search {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            border: 1px solid #dee2e6;
-        }
-        
-        .search-section {
-            margin-bottom: 25px;
-            padding-bottom: 20px;
-            border-bottom: 1px dashed #ccc;
-        }
-        
-        .search-section:last-child {
-            border-bottom: none;
-        }
-        
-        h2, h3 {
-            color: #2c3e50;
-            margin-bottom: 15px;
-        }
-        
-        h2 {
-            text-align: center;
-            color: #1a5276;
-        }
-        
-        .form-group {
-            margin-bottom: 15px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 600;
-            color: #34495e;
-        }
-        
-        .form-control {
-            width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #bdc3c7;
-            border-radius: 5px;
-            font-size: 14px;
-        }
-        
-        .radio-group {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        
-        .radio-label {
-            display: flex;
-            align-items: flex-start;
-            cursor: pointer;
-            padding: 10px;
-            background: #fff;
-            border-radius: 5px;
-            border: 1px solid #e0e0e0;
-            transition: all 0.3s;
-        }
-        
-        .radio-label:hover {
-            background: #f0f8ff;
-            border-color: #3498db;
-        }
-        
-        .radio-label input[type="radio"] {
-            margin-top: 3px;
-            margin-right: 10px;
-        }
-        
-        .radio-text {
-            font-weight: 600;
-            margin-right: 5px;
-            color: #2c3e50;
-        }
-        
-        .radio-description {
-            color: #7f8c8d;
-            font-size: 0.9em;
-            font-style: italic;
-        }
-        
-        .checkbox-label {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-        }
-        
-        .checkbox-label input[type="checkbox"] {
-            margin-left: 10px;
-        }
-        
-        .date-range .date-inputs {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            margin-top: 5px;
-        }
-        
-        .date-range span {
-            color: #666;
-        }
-        
-        .form-actions {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            margin-top: 25px;
-        }
-        
-        .btn {
-            padding: 10px 25px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-        
-        .btn-primary {
-            background: #3498db;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #2980b9;
-        }
-        
-        .btn-secondary {
-            background: #95a5a6;
-            color: white;
-        }
-        
-        .btn-secondary:hover {
-            background: #7f8c8d;
-        }
-        
-        .search-results {
-            margin-top: 30px;
-            overflow-x: auto;
-        }
-        
-        .results-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        
-        .results-table th {
-            background: #2c3e50;
-            color: white;
-            padding: 12px;
-            text-align: right;
-        }
-        
-        .results-table td {
-            padding: 10px;
-            border-bottom: 1px solid #ecf0f1;
-        }
-        
-        .results-table tr:hover {
-            background: #f5f5f5;
-        }
-        
-        @media (max-width: 768px) {
-            .date-range .date-inputs {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
-            }
-            
-            .form-actions {
-                flex-direction: column;
-            }
-            
-            .btn {
-                width: 100%;
-            }
-        }
-    </style>
-</head>
-<body>
-    <!-- البحث المتقدم -->
-    <div class="advanced-search">
-        <h2>البحث المتقدم</h2>
-        
-        <form id="advancedSearchForm">
-            
-            <!-- معايير البحث الأساسية -->
-            <div class="search-section">
-                <h3>معايير البحث الأساسية</h3>
-                
-                <div class="form-group">
-                    <label for="technicianName">اسم الفني:</label>
-                    <input type="text" 
-                           id="technicianName" 
-                           name="technicianName" 
-                           placeholder="اكتب اسم الفني..."
-                           class="form-control">
-                </div>
-                
-                <div class="form-group">
-                    <label for="machineNumber">رقم الماكينة (اختياري):</label>
-                    <input type="text" 
-                           id="machineNumber" 
-                           name="machineNumber" 
-                           placeholder="رقم الماكينة..."
-                           class="form-control">
-                </div>
-            </div>
-            
-            <!-- نوع البحث -->
-            <div class="search-section">
-                <h3>نوع البحث</h3>
-                
-                <div class="radio-group">
-                    <label class="radio-label">
-                        <input type="radio" 
-                               name="searchType" 
-                               value="events" 
-                               checked>
-                        <span class="radio-text">الأحداث فقط</span>
-                        <span class="radio-description">(Event, Correction, Date, Serviced By, Tons)</span>
-                    </label>
-                    
-                    <label class="radio-label">
-                        <input type="radio" 
-                               name="searchType" 
-                               value="services">
-                        <span class="radio-text">الخدمات فقط</span>
-                        <span class="radio-description">(Service Done, Date, Range, Tons)</span>
-                    </label>
-                    
-                    <label class="radio-label">
-                        <input type="radio" 
-                               name="searchType" 
-                               value="both">
-                        <span class="radio-text">الكل معًا</span>
-                        <span class="radio-description">(جميع الأعمدة معًا)</span>
-                    </label>
-                </div>
-            </div>
-            
-            <!-- خيارات إضافية -->
-            <div class="search-section">
-                <h3>خيارات إضافية</h3>
-                
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" 
-                               id="exactMatch" 
-                               name="exactMatch">
-                        <span>بحث مطابق للنص بالضبط</span>
-                    </label>
-                </div>
-                
-                <div class="form-group date-range">
-                    <label>الفترة الزمنية (اختياري):</label>
-                    <div class="date-inputs">
-                        <input type="date" id="startDate" name="startDate" class="form-control">
-                        <span>إلى</span>
-                        <input type="date" id="endDate" name="endDate" class="form-control">
-                    </div>
-                </div>
-            </div>
-            
-            <!-- عرض النتائج -->
-            <div class="search-section">
-                <h3>عرض النتائج</h3>
-                
-                <div class="form-group">
-                    <label for="resultsPerPage">عدد النتائج في الصفحة:</label>
-                    <select id="resultsPerPage" name="resultsPerPage" class="form-control">
-                        <option value="10">''' + '\u0661\u0660' + '''</option>
-                        <option value="25">''' + '\u0662\u0665' + '''</option>
-                        <option value="50">''' + '\u0665\u0660' + '''</option>
-                        <option value="100">''' + '\u0661\u0660\u0660' + '''</option>
-                    </select>
-                </div>
-            </div>
-            
-            <!-- أزرار التحكم -->
-            <div class="form-actions">
-                <button type="submit" class="btn btn-primary">
-                    🔍 بحث
-                </button>
-                <button type="reset" class="btn btn-secondary">
-                    🗑️ مسح الكل
-                </button>
-            </div>
-        </form>
-    </div>
+st.title("🔍 البحث المتقدم")
+
+# 📋 قسم معايير البحث الأساسية
+st.header("معايير البحث الأساسية")
+
+col1, col2 = st.columns(2)
+with col1:
+    technician_name = st.text_input("اسم الفني:", placeholder="اكتب اسم الفني...")
+with col2:
+    machine_number = st.text_input("رقم الماكينة (اختياري):", placeholder="رقم الماكينة...")
+
+# 📊 قسم نوع البحث
+st.header("نوع البحث")
+search_type = st.radio(
+    "اختر نوع البحث:",
+    options=["الأحداث فقط", "الخدمات فقط", "الكل معًا"],
+    horizontal=True
+)
+
+# ⚙️ قسم الخيارات الإضافية
+st.header("خيارات إضافية")
+
+col3, col4 = st.columns(2)
+with col3:
+    exact_match = st.checkbox("بحث مطابق للنص بالضبط")
+with col4:
+    results_per_page = st.selectbox(
+        "عدد النتائج في الصفحة:",
+        options=[10, 25, 50, 100],
+        format_func=lambda x: str(x)
+    )
+
+# 📅 قسم الفترة الزمنية
+st.subheader("الفترة الزمنية (اختياري)")
+col5, col6 = st.columns(2)
+with col5:
+    start_date = st.date_input("من تاريخ")
+with col6:
+    end_date = st.date_input("إلى تاريخ")
+
+# 🔘 أزرار التحكم
+col7, col8, col9 = st.columns([1, 2, 1])
+with col8:
+    search_button = st.button("🔍 بحث", type="primary", use_container_width=True)
+    clear_button = st.button("🗑️ مسح الكل", use_container_width=True)
+
+# 📊 عرض النتائج
+if search_button:
+    st.success("جارٍ البحث...")
     
-    <!-- منطقة عرض النتائج -->
-    <div class="search-results" id="searchResults">
-        <!-- سيتم ملء الجدول ديناميكيًا حسب نوع البحث -->
-    </div>
-
-    <script>
-        // دالة لتغيير عرض الجدول حسب نوع البحث
-        function updateResultsTable(searchType) {
-            const resultsContainer = document.getElementById('searchResults');
-            
-            let tableHTML = '';
-            
-            switch(searchType) {
-                case 'events':
-                    tableHTML = `
-                        <table class="results-table">
-                            <thead>
-                                <tr>
-                                    <th>التاريخ</th>
-                                    <th>الحدث</th>
-                                    <th>التصحيح</th>
-                                    <th>تم الخدمة بواسطة</th>
-                                    <th>الأطنان</th>
-                                </tr>
-                            </thead>
-                            <tbody id="resultsBody">
-                                <!-- سيتم ملء النتائج هنا -->
-                            </tbody>
-                        </table>
-                    `;
-                    break;
-                    
-                case 'services':
-                    tableHTML = `
-                        <table class="results-table">
-                            <thead>
-                                <tr>
-                                    <th>التاريخ</th>
-                                    <th>الخدمة المقدمة</th>
-                                    <th>المدى</th>
-                                    <th>الأطنان</th>
-                                </tr>
-                            </thead>
-                            <tbody id="resultsBody">
-                                <!-- سيتم ملء النتائج هنا -->
-                            </tbody>
-                        </table>
-                    `;
-                    break;
-                    
-                case 'both':
-                    tableHTML = `
-                        <table class="results-table">
-                            <thead>
-                                <tr>
-                                    <th>التاريخ</th>
-                                    <th>الحدث</th>
-                                    <th>التصحيح</th>
-                                    <th>الخدمة المقدمة</th>
-                                    <th>المدى</th>
-                                    <th>الأطنان</th>
-                                    <th>تم الخدمة بواسطة</th>
-                                </tr>
-                            </thead>
-                            <tbody id="resultsBody">
-                                <!-- سيتم ملء النتائج هنا -->
-                            </tbody>
-                        </table>
-                    `;
-                    break;
-            }
-            
-            resultsContainer.innerHTML = tableHTML;
+    # بيانات وهمية للعرض
+    if search_type == "الأحداث فقط":
+        data = {
+            "التاريخ": ["2024-01-15", "2024-01-10"],
+            "الحدث": ["صيانة دورية", "فحص شامل"],
+            "التصحيح": ["تم إصلاح العطل", "لا يوجد أخطاء"],
+            "تم الخدمة بواسطة": ["أحمد محمد", "محمد علي"],
+            "الأطنان": ["50 طن", "30 طن"]
         }
-
-        // تغيير الجدول عند تغيير نوع البحث
-        document.querySelectorAll('input[name="searchType"]').forEach(radio => {
-            radio.addEventListener('change', function() {
-                updateResultsTable(this.value);
-            });
-        });
-
-        // معالجة نموذج البحث
-        document.getElementById('advancedSearchForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const formData = {
-                technicianName: document.getElementById('technicianName').value,
-                machineNumber: document.getElementById('machineNumber').value,
-                searchType: document.querySelector('input[name="searchType"]:checked').value,
-                exactMatch: document.getElementById('exactMatch').checked,
-                startDate: document.getElementById('startDate').value,
-                endDate: document.getElementById('endDate').value,
-                resultsPerPage: document.getElementById('resultsPerPage').value
-            };
-            
-            // هنا تضمن استدعاء API البحث الخاص بك
-            console.log('بيانات البحث:', formData);
-            
-            // مثال: عرض بيانات وهمية
-            const mockData = {
-                events: [
-                    ['2024-01-15', 'صيانة دورية', 'تم إصلاح العطل', 'أحمد محمد', '50 طن'],
-                    ['2024-01-10', 'فحص شامل', 'لا يوجد أخطاء', 'محمد علي', '30 طن']
-                ],
-                services: [
-                    ['2024-01-14', 'تنظيف وتشحيم', '100-150 ساعة', '45 طن'],
-                    ['2024-01-08', 'تبديل فلاتر', '50-100 ساعة', '60 طن']
-                ],
-                both: [
-                    ['2024-01-15', 'صيانة دورية', 'تم إصلاح العطل', 'تنظيف كامل', '100-150', '50 طن', 'أحمد محمد'],
-                    ['2024-01-10', 'فحص شامل', 'لا يوجد أخطاء', 'تشحيم', '50-100', '30 طن', 'محمد علي']
-                ]
-            };
-            
-            // تحديث الجدول بالبيانات الوهمية
-            updateTableWithData(formData.searchType, mockData[formData.searchType]);
-        });
-
-        function updateTableWithData(searchType, data) {
-            updateResultsTable(searchType);
-            
-            const tbody = document.getElementById('resultsBody');
-            tbody.innerHTML = '';
-            
-            data.forEach(row => {
-                const tr = document.createElement('tr');
-                row.forEach(cell => {
-                    const td = document.createElement('td');
-                    td.textContent = cell;
-                    tr.appendChild(td);
-                });
-                tbody.appendChild(tr);
-            });
+    elif search_type == "الخدمات فقط":
+        data = {
+            "التاريخ": ["2024-01-14", "2024-01-08"],
+            "الخدمة المقدمة": ["تنظيف وتشحيم", "تبديل فلاتر"],
+            "المدى": ["100-150 ساعة", "50-100 ساعة"],
+            "الأطنان": ["45 طن", "60 طن"]
         }
+    else:  # الكل معًا
+        data = {
+            "التاريخ": ["2024-01-15", "2024-01-10"],
+            "الحدث": ["صيانة دورية", "فحص شامل"],
+            "التصحيح": ["تم إصلاح العطل", "لا يوجد أخطاء"],
+            "الخدمة المقدمة": ["تنظيف كامل", "تشحيم"],
+            "المدى": ["100-150", "50-100"],
+            "الأطنان": ["50 طن", "30 طن"],
+            "تم الخدمة بواسطة": ["أحمد محمد", "محمد علي"]
+        }
+    
+    # تحويل البيانات إلى DataFrame وعرضها
+    df = pd.DataFrame(data)
+    st.dataframe(df, use_container_width=True)
+    
+    # عرض معلومات البحث
+    with st.expander("معلومات البحث"):
+        st.write(f"**اسم الفني:** {technician_name}")
+        st.write(f"**رقم الماكينة:** {machine_number}")
+        st.write(f"**نوع البحث:** {search_type}")
+        st.write(f"**عدد النتائج:** {results_per_page}")
 
-        // تهيئة الجدول الافتراضي
-        document.addEventListener('DOMContentLoaded', function() {
-            updateResultsTable('events');
-        });
-    </script>
-</body>
-</html>
-'''
-    return render_template_string(html)
-
-if __name__ == '__main__':
-    app.run(debug=True)
+# 🎨 تنسيق إضافي
+st.markdown("---")
+st.caption("© نظام البحث المتقدم - جميع الحقوق محفوظة")
 # -------------------------------
 # 🖥 دالة إضافة إيفينت جديد
 # -------------------------------
