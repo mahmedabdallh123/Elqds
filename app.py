@@ -21,7 +21,7 @@ except Exception:
 # ===============================
 APP_CONFIG = {
     # إعدادات التطبيق العامة
-    "APP_TITLE": "CMMS - Elqds",
+    "APP_TITLE": "CMMS - bel",
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
