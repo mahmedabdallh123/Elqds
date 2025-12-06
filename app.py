@@ -684,6 +684,21 @@ def check_events_and_corrections(all_sheets):
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
     
+    # تهيئة session state إذا لزم الأمر
+    if "search_params" not in st.session_state:
+        st.session_state.search_params = {
+            "card_numbers": "",
+            "date_range": "",
+            "tech_names": "",
+            "search_text": "",
+            "exact_match": False,
+            "include_empty": True,
+            "sort_by": "رقم الماكينة"
+        }
+    
+    if "search_triggered" not in st.session_state:
+        st.session_state.search_triggered = False
+    
     # قسم البحث - واجهة احترافية
     with st.container():
         st.markdown("### 🔍 بحث متعدد المعايير")
@@ -698,29 +713,34 @@ def check_events_and_corrections(all_sheets):
                 st.caption("أدخل أرقام الماكينات (مفصولة بفواصل أو نطاقات)")
                 card_numbers = st.text_input(
                     "مثال: 1,3,5 أو 1-5 أو 2,4,7-10",
-                    key="search_cards",
+                    value=st.session_state.search_params.get("card_numbers", ""),
+                    key="input_cards",
                     placeholder="اتركه فارغاً للبحث في كل الماكينات"
                 )
                 
-                # خيارات سريعة لأرقام الماكينات
+                # أزرار سريعة لأرقام الماكينات
                 st.caption("أو اختر من:")
                 quick_cards_col1, quick_cards_col2, quick_cards_col3 = st.columns(3)
                 with quick_cards_col1:
                     if st.button("🔟 أول 10 ماكينات", key="quick_10"):
-                        st.session_state.search_cards = "1-10"
+                        st.session_state.search_params["card_numbers"] = "1-10"
+                        st.rerun()
                 with quick_cards_col2:
                     if st.button("🔟 ماكينات 11-20", key="quick_20"):
-                        st.session_state.search_cards = "11-20"
+                        st.session_state.search_params["card_numbers"] = "11-20"
+                        st.rerun()
                 with quick_cards_col3:
                     if st.button("🗑 مسح", key="clear_cards"):
-                        st.session_state.search_cards = ""
+                        st.session_state.search_params["card_numbers"] = ""
+                        st.rerun()
             
             # قسم التواريخ
             with st.expander("📅 **التواريخ**", expanded=True):
                 st.caption("ابحث بالتاريخ (سنة، شهر/سنة)")
                 date_input = st.text_input(
                     "مثال: 2024 أو 1/2024 أو 2024,2025",
-                    key="search_date",
+                    value=st.session_state.search_params.get("date_range", ""),
+                    key="input_date",
                     placeholder="اتركه فارغاً للبحث في كل التواريخ"
                 )
                 
@@ -732,7 +752,12 @@ def check_events_and_corrections(all_sheets):
                 for i, month in enumerate(months):
                     with month_cols[i % 4]:
                         if st.button(f"{i+1}. {month}", key=f"month_{i+1}"):
-                            st.session_state.search_date = f"{i+1}/"
+                            current_date = st.session_state.search_params.get("date_range", "")
+                            if current_date:
+                                st.session_state.search_params["date_range"] = f"{current_date},{i+1}/"
+                            else:
+                                st.session_state.search_params["date_range"] = f"{i+1}/"
+                            st.rerun()
         
         with col2:
             # قسم فنيي الخدمة
@@ -740,7 +765,8 @@ def check_events_and_corrections(all_sheets):
                 st.caption("ابحث بأسماء فنيي الخدمة")
                 tech_names = st.text_input(
                     "مثال: أحمد, محمد, علي",
-                    key="search_techs",
+                    value=st.session_state.search_params.get("tech_names", ""),
+                    key="input_techs",
                     placeholder="اتركه فارغاً للبحث في كل الفنيين"
                 )
                 
@@ -748,11 +774,20 @@ def check_events_and_corrections(all_sheets):
                 available_techs = extract_available_techs(all_sheets)
                 if available_techs:
                     st.caption(f"📋 فنيون متاحون ({len(available_techs)}):")
+                    
+                    # الحصول على الفنيين المحددين حالياً
+                    current_techs = []
+                    if st.session_state.search_params.get("tech_names"):
+                        current_techs = [t.strip() for t in st.session_state.search_params["tech_names"].split(',') if t.strip()]
+                    
                     selected_techs = st.multiselect(
                         "اختر فنيين:",
                         options=available_techs,
-                        key="select_techs"
+                        default=current_techs,
+                        key="select_techs",
+                        label_visibility="collapsed"
                     )
+                    
                     if selected_techs:
                         tech_names = ", ".join(selected_techs)
             
@@ -761,7 +796,8 @@ def check_events_and_corrections(all_sheets):
                 st.caption("ابحث في وصف الحدث أو التصحيح")
                 search_text = st.text_input(
                     "مثال: صيانة, إصلاح, تغيير",
-                    key="search_text",
+                    value=st.session_state.search_params.get("search_text", ""),
+                    key="input_text",
                     placeholder="اتركه فارغاً للبحث في كل النصوص"
                 )
                 
@@ -771,11 +807,12 @@ def check_events_and_corrections(all_sheets):
                 for i, word in enumerate(common_words):
                     with word_cols[i % 4]:
                         if st.button(word, key=f"word_{word}"):
-                            current_text = st.session_state.get("search_text", "")
+                            current_text = st.session_state.search_params.get("search_text", "")
                             if current_text:
-                                st.session_state.search_text = f"{current_text},{word}"
+                                st.session_state.search_params["search_text"] = f"{current_text},{word}"
                             else:
-                                st.session_state.search_text = word
+                                st.session_state.search_params["search_text"] = word
+                            st.rerun()
         
         # قسم خيارات البحث المتقدمة
         with st.expander("⚙ **خيارات متقدمة**", expanded=False):
@@ -784,21 +821,25 @@ def check_events_and_corrections(all_sheets):
                 search_mode = st.radio(
                     "🔍 طريقة البحث:",
                     ["بحث جزئي", "مطابقة كاملة"],
-                    key="search_mode",
+                    index=0 if not st.session_state.search_params.get("exact_match") else 1,
+                    key="radio_search_mode",
                     help="بحث جزئي: يبحث عن النص في أي مكان. مطابقة كاملة: يبحث عن النص مطابق تماماً"
                 )
             with col_adv2:
                 include_empty = st.checkbox(
                     "🔍 تضمين الحقول الفارغة",
-                    value=True,
-                    key="include_empty",
+                    value=st.session_state.search_params.get("include_empty", True),
+                    key="checkbox_include_empty",
                     help="تضمين النتائج التي تحتوي على حقول فارغة"
                 )
             with col_adv3:
                 sort_by = st.selectbox(
                     "📊 ترتيب النتائج:",
                     ["رقم الماكينة", "التاريخ", "فني الخدمة"],
-                    key="sort_by"
+                    index=["رقم الماكينة", "التاريخ", "فني الخدمة"].index(
+                        st.session_state.search_params.get("sort_by", "رقم الماكينة")
+                    ),
+                    key="select_sort_by"
                 )
         
         # زر البحث الرئيسي
@@ -813,30 +854,54 @@ def check_events_and_corrections(all_sheets):
             )
         with col_btn2:
             if st.button("🗑 **مسح الحقول**", use_container_width=True, key="clear_fields"):
-                for key in ["search_cards", "search_date", "search_techs", "search_text"]:
-                    if key in st.session_state:
-                        st.session_state[key] = ""
+                st.session_state.search_params = {
+                    "card_numbers": "",
+                    "date_range": "",
+                    "tech_names": "",
+                    "search_text": "",
+                    "exact_match": False,
+                    "include_empty": True,
+                    "sort_by": "رقم الماكينة"
+                }
+                st.session_state.search_triggered = False
                 st.rerun()
         with col_btn3:
             if st.button("📊 **عرض كل البيانات**", use_container_width=True, key="show_all"):
-                st.session_state.search_all = True
-                st.session_state.search_cards = ""
-                st.session_state.search_date = ""
-                st.session_state.search_techs = ""
-                st.session_state.search_text = ""
+                st.session_state.search_params = {
+                    "card_numbers": "",
+                    "date_range": "",
+                    "tech_names": "",
+                    "search_text": "",
+                    "exact_match": False,
+                    "include_empty": True,
+                    "sort_by": "رقم الماكينة"
+                }
+                st.session_state.search_triggered = True
+                st.rerun()
+    
+    # تحديث معايير البحث عند تغيير الحقول
+    if card_numbers != st.session_state.search_params.get("card_numbers", ""):
+        st.session_state.search_params["card_numbers"] = card_numbers
+    
+    if date_input != st.session_state.search_params.get("date_range", ""):
+        st.session_state.search_params["date_range"] = date_input
+    
+    if tech_names != st.session_state.search_params.get("tech_names", ""):
+        st.session_state.search_params["tech_names"] = tech_names
+    
+    if search_text != st.session_state.search_params.get("search_text", ""):
+        st.session_state.search_params["search_text"] = search_text
+    
+    st.session_state.search_params["exact_match"] = (search_mode == "مطابقة كاملة")
+    st.session_state.search_params["include_empty"] = include_empty
+    st.session_state.search_params["sort_by"] = sort_by
     
     # معالجة البحث
-    if search_clicked or st.session_state.get("search_all", False):
+    if search_clicked or st.session_state.search_triggered:
+        st.session_state.search_triggered = True
+        
         # جمع معايير البحث
-        search_params = {
-            "card_numbers": st.session_state.get("search_cards", "").strip(),
-            "date_range": st.session_state.get("search_date", "").strip(),
-            "tech_names": st.session_state.get("search_techs", "").strip(),
-            "search_text": st.session_state.get("search_text", "").strip(),
-            "exact_match": (search_mode == "مطابقة كاملة"),
-            "include_empty": include_empty,
-            "sort_by": sort_by
-        }
+        search_params = st.session_state.search_params.copy()
         
         # عرض معايير البحث
         show_search_params(search_params)
@@ -935,7 +1000,8 @@ def show_advanced_search_results(search_params, all_sheets):
             continue
         
         processed_machines += 1
-        progress_bar.progress(processed_machines / total_machines)
+        if total_machines > 0:
+            progress_bar.progress(processed_machines / total_machines)
         status_text.text(f"🔍 جاري معالجة الماكينة {card_num}...")
         
         df = all_sheets[sheet_name].copy()
@@ -944,7 +1010,7 @@ def show_advanced_search_results(search_params, all_sheets):
         for _, row in df.iterrows():
             # تطبيق معايير البحث
             if not check_row_criteria(row, df, card_num, target_techs, target_dates, 
-                                     search_terms, search_params, all_sheets):
+                                     search_terms, search_params):
                 continue
             
             # استخراج البيانات
@@ -964,7 +1030,7 @@ def show_advanced_search_results(search_params, all_sheets):
         st.info("💡 حاول تعديل معايير البحث أو استخدام مصطلحات أوسع")
 
 def check_row_criteria(row, df, card_num, target_techs, target_dates, 
-                      search_terms, search_params, all_sheets):
+                      search_terms, search_params):
     """التحقق من مطابقة الصف لمعايير البحث"""
     
     # 1. التحقق من فني الخدمة
