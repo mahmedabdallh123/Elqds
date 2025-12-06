@@ -724,10 +724,12 @@ def check_events_and_corrections(all_sheets):
                 with quick_cards_col1:
                     if st.button("🔟 أول 10 ماكينات", key="quick_10"):
                         st.session_state.search_params["card_numbers"] = "1-10"
+                        st.session_state.search_triggered = True
                         st.rerun()
                 with quick_cards_col2:
                     if st.button("🔟 ماكينات 11-20", key="quick_20"):
                         st.session_state.search_params["card_numbers"] = "11-20"
+                        st.session_state.search_triggered = True
                         st.rerun()
                 with quick_cards_col3:
                     if st.button("🗑 مسح", key="clear_cards"):
@@ -775,19 +777,23 @@ def check_events_and_corrections(all_sheets):
                 if available_techs:
                     st.caption(f"📋 فنيون متاحون ({len(available_techs)}):")
                     
-                    # الحصول على الفنيين المحددين حالياً
+                    # الحصول على الفنيين المحددين حالياً بشكل آمن
+                    current_techs_input = st.session_state.search_params.get("tech_names", "")
                     current_techs = []
-                    if st.session_state.search_params.get("tech_names"):
-                        current_techs = [t.strip() for t in st.session_state.search_params["tech_names"].split(',') if t.strip()]
+                    if current_techs_input:
+                        # تنظيف القائمة من القيم الفارغة
+                        current_techs = [t.strip() for t in current_techs_input.split(',') 
+                                        if t.strip() and t.strip() in available_techs]
                     
+                    # استخدام multiselect بدون default أولاً
                     selected_techs = st.multiselect(
                         "اختر فنيين:",
                         options=available_techs,
-                        default=current_techs,
                         key="select_techs",
                         label_visibility="collapsed"
                     )
                     
+                    # تحديث الحقل النصي بناءً على الاختيار
                     if selected_techs:
                         tech_names = ", ".join(selected_techs)
             
@@ -895,6 +901,12 @@ def check_events_and_corrections(all_sheets):
     st.session_state.search_params["exact_match"] = (search_mode == "مطابقة كاملة")
     st.session_state.search_params["include_empty"] = include_empty
     st.session_state.search_params["sort_by"] = sort_by
+    
+    # تحديث tech_names من multiselect إذا تم الاختيار
+    if "select_techs" in st.session_state and st.session_state.select_techs:
+        selected_techs_list = st.session_state.select_techs
+        if selected_techs_list:
+            st.session_state.search_params["tech_names"] = ", ".join(selected_techs_list)
     
     # معالجة البحث
     if search_clicked or st.session_state.search_triggered:
