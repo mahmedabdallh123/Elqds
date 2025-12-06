@@ -781,194 +781,148 @@ def check_events_and_corrections(card_num, all_sheets):
 # -------------------------------
 # 🖥 دالة البحث المتقدم مع التخصيص الكامل
 # -------------------------------
-def advanced_search(all_sheets):
-    """بحث متقدم مع تخصيص كامل"""
-    st.header("🔍 البحث المتقدم")
+def advanced_search_events_only(all_sheets):
+    """بحث متقدم في الأحداث والكوريكشن فقط"""
+    st.header("🔍 البحث في الأحداث والتصحيحات")
     
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
     
-    # خيارات البحث الرئيسية
+    # 📋 خيارات البحث الأساسية
     st.subheader("🔎 معايير البحث")
     
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        search_type = st.selectbox(
-            "نوع البحث:",
-            ["الكل", "الخدمات", "الأحداث", "الخدمات والأحداث"],
-            key="adv_search_type"
+        machine_number = st.text_input(
+            "رقم الماكينة (اختياري):",
+            placeholder="مثال: 1، 2، 3...",
+            key="events_search_card"
         )
     
     with col2:
-        search_card = st.number_input(
-            "رقم الماكينة (اختياري):", 
-            min_value=1, 
-            step=1, 
-            value=None,
-            key="adv_search_card"
-        )
-    
-    with col3:
-        search_text = st.text_input(
-            "كلمة البحث (نص):",
-            "",
-            key="adv_search_text",
-            help="ابحث في أي نص (سير، عيار، كوريكشن، إلخ)"
-        )
-    
-    with col4:
         search_technician = st.text_input(
             "فني الخدمة:",
-            "",
-            key="adv_search_technician",
+            placeholder="اسم الفني...",
+            key="events_search_technician",
             help="ابحث باسم فني الخدمة"
         )
     
-    # خيارات تخصيص إضافية
-    st.subheader("⚙️ خيارات التخصيص")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
+    with col3:
         search_date = st.text_input(
             "التاريخ:",
-            "",
-            key="adv_search_date",
-            help="مثال: 2024, 2025, 1\\2025"
+            placeholder="YYYY أو YYYY-MM أو YYYY-MM-DD",
+            key="events_search_date",
+            help="مثال: 2024، 2024-01، 2024-01-15"
         )
+    
+    with col4:
+        search_text = st.text_input(
+            "بحث نصي في الأحداث:",
+            placeholder="نص في الحدث أو التصحيح...",
+            key="events_search_text"
+        )
+    
+    # ⚙️ خيارات البحث المتقدمة
+    st.subheader("⚙️ خيارات البحث")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        exact_match = st.checkbox("بحث مطابق للنص", key="events_exact_match")
+        show_empty = st.checkbox("عرض الأحداث الفارغة", key="events_show_empty")
     
     with col2:
-        specific_service = st.selectbox(
-            "خدمة محددة:",
-            ["الكل", "سير", "عيار", "كوريكشن", "كورسينج", "فيلينج", "كليننج", "بوليش", "اكستراكت"],
-            key="adv_specific_service"
+        results_per_page = st.selectbox(
+            "عدد النتائج في الصفحة:",
+            [10, 25, 50, 100],
+            index=0,
+            key="events_results_per_page"
         )
     
-    with col3:
-        exact_match = st.checkbox("بحث مطابق للنص", key="adv_exact_match")
-        show_empty = st.checkbox("عرض البيانات الفارغة", key="adv_show_empty")
+    # 🔘 أزرار التحكم
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
     
-    if st.button("🔍 بدء البحث", key="adv_search_button", type="primary"):
-        all_results = []
-        
-        # تحديد الشيتات للبحث
-        if search_card:
-            # البحث في ماكينة محددة
-            services_sheet = f"Card{search_card}_Services"
-            events_sheet = f"Card{search_card}_Events"
-            old_sheet = f"Card{search_card}"
+    with col2:
+        search_button = st.button("🔍 بحث في الأحداث", type="primary", use_container_width=True)
+        clear_button = st.button("🗑️ مسح الكل", use_container_width=True)
+    
+    # 🔍 عملية البحث
+    if search_button:
+        with st.spinner("جارٍ البحث في الأحداث..."):
+            all_results = []
             
+            # تحديد الشيتات للبحث (الأحداث فقط)
             sheets_to_search = []
-            if services_sheet in all_sheets:
-                sheets_to_search.append((services_sheet, "services"))
-            if events_sheet in all_sheets:
-                sheets_to_search.append((events_sheet, "events"))
-            elif old_sheet in all_sheets:
-                sheets_to_search.append((old_sheet, "mixed"))
-        else:
-            # البحث في جميع الشيتات
-            sheets_to_search = []
-            for sheet_name in all_sheets.keys():
-                if sheet_name == "ServicePlan":
-                    continue
-                if sheet_name.endswith("_Services"):
-                    sheets_to_search.append((sheet_name, "services"))
-                elif sheet_name.endswith("_Events"):
-                    sheets_to_search.append((sheet_name, "events"))
-                elif sheet_name.startswith("Card"):
-                    sheets_to_search.append((sheet_name, "mixed"))
-        
-        for sheet_name, sheet_type in sheets_to_search:
-            df = all_sheets[sheet_name]
-            card_num = sheet_name.replace("Card", "").replace("_Services", "").replace("_Events", "")
             
-            # البحث حسب النوع
-            if search_type == "الخدمات" and sheet_type not in ["services", "mixed"]:
-                continue
-            elif search_type == "الأحداث" and sheet_type not in ["events", "mixed"]:
-                continue
+            if machine_number:
+                # البحث في ماكينة محددة
+                events_sheet = f"Card{machine_number}_Events"
+                old_sheet = f"Card{machine_number}"
+                
+                if events_sheet in all_sheets:
+                    sheets_to_search.append((events_sheet, "events"))
+                elif old_sheet in all_sheets:
+                    sheets_to_search.append((old_sheet, "mixed"))
+            else:
+                # البحث في جميع شيتات الأحداث
+                for sheet_name in all_sheets.keys():
+                    if sheet_name.endswith("_Events"):
+                        sheets_to_search.append((sheet_name, "events"))
+                    elif sheet_name.startswith("Card") and not sheet_name.endswith("_Services"):
+                        # التحقق إذا كان يحتوي على أحداث
+                        df = all_sheets[sheet_name]
+                        if has_events_data(df.iloc[0] if len(df) > 0 else pd.Series()):
+                            sheets_to_search.append((sheet_name, "mixed"))
             
-            # البحث في كل صف
-            for idx, row in df.iterrows():
-                # تطبيق شروط البحث
-                if not matches_search_criteria(row, search_text, search_technician, 
-                                              search_date, specific_service, exact_match, 
-                                              show_empty, sheet_type):
-                    continue
+            for sheet_name, sheet_type in sheets_to_search:
+                df = all_sheets[sheet_name]
+                card_num = sheet_name.replace("Card", "").replace("_Events", "").replace("_Services", "")
                 
-                # استخراج النتائج حسب نوع الشيت
-                if sheet_type == "services" or (sheet_type == "mixed" and has_services_data(row)):
-                    service_results = extract_service_results(row, card_num, specific_service)
-                    if service_results:
-                        all_results.extend(service_results)
-                
-                if sheet_type == "events" or (sheet_type == "mixed" and has_events_data(row)):
-                    event_results = extract_event_results(row, card_num)
+                # البحث في كل صف
+                for idx, row in df.iterrows():
+                    # التحقق من شروط البحث
+                    if not check_event_search_criteria(row, search_technician, search_text, 
+                                                      search_date, exact_match, show_empty):
+                        continue
+                    
+                    # استخراج نتائج الأحداث
+                    event_results = extract_event_results_simple(row, card_num)
                     if event_results:
                         all_results.extend(event_results)
-        
-        if all_results:
-            results_df = pd.DataFrame(all_results)
             
-            # إزالة التكرارات
-            results_df = results_df.drop_duplicates()
-            
-            # ترتيب النتائج
-            if "Date" in results_df.columns:
-                results_df = results_df.sort_values(by=["Card", "Date"], ascending=[True, False])
-            
-            st.markdown("### 📋 نتائج البحث")
-            st.dataframe(results_df, use_container_width=True, height=400)
-            
-            # إحصائيات البحث
-            st.markdown("### 📊 إحصائيات البحث")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("عدد النتائج", len(results_df))
-            
-            with col2:
-                if "Card" in results_df.columns:
-                    unique_cards = results_df["Card"].nunique()
-                    st.metric("عدد الماكينات", unique_cards)
+            # عرض النتائج
+            if all_results:
+                # تحويل إلى DataFrame
+                results_df = pd.DataFrame(all_results)
+                
+                # إزالة التكرارات
+                results_df = results_df.drop_duplicates()
+                
+                # ترتيب النتائج حسب التاريخ
+                if "Date" in results_df.columns:
+                    results_df = results_df.sort_values(by=["Date", "Card"], ascending=[False, True])
                 else:
-                    st.metric("عدد الماكينات", 0)
-            
-            with col3:
-                if "Servised by" in results_df.columns:
-                    unique_techs = results_df["Servised by"][results_df["Servised by"] != "-"].nunique()
-                    st.metric("عدد الفنيين", unique_techs)
-                else:
-                    st.metric("عدد الفنيين", 0)
-            
-            with col4:
-                if "Type" in results_df.columns:
-                    service_count = len(results_df[results_df["Type"] == "Service"])
-                    event_count = len(results_df[results_df["Type"] == "Event"])
-                    st.metric("الخدمات / الأحداث", f"{service_count} / {event_count}")
-            
-            # تنزيل النتائج
-            buffer = io.BytesIO()
-            results_df.to_excel(buffer, index=False, engine="openpyxl")
-            st.download_button(
-                label="💾 حفظ نتائج البحث",
-                data=buffer.getvalue(),
-                file_name="Advanced_Search_Results.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.info("ℹ️ لم يتم العثور على نتائج مطابقة لمعايير البحث.")
+                    results_df = results_df.sort_values(by=["Card"])
+                
+                # عرض عدد النتائج
+                st.success(f"✅ تم العثور على {len(results_df)} حدث")
+                
+                # عرض الجدول مع الأعمدة المطلوبة
+                display_event_results_table(results_df, results_per_page)
+                
+                # عرض إحصائيات
+                show_event_statistics(results_df)
+                
+                # خيار التنزيل
+                download_event_results(results_df)
+            else:
+                st.info("ℹ️ لم يتم العثور على أحداث مطابقة لمعايير البحث.")
 
-def matches_search_criteria(row, search_text, search_technician, search_date, 
-                           specific_service, exact_match, show_empty, sheet_type):
-    """التحقق من تطابق الصف مع معايير البحث"""
-    # التحقق من النص
-    if search_text and not text_matches_row(row, search_text, exact_match):
-        return False
-    
+def check_event_search_criteria(row, search_technician, search_text, search_date, exact_match, show_empty):
+    """التحقق من شروط البحث للأحداث"""
     # التحقق من فني الخدمة
     if search_technician:
         tech_value = get_servised_by_value(row)
@@ -979,157 +933,210 @@ def matches_search_criteria(row, search_text, search_technician, search_date,
     if search_date:
         date_match = False
         for col in row.index:
-            if "date" in normalize_name(col) and pd.notna(row[col]):
-                if search_date.lower() in str(row[col]).lower():
-                    date_match = True
-                    break
+            col_lower = col.lower()
+            if "date" in col_lower or "تاريخ" in col_lower:
+                if pd.notna(row[col]):
+                    cell_value = str(row[col]).lower()
+                    if search_date.lower() in cell_value:
+                        date_match = True
+                        break
         if not date_match:
             return False
     
-    # التحقق من الخدمة المحددة
-    if specific_service != "الكل" and sheet_type in ["services", "mixed"]:
-        service_match = False
-        for col in row.index:
-            col_normalized = normalize_name(col)
-            if specific_service.lower() in col_normalized:
-                val = str(row[col]).strip()
-                if val and val.lower() not in ["nan", "none", "", "0"]:
-                    service_match = True
-                    break
-        if not service_match:
+    # التحقق من نص البحث
+    if search_text:
+        if not text_matches_event(row, search_text, exact_match):
             return False
     
     # التحقق من البيانات الفارغة
-    if not show_empty and is_empty_row(row, sheet_type):
-        return False
-    
-    return True
-
-def text_matches_row(row, search_text, exact_match):
-    """التحقق إذا كان النص موجود في أي عمود"""
-    for col in row.index:
-        cell_value = str(row[col]).strip()
-        if not cell_value or cell_value.lower() in ["nan", "none", ""]:
-            continue
-        
-        if exact_match:
-            if search_text.lower() == cell_value.lower():
-                return True
-        else:
-            if search_text.lower() in cell_value.lower():
-                return True
-    
-    return False
-
-def is_empty_row(row, sheet_type):
-    """التحقق إذا كان الصف فارغ"""
-    for col in row.index:
-        val = str(row[col]).strip()
-        if val and val.lower() not in ["nan", "none", ""]:
+    if not show_empty:
+        if is_empty_event_row(row):
             return False
+    
     return True
 
-def has_services_data(row):
-    """التحقق إذا كان الصف يحتوي على بيانات خدمات"""
-    return pd.notna(row.get("Min_Tones")) and pd.notna(row.get("Max_Tones"))
-
-def has_events_data(row):
-    """التحقق إذا كان الصف يحتوي على بيانات أحداث"""
-    event_columns = [col for col in row.index if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
-    correction_columns = [col for col in row.index if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
+def text_matches_event(row, search_text, exact_match):
+    """التحقق إذا كان النص موجود في الأحداث أو التصحيحات"""
+    event_cols = [col for col in row.index if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
+    correction_cols = [col for col in row.index if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
     
-    for col in event_columns + correction_columns:
-        if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
-            return True
+    search_text_lower = search_text.lower()
+    
+    for col in event_cols + correction_cols:
+        if col in row and pd.notna(row[col]):
+            cell_value = str(row[col]).strip().lower()
+            
+            if exact_match:
+                if cell_value == search_text_lower:
+                    return True
+            else:
+                if search_text_lower in cell_value:
+                    return True
     
     return False
 
-def extract_service_results(row, card_num, specific_service):
-    """استخراج نتائج الخدمات"""
+def is_empty_event_row(row):
+    """التحقق إذا كان صف الأحداث فارغ"""
+    event_cols = [col for col in row.index if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
+    correction_cols = [col for col in row.index if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
+    
+    for col in event_cols + correction_cols:
+        if col in row:
+            val = str(row[col]).strip()
+            if val and val.lower() not in ["", "-", "nan", "none"]:
+                return False
+    
+    return True
+
+def extract_event_results_simple(row, card_num):
+    """استخراج نتائج الأحداث المبسطة"""
     results = []
     
-    metadata_columns = {
-        "card", "Tones", "Min_Tones", "Max_Tones", "Date", 
-        "Other", "Servised by", "Event", "Correction",
-        "Card", "TONES", "MIN_TONES", "MAX_TONES", "DATE",
-        "OTHER", "EVENT", "CORRECTION", "SERVISED BY",
-        "servised by", "Servised By", 
-        "Serviced by", "Service by", "Serviced By", "Service By",
-        "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة"
-    }
+    # استخراج بيانات الأحداث
+    event_value = get_event_value(row)
+    correction_value = get_correction_value(row)
+    date_value = get_date_value(row)
+    servised_by_value = get_servised_by_value(row) or "-"
+    tones_value = get_tones_value(row) or "-"
     
-    all_columns = set(row.index)
-    service_columns = all_columns - metadata_columns
-    
-    for col in service_columns:
-        val = str(row.get(col, "")).strip()
-        
-        # تخطي الخلايا الفارغة
-        if not val or val.lower() in ["nan", "none", "", "null", "0"]:
-            continue
-        
-        # فلترة حسب الخدمة المحددة
-        if specific_service != "الكل":
-            col_normalized = normalize_name(col)
-            if specific_service.lower() not in col_normalized:
-                continue
-        
-        servised_by_value = get_servised_by_value(row)
-        
+    # فقط إذا كان هناك حدث أو تصحيح
+    if event_value or correction_value:
         results.append({
-            "Card": card_num,
-            "Service Type": col,
-            "Service Status": val,
-            "Servised by": servised_by_value,
-            "Date": row.get("Date", "-"),
-            "Tones": row.get("Tones", "-"),
-            "Min_Tones": row.get("Min_Tones", "-"),
-            "Max_Tones": row.get("Max_Tones", "-"),
-            "Type": "Service"
+            "رقم الماكينة": card_num,
+            "التاريخ": date_value or "-",
+            "الحدث": event_value or "-",
+            "التصحيح": correction_value or "-",
+            "الأطنان": tones_value,
+            "تم الخدمة بواسطة": servised_by_value
         })
     
     return results
 
-def extract_event_results(row, card_num):
-    """استخراج نتائج الأحداث"""
-    results = []
+def get_event_value(row):
+    """الحصول على قيمة الحدث"""
+    event_cols = ["Event", "EVENT", "الحدث", "Events", "الأحداث"]
+    for col in event_cols:
+        if col in row and pd.notna(row[col]):
+            val = str(row[col]).strip()
+            if val and val.lower() not in ["", "-", "nan"]:
+                return val
+    return None
+
+def get_correction_value(row):
+    """الحصول على قيمة التصحيح"""
+    correction_cols = ["Correction", "CORRECTION", "تصحيح", "تصويب", "التصحيح"]
+    for col in correction_cols:
+        if col in row and pd.notna(row[col]):
+            val = str(row[col]).strip()
+            if val and val.lower() not in ["", "-", "nan"]:
+                return val
+    return None
+
+def get_date_value(row):
+    """الحصول على قيمة التاريخ"""
+    date_cols = ["Date", "DATE", "التاريخ", "تاريخ"]
+    for col in date_cols:
+        if col in row and pd.notna(row[col]):
+            val = str(row[col]).strip()
+            if val and val.lower() not in ["", "-", "nan"]:
+                return val
+    return None
+
+def get_tones_value(row):
+    """الحصول على قيمة الأطنان"""
+    tones_cols = ["Tones", "TONES", "الأطنان", "أطنان", "Tons"]
+    for col in tones_cols:
+        if col in row and pd.notna(row[col]):
+            val = str(row[col]).strip()
+            if val and val.lower() not in ["", "-", "nan", "0"]:
+                return val
+    return None
+
+def get_servised_by_value(row):
+    """الحصول على قيمة فني الخدمة"""
+    tech_cols = [
+        "Servised by", "servised by", "Servised By",
+        "Serviced by", "Service by", "Serviced By", "Service By",
+        "تم الخدمة بواسطة", "فني الخدمة", "الفني",
+        "TECHNICIAN", "Technician", "tech"
+    ]
     
-    event_columns = [col for col in row.index if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
-    correction_columns = [col for col in row.index if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
+    for col in tech_cols:
+        if col in row and pd.notna(row[col]):
+            val = str(row[col]).strip()
+            if val and val.lower() not in ["", "-", "nan"]:
+                return val
+    return None
+
+def normalize_name(name):
+    """توحيد تنسيق اسم العمود"""
+    if isinstance(name, str):
+        return name.lower().strip()
+    return ""
+
+def display_event_results_table(results_df, results_per_page):
+    """عرض نتائج الأحداث في جدول"""
+    st.subheader("📋 نتائج البحث في الأحداث")
     
-    has_event = any(pd.notna(row.get(col, "")) and str(row.get(col, "")).strip() != "" for col in event_columns)
-    has_correction = any(pd.notna(row.get(col, "")) and str(row.get(col, "")).strip() != "" for col in correction_columns)
+    # تحديد الأعمدة للعرض
+    display_columns = ["رقم الماكينة", "التاريخ", "الحدث", "التصحيح", "الأطنان", "تم الخدمة بواسطة"]
     
-    if not has_event and not has_correction:
-        return results
+    # عرض الجدول
+    st.dataframe(
+        results_df[display_columns] if all(col in results_df.columns for col in display_columns) else results_df,
+        use_container_width=True,
+        height=400
+    )
     
-    # استخراج أحداث متعددة
-    event_values = []
-    for col in event_columns:
-        if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
-            event_values.append(str(row[col]).strip())
+    # عرض الصفحات إذا كان هناك الكثير من النتائج
+    if len(results_df) > results_per_page:
+        total_pages = (len(results_df) + results_per_page - 1) // results_per_page
+        page_num = st.number_input("رقم الصفحة:", min_value=1, max_value=total_pages, value=1, key="events_page_num")
+        start_idx = (page_num - 1) * results_per_page
+        end_idx = min(page_num * results_per_page, len(results_df))
+        
+        st.write(f"عرض النتائج من {start_idx + 1} إلى {end_idx} من أصل {len(results_df)}")
+
+def show_event_statistics(results_df):
+    """عرض إحصائيات البحث في الأحداث"""
+    st.subheader("📊 إحصائيات البحث")
     
-    correction_values = []
-    for col in correction_columns:
-        if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
-            correction_values.append(str(row[col]).strip())
+    col1, col2, col3 = st.columns(3)
     
-    servised_by_value = get_servised_by_value(row)
+    with col1:
+        st.metric("عدد الأحداث", len(results_df))
     
-    event_text = "، ".join(event_values) if event_values else "-"
-    correction_text = "، ".join(correction_values) if correction_values else "-"
+    with col2:
+        if "رقم الماكينة" in results_df.columns:
+            unique_cards = results_df["رقم الماكينة"].nunique()
+            st.metric("عدد الماكينات", unique_cards)
+        else:
+            st.metric("عدد الماكينات", 0)
     
-    results.append({
-        "Card": card_num,
-        "Date": row.get("Date", "-"),
-        "Event": event_text,
-        "Correction": correction_text,
-        "Servised by": servised_by_value,
-        "Tones": row.get("Tones", "-"),
-        "Type": "Event"
-    })
+    with col3:
+        if "تم الخدمة بواسطة" in results_df.columns:
+            unique_techs = results_df["تم الخدمة بواسطة"][results_df["تم الخدمة بواسطة"] != "-"].nunique()
+            st.metric("عدد الفنيين", unique_techs)
+        else:
+            st.metric("عدد الفنيين", 0)
+
+def download_event_results(results_df):
+    """خيار تنزيل نتائج الأحداث"""
+    st.subheader("💾 حفظ النتائج")
     
-    return results
+    # تحويل DataFrame إلى Excel
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        results_df.to_excel(writer, index=False, sheet_name='نتائج_الأحداث')
+    
+    # زر التنزيل
+    st.download_button(
+        label="📥 تنزيل النتائج (Excel)",
+        data=buffer.getvalue(),
+        file_name="نتائج_البحث_في_الأحداث.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="events_download"
+    )
 
 # -------------------------------
 # 🖥 دالة إضافة إيفينت جديد
