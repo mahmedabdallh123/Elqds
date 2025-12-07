@@ -21,14 +21,14 @@ except Exception:
 # ===============================
 APP_CONFIG = {
     # إعدادات التطبيق العامة
-    "APP_TITLE": "CMMS - Elqds",
+    "APP_TITLE": "CMMS - bel",
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
     "REPO_NAME": "mahmedabdallh123/Elqds",
     "BRANCH": "main",
-    "FILE_PATH": "elquds2.xlsx",
-    "LOCAL_FILE": "elquds2.xlsx",
+    "FILE_PATH": "l3.xlsx",
+    "LOCAL_FILE": "l3.xlsx",
     
     # إعدادات الأمان
     "MAX_ACTIVE_USERS": 2,
