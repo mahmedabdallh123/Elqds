@@ -799,58 +799,105 @@ def show_service_statistics(service_stats, result_df):
         st.markdown("#### 📋 توزيع الخدمات")
         
         if service_stats["service_counts"]:
-            # إنشاء مخطط شريطي للنسب
-            import plotly.express as px
-            
-            plot_data = []
-            for service, needed_count in service_stats["service_counts"].items():
-                done_count = service_stats["service_done_counts"].get(service, 0)
-                completion_rate = (done_count / needed_count * 100) if needed_count > 0 else 0
+            # محاولة استخدام plotly إذا كان متاحاً
+            try:
+                import plotly.express as px
                 
-                plot_data.append({
-                    "الخدمة": service,
-                    "النوع": "مطلوبة",
-                    "العدد": needed_count
+                plot_data = []
+                for service, needed_count in service_stats["service_counts"].items():
+                    done_count = service_stats["service_done_counts"].get(service, 0)
+                    
+                    plot_data.append({
+                        "الخدمة": service,
+                        "النوع": "مطلوبة",
+                        "العدد": needed_count
+                    })
+                    plot_data.append({
+                        "الخدمة": service,
+                        "النوع": "منفذة",
+                        "العدد": done_count
+                    })
+                
+                plot_df = pd.DataFrame(plot_data)
+                
+                # عرض المخطط
+                fig = px.bar(
+                    plot_df, 
+                    x="الخدمة", 
+                    y="العدد", 
+                    color="النوع",
+                    barmode="group",
+                    title="توزيع الخدمات المطلوبة والمنفذة",
+                    color_discrete_map={
+                        "مطلوبة": "#FF6B6B",
+                        "منفذة": "#4ECDC4"
+                    }
+                )
+                fig.update_layout(
+                    xaxis_title="الخدمة",
+                    yaxis_title="العدد",
+                    showlegend=True,
+                    height=500
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # مخطط دائري للنسبة العامة
+                fig2 = px.pie(
+                    names=["✅ منفذة", "⏳ غير منفذة"],
+                    values=[service_stats["total_done_services"], 
+                           service_stats["total_needed_services"] - service_stats["total_done_services"]],
+                    title="نسبة الإنجاز العامة",
+                    color_discrete_sequence=["#4ECDC4", "#FF6B6B"]
+                )
+                fig2.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig2, use_container_width=True)
+                
+            except ImportError:
+                # استخدام streamlit native charts بدلاً من plotly
+                st.info("📊 عرض البيانات باستخدام الرسوم البيانية المضمنة في Streamlit")
+                
+                # عرض جدول بسيط للتوزيع
+                st.markdown("**📋 توزيع الخدمات:**")
+                
+                dist_data = []
+                for service, needed_count in service_stats["service_counts"].items():
+                    done_count = service_stats["service_done_counts"].get(service, 0)
+                    completion_rate = (done_count / needed_count * 100) if needed_count > 0 else 0
+                    
+                    dist_data.append({
+                        "الخدمة": service,
+                        "مطلوبة": needed_count,
+                        "منفذة": done_count,
+                        "نسبة": f"{completion_rate:.1f}%"
+                    })
+                
+                if dist_data:
+                    dist_df = pd.DataFrame(dist_data).sort_values("نسبة", ascending=False)
+                    st.dataframe(dist_df, use_container_width=True, height=300)
+                
+                # مخطط شريطي بسيط باستخدام streamlit
+                st.markdown("**📊 مخطط الخدمات المطلوبة مقابل المنفذة:**")
+                
+                # تحضير البيانات للرسم البياني
+                chart_data = pd.DataFrame({
+                    "الخدمة": list(service_stats["service_counts"].keys()),
+                    "مطلوبة": list(service_stats["service_counts"].values()),
+                    "منفذة": [service_stats["service_done_counts"].get(service, 0) 
+                              for service in service_stats["service_counts"].keys()]
                 })
-                plot_data.append({
-                    "الخدمة": service,
-                    "النوع": "منفذة",
-                    "العدد": done_count
-                })
-            
-            plot_df = pd.DataFrame(plot_data)
-            
-            # عرض المخطط
-            fig = px.bar(
-                plot_df, 
-                x="الخدمة", 
-                y="العدد", 
-                color="النوع",
-                barmode="group",
-                title="توزيع الخدمات المطلوبة والمنفذة",
-                color_discrete_map={
-                    "مطلوبة": "#FF6B6B",
-                    "منفذة": "#4ECDC4"
-                }
-            )
-            fig.update_layout(
-                xaxis_title="الخدمة",
-                yaxis_title="العدد",
-                showlegend=True,
-                height=500
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # مخطط دائري للنسبة العامة
-            fig2 = px.pie(
-                names=["✅ منفذة", "⏳ غير منفذة"],
-                values=[service_stats["total_done_services"], 
-                       service_stats["total_needed_services"] - service_stats["total_done_services"]],
-                title="نسبة الإنجاز العامة",
-                color_discrete_sequence=["#4ECDC4", "#FF6B6B"]
-            )
-            fig2.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig2, use_container_width=True)
+                
+                # أخذ أول 10 خدمات لعرضها بشكل أوضح
+                if len(chart_data) > 10:
+                    chart_data = chart_data.nlargest(10, "مطلوبة")
+                
+                st.bar_chart(
+                    chart_data.set_index("الخدمة"),
+                    height=400
+                )
+                
+                # عرض النسبة العامة كـ progress bar
+                st.markdown(f"**📈 نسبة الإنجاز العامة:** {completion_rate:.1f}%")
+                st.progress(completion_rate / 100)
         else:
             st.info("ℹ️ لا توجد بيانات كافية لعرض المخططات.")
     
@@ -877,44 +924,74 @@ def show_service_statistics(service_stats, result_df):
             slice_stats_df = pd.DataFrame(slice_stats_data)
             st.dataframe(slice_stats_df, use_container_width=True, height=400)
             
-            # مخطط خطي لنسب الإنجاز حسب الشريحة
-            import plotly.graph_objects as go
-            
-            # تحليل نطاقات الشرائح
-            slice_ranges = []
-            completion_rates = []
-            
-            for slice_key in sorted(slice_stats_data, key=lambda x: x["الشريحة"]):
-                slice_range = slice_key.split("-")
-                if len(slice_range) == 2:
-                    mid_point = (int(slice_range[0]) + int(slice_range[1])) / 2
-                    slice_ranges.append(mid_point)
+            # محاولة استخدام plotly للمخططات التفاعلية
+            try:
+                import plotly.graph_objects as go
+                
+                # تحليل نطاقات الشرائح
+                slice_ranges = []
+                completion_rates = []
+                
+                for slice_item in slice_stats_data:
+                    slice_key = slice_item["الشريحة"]
+                    slice_range = slice_key.split("-")
+                    if len(slice_range) == 2:
+                        try:
+                            mid_point = (int(slice_range[0]) + int(slice_range[1])) / 2
+                            slice_ranges.append(mid_point)
+                            
+                            # استخراج النسبة من النص
+                            rate_text = slice_item["نسبة الإنجاز"]
+                            rate_value = float(rate_text.replace("%", "").strip())
+                            completion_rates.append(rate_value)
+                        except:
+                            continue
+                
+                if slice_ranges and completion_rates:
+                    fig3 = go.Figure()
+                    fig3.add_trace(go.Scatter(
+                        x=slice_ranges,
+                        y=completion_rates,
+                        mode='lines+markers',
+                        name='نسبة الإنجاز',
+                        line=dict(color='#4ECDC4', width=3),
+                        marker=dict(size=10, color='#FF6B6B')
+                    ))
                     
-                    # استخراج النسبة من النص
-                    rate_text = slice_key["نسبة الإنجاز"]
-                    rate_value = float(rate_text.replace("%", "").strip())
-                    completion_rates.append(rate_value)
-            
-            if slice_ranges and completion_rates:
-                fig3 = go.Figure()
-                fig3.add_trace(go.Scatter(
-                    x=slice_ranges,
-                    y=completion_rates,
-                    mode='lines+markers',
-                    name='نسبة الإنجاز',
-                    line=dict(color='#4ECDC4', width=3),
-                    marker=dict(size=10, color='#FF6B6B')
-                ))
-                
-                fig3.update_layout(
-                    title="نسبة الإنجاز حسب نطاق الأطنان",
-                    xaxis_title="نطاق الأطنان (منتصف الشريحة)",
-                    yaxis_title="نسبة الإنجاز (%)",
-                    height=400,
-                    showlegend=True
-                )
-                
-                st.plotly_chart(fig3, use_container_width=True)
+                    fig3.update_layout(
+                        title="نسبة الإنجاز حسب نطاق الأطنان",
+                        xaxis_title="نطاق الأطنان (منتصف الشريحة)",
+                        yaxis_title="نسبة الإنجاز (%)",
+                        height=400,
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig3, use_container_width=True)
+                    
+            except ImportError:
+                # استخدام streamlit line chart بديل
+                if slice_stats_data:
+                    # تحضير البيانات للرسم البياني
+                    chart_data = []
+                    for slice_item in slice_stats_data:
+                        slice_key = slice_item["الشريحة"]
+                        slice_range = slice_key.split("-")
+                        if len(slice_range) == 2:
+                            try:
+                                mid_point = (int(slice_range[0]) + int(slice_range[1])) / 2
+                                rate_text = slice_item["نسبة الإنجاز"]
+                                rate_value = float(rate_text.replace("%", "").strip())
+                                
+                                chart_data.append({
+                                    "نطاق الأطنان": mid_point,
+                                    "نسبة الإنجاز": rate_value
+                                })
+                            except:
+                                continue
+                    
+                    if chart_data:
+                        chart_df = pd.DataFrame(chart_data).sort_values("نطاق الأطنان")
+                        st.line_chart(chart_df.set_index("نطاق الأطنان"), height=400)
         else:
             st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
     
@@ -960,6 +1037,36 @@ def show_service_statistics(service_stats, result_df):
                 value=f"{rate:.1f}%",
                 delta=f"{remaining} متبقية"
             )
+    
+    # نصائح وإرشادات
+    st.markdown("---")
+    st.markdown("### 💡 نصائح وتحسينات")
+    
+    tips_col1, tips_col2 = st.columns(2)
+    
+    with tips_col1:
+        st.markdown("**لتثبيت plotly للحصول على مخططات تفاعلية:**")
+        st.code("pip install plotly")
+        st.markdown("**لتثبيت altair للحصول على مخططات بديلة:**")
+        st.code("pip install altair")
+    
+    with tips_col2:
+        st.markdown("**تحسينات مقترحة:**")
+        
+        # تحديد الخدمات التي تحتاج اهتماماً
+        critical_services = []
+        for service in service_stats["service_counts"]:
+            done = service_stats["service_done_counts"].get(service, 0)
+            needed = service_stats["service_counts"][service]
+            if needed > 0 and (done / needed) < 0.3:
+                critical_services.append(service)
+        
+        if critical_services:
+            st.warning(f"⚠ **الخدمات الحرجة** ({len(critical_services)}):")
+            for service in critical_services[:3]:
+                st.write(f"- {service}")
+        else:
+            st.success("✅ لا توجد خدمات حرجة تحتاج اهتماماً فورياً")
 
 # -------------------------------
 # 🖥 دالة فحص الإيفينت والكوريكشن - واجهة مبسطة واحترافية
