@@ -994,6 +994,7 @@ def show_service_statistics(service_stats, result_df):
                         st.line_chart(chart_df.set_index("نطاق الأطنان"), height=400)
         else:
             st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
+
 # -------------------------------
 # 🖥 دالة فحص الإيفينت والكوريكشن - واجهة مبسطة واحترافية
 # -------------------------------
@@ -1826,6 +1827,338 @@ def edit_events_and_corrections(sheets_edit):
                     del st.session_state["editing_data"]
                 st.rerun()
 
+# -------------------------------
+# 👥 إدارة المستخدمين (للمسؤولين فقط)
+# -------------------------------
+def manage_users():
+    """إدارة المستخدمين والصلاحيات"""
+    st.header("👥 إدارة المستخدمين")
+    
+    users = load_users()
+    
+    # عرض المستخدمين الحاليين
+    st.markdown("### 📋 المستخدمون الحاليون")
+    
+    if users:
+        # إنشاء DataFrame للمستخدمين
+        users_data = []
+        for username, user_info in users.items():
+            users_data.append({
+                "اسم المستخدم": username,
+                "الدور": user_info.get("role", "viewer"),
+                "الصلاحيات": ", ".join(user_info.get("permissions", ["view"])),
+                "تاريخ الإنشاء": user_info.get("created_at", "غير معروف")
+            })
+        
+        users_df = pd.DataFrame(users_data)
+        st.dataframe(users_df, use_container_width=True)
+    else:
+        st.info("ℹ️ لا توجد مستخدمين مسجلين بعد.")
+    
+    st.markdown("---")
+    
+    # تبويبات لإدارة المستخدمين
+    user_tabs = st.tabs(["➕ إضافة مستخدم جديد", "✏ تعديل مستخدم", "🗑 حذف مستخدم"])
+    
+    with user_tabs[0]:
+        st.markdown("#### ➕ إضافة مستخدم جديد")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            new_username = st.text_input("اسم المستخدم الجديد:", key="new_username")
+            new_password = st.text_input("كلمة المرور:", type="password", key="new_password")
+            confirm_password = st.text_input("تأكيد كلمة المرور:", type="password", key="confirm_password")
+        
+        with col2:
+            user_role = st.selectbox(
+                "دور المستخدم:",
+                ["admin", "editor", "viewer"],
+                index=2,
+                key="new_user_role"
+            )
+            
+            # اختيار الصلاحيات بناءً على الدور
+            if user_role == "admin":
+                default_permissions = ["all"]
+                available_permissions = ["all", "view", "edit", "manage_users"]
+            elif user_role == "editor":
+                default_permissions = ["view", "edit"]
+                available_permissions = ["view", "edit", "export"]
+            else:
+                default_permissions = ["view"]
+                available_permissions = ["view", "export"]
+            
+            selected_permissions = st.multiselect(
+                "الصلاحيات:",
+                options=available_permissions,
+                default=default_permissions,
+                key="new_user_permissions"
+            )
+        
+        if st.button("💾 إضافة المستخدم", key="add_user_btn"):
+            if not new_username:
+                st.warning("⚠ الرجاء إدخال اسم المستخدم.")
+                return
+            
+            if new_username in users:
+                st.error("❌ اسم المستخدم موجود بالفعل.")
+                return
+            
+            if not new_password:
+                st.warning("⚠ الرجاء إدخال كلمة المرور.")
+                return
+            
+            if new_password != confirm_password:
+                st.error("❌ كلمة المرور غير مطابقة.")
+                return
+            
+            if len(new_password) < 6:
+                st.warning("⚠ كلمة المرور يجب أن تكون 6 أحرف على الأقل.")
+                return
+            
+            # إضافة المستخدم الجديد
+            users[new_username] = {
+                "password": new_password,
+                "role": user_role,
+                "permissions": selected_permissions if selected_permissions else default_permissions,
+                "created_at": datetime.now().isoformat()
+            }
+            
+            if save_users(users):
+                st.success(f"✅ تم إضافة المستخدم '{new_username}' بنجاح!")
+                st.rerun()
+            else:
+                st.error("❌ حدث خطأ أثناء حفظ المستخدم.")
+    
+    with user_tabs[1]:
+        st.markdown("#### ✏ تعديل مستخدم")
+        
+        if not users:
+            st.info("ℹ️ لا توجد مستخدمين لتعديلهم.")
+        else:
+            user_to_edit = st.selectbox(
+                "اختر المستخدم للتعديل:",
+                list(users.keys()),
+                key="select_user_to_edit"
+            )
+            
+            if user_to_edit:
+                user_info = users[user_to_edit]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.info(f"**المستخدم:** {user_to_edit}")
+                    st.info(f"**الدور الحالي:** {user_info.get('role', 'viewer')}")
+                    
+                    # تغيير كلمة المرور
+                    st.markdown("##### 🔐 تغيير كلمة المرور")
+                    new_password_edit = st.text_input("كلمة المرور الجديدة:", type="password", key="edit_password")
+                    confirm_password_edit = st.text_input("تأكيد كلمة المرور:", type="password", key="edit_confirm_password")
+                
+                with col2:
+                    # تغيير الدور
+                    new_role = st.selectbox(
+                        "تغيير الدور:",
+                        ["admin", "editor", "viewer"],
+                        index=["admin", "editor", "viewer"].index(user_info.get("role", "viewer")),
+                        key="edit_user_role"
+                    )
+                    
+                    # تغيير الصلاحيات
+                    if new_role == "admin":
+                        available_permissions = ["all", "view", "edit", "manage_users"]
+                        default_permissions = ["all"]
+                    elif new_role == "editor":
+                        available_permissions = ["view", "edit", "export"]
+                        default_permissions = ["view", "edit"]
+                    else:
+                        available_permissions = ["view", "export"]
+                        default_permissions = ["view"]
+                    
+                    current_permissions = user_info.get("permissions", default_permissions)
+                    new_permissions = st.multiselect(
+                        "تغيير الصلاحيات:",
+                        options=available_permissions,
+                        default=current_permissions,
+                        key="edit_user_permissions"
+                    )
+                
+                # أزرار التعديل
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("💾 حفظ التعديلات", key="save_user_edit"):
+                        updated = False
+                        
+                        # تحديث الدور والصلاحيات
+                        if user_info.get("role") != new_role or user_info.get("permissions") != new_permissions:
+                            users[user_to_edit]["role"] = new_role
+                            users[user_to_edit]["permissions"] = new_permissions if new_permissions else default_permissions
+                            updated = True
+                        
+                        # تحديث كلمة المرور إذا تم إدخالها
+                        if new_password_edit:
+                            if new_password_edit != confirm_password_edit:
+                                st.error("❌ كلمة المرور غير مطابقة.")
+                                return
+                            if len(new_password_edit) < 6:
+                                st.warning("⚠ كلمة المرور يجب أن تكون 6 أحرف على الأقل.")
+                                return
+                            
+                            users[user_to_edit]["password"] = new_password_edit
+                            updated = True
+                        
+                        if updated:
+                            if save_users(users):
+                                st.success(f"✅ تم تحديث المستخدم '{user_to_edit}' بنجاح!")
+                                st.rerun()
+                            else:
+                                st.error("❌ حدث خطأ أثناء حفظ التعديلات.")
+                        else:
+                            st.info("ℹ️ لم يتم إجراء أي تغييرات.")
+                
+                with col_btn2:
+                    # زر إعادة تعيين كلمة المرور
+                    if st.button("🔄 إعادة تعيين كلمة المرور", key="reset_password"):
+                        # كلمة مرور افتراضية
+                        default_password = "user123"
+                        users[user_to_edit]["password"] = default_password
+                        
+                        if save_users(users):
+                            st.warning(f"⚠ تم إعادة تعيين كلمة مرور '{user_to_edit}' إلى: {default_password}")
+                            st.info("📋 يجب على المستخدم تغيير كلمة المرور عند أول تسجيل دخول.")
+                            st.rerun()
+    
+    with user_tabs[2]:
+        st.markdown("#### 🗑 حذف مستخدم")
+        
+        if not users:
+            st.info("ℹ️ لا توجد مستخدمين لحذفهم.")
+        else:
+            # قائمة المستخدمين المتاحة للحذف (لا يمكن حذف المسؤول الرئيسي)
+            deletable_users = [u for u in users.keys() if u != "admin"]
+            
+            if not deletable_users:
+                st.warning("⚠ لا يمكن حذف أي مستخدمين (يوجد المسؤول الرئيسي فقط).")
+            else:
+                user_to_delete = st.selectbox(
+                    "اختر المستخدم للحذف:",
+                    deletable_users,
+                    key="select_user_to_delete"
+                )
+                
+                if user_to_delete:
+                    user_info = users[user_to_delete]
+                    
+                    st.warning(f"⚠ **تحذير:** أنت على وشك حذف المستخدم '{user_to_delete}'")
+                    st.info(f"**الدور:** {user_info.get('role', 'viewer')}")
+                    st.info(f"**تاريخ الإنشاء:** {user_info.get('created_at', 'غير معروف')}")
+                    
+                    # تأكيد الحذف
+                    confirm_delete = st.checkbox(f"أؤكد أنني أريد حذف المستخدم '{user_to_delete}'", key="confirm_delete")
+                    
+                    if confirm_delete:
+                        if st.button("🗑️ حذف المستخدم نهائياً", type="primary", key="delete_user_final"):
+                            # التحقق من أن المستخدم ليس مسجلاً دخولاً حالياً
+                            state = load_state()
+                            if user_to_delete in state and state[user_to_delete].get("active"):
+                                st.error("❌ لا يمكن حذف المستخدم أثناء تسجيل دخوله.")
+                                return
+                            
+                            # حذف المستخدم
+                            del users[user_to_delete]
+                            
+                            if save_users(users):
+                                st.success(f"✅ تم حذف المستخدم '{user_to_delete}' بنجاح!")
+                                st.rerun()
+                            else:
+                                st.error("❌ حدث خطأ أثناء حذف المستخدم.")
+
+# -------------------------------
+# 📞 الدعم الفني
+# -------------------------------
+def tech_support():
+    """قسم الدعم الفني"""
+    st.header("📞 الدعم الفني")
+    
+    st.markdown(f"""
+    ### ℹ️ معلومات التطبيق
+    
+    **اسم التطبيق:** {APP_CONFIG["APP_TITLE"]}
+    **الملف الرئيسي:** {APP_CONFIG["FILE_PATH"]}
+    **مستودع GitHub:** {APP_CONFIG["REPO_NAME"]}
+    **فرع العمل:** {APP_CONFIG["BRANCH"]}
+    
+    ### 🔧 استكشاف الأخطاء وإصلاحها
+    
+    1. **المشكلة:** لا يمكن تحميل الملف من GitHub
+       **الحل:** 
+       - تأكد من اتصال الإنترنت
+       - تحقق من رابط الملف في GitHub
+       - اضغط على زر "🔄 تحديث الملف من GitHub"
+    
+    2. **المشكلة:** لا يمكن حفظ التعديلات
+       **الحل:**
+       - تأكد من وجود token GitHub في الإعدادات
+       - تحقق من صلاحيات الرفع إلى المستودع
+    
+    3. **المشكلة:** التطبيق يعمل ببطء
+       **الحل:**
+       - اضغط على زر "🗑 مسح الكاش"
+       - قلل عدد الصفوف المعروضة
+       - استخدم فلاتر البحث
+    
+    ### 📊 إحصائيات النظام
+    """)
+    
+    # عرض إحصائيات النظام
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # عدد المستخدمين
+        users = load_users()
+        st.metric("👥 عدد المستخدمين", len(users))
+    
+    with col2:
+        # عدد الجلسات النشطة
+        state = load_state()
+        active_sessions = sum(1 for u in state.values() if u.get("active"))
+        st.metric("🔒 جلسات نشطة", f"{active_sessions}/{MAX_ACTIVE_USERS}")
+    
+    with col3:
+        # حجم الملف المحلي
+        if os.path.exists(APP_CONFIG["LOCAL_FILE"]):
+            file_size = os.path.getsize(APP_CONFIG["LOCAL_FILE"]) / (1024 * 1024)  # بالميجابايت
+            st.metric("💾 حجم الملف", f"{file_size:.2f} MB")
+        else:
+            st.metric("💾 حجم الملف", "غير موجود")
+    
+    st.markdown("---")
+    
+    # معلومات الجلسة الحالية
+    st.markdown("### 🖥 معلومات الجلسة الحالية")
+    
+    if st.session_state.get("logged_in"):
+        session_info = {
+            "المستخدم": st.session_state.get("username", "غير معروف"),
+            "الدور": st.session_state.get("user_role", "غير معروف"),
+            "الصلاحيات": ", ".join(st.session_state.get("user_permissions", [])),
+            "وقت التسجيل": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        for key, value in session_info.items():
+            st.text(f"**{key}:** {value}")
+    else:
+        st.info("ℹ️ لم يتم تسجيل الدخول")
+    
+    # زر إعادة التشغيل
+    st.markdown("---")
+    if st.button("🔄 إعادة تشغيل التطبيق", key="restart_app"):
+        try:
+            st.cache_data.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ خطأ في إعادة التشغيل: {e}")
+
 # ===============================
 # 🖥 الواجهة الرئيسية المدمجة
 # ===============================
@@ -1886,6 +2219,16 @@ permissions = get_user_permissions(user_role, user_permissions)
 # تحديد التبويبات بناءً على الصلاحيات
 if permissions["can_manage_users"]:  # admin
     tabs = st.tabs(APP_CONFIG["CUSTOM_TABS"])
+    
+    # Tab: إدارة المستخدمين (للمسؤولين فقط)
+    with tabs[3]:
+        manage_users()
+    
+    # Tab: الدعم الفني (للمسؤولين فقط أو إذا كان الإعداد يسمح للجميع)
+    if APP_CONFIG["SHOW_TECH_SUPPORT_TO_ALL"] or permissions["can_manage_users"]:
+        with tabs[4]:
+            tech_support()
+    
 elif permissions["can_edit"]:  # editor
     tabs = st.tabs(["📊 فحص السيرفيس", "📋 فحص الإيفينت والكوريكشن", "🛠 تعديل وإدارة البيانات"])
 else:  # viewer
@@ -1946,9 +2289,7 @@ if permissions["can_edit"] and len(tabs) > 2:
                 "✏ تعديل الحدث"
             ])
 
-            # -------------------------------
             # Tab 1: تعديل بيانات وعرض
-            # -------------------------------
             with tab1:
                 st.subheader("✏ تعديل البيانات")
                 sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_sheet")
@@ -1968,9 +2309,7 @@ if permissions["can_edit"] and len(tabs) > 2:
                         sheets_edit = new_sheets
                         st.rerun()
 
-            # -------------------------------
             # Tab 2: إضافة صف جديد
-            # -------------------------------
             with tab2:
                 st.subheader("➕ إضافة صف جديد")
                 sheet_name_add = st.selectbox("اختر الشيت لإضافة صف:", list(sheets_edit.keys()), key="add_sheet")
@@ -1998,9 +2337,7 @@ if permissions["can_edit"] and len(tabs) > 2:
                         sheets_edit = new_sheets
                         st.rerun()
 
-            # -------------------------------
             # Tab 3: إضافة عمود جديد
-            # -------------------------------
             with tab3:
                 st.subheader("🆕 إضافة عمود جديد")
                 sheet_name_col = st.selectbox("اختر الشيت لإضافة عمود:", list(sheets_edit.keys()), key="add_col_sheet")
@@ -2024,14 +2361,10 @@ if permissions["can_edit"] and len(tabs) > 2:
                     else:
                         st.warning("⚠ الرجاء إدخال اسم العمود الجديد.")
 
-            # -------------------------------
             # Tab 4: إضافة إيفينت جديد
-            # -------------------------------
             with tab4:
                 add_new_event(sheets_edit)
 
-            # -------------------------------
             # Tab 5: تعديل الإيفينت والكوريكشن
-            # -------------------------------
             with tab5:
                 edit_events_and_corrections(sheets_edit)
