@@ -574,12 +574,35 @@ def check_service_status(card_num, current_tons, all_sheets):
         return
 
     all_results = []
+    service_stats = {
+        "service_counts": {},  # تعداد كل خدمة مطلوبة
+        "service_done_counts": {},  # تعداد الخدمات المنفذة
+        "total_needed_services": 0,
+        "total_done_services": 0,
+        "by_slice": {}  # إحصائيات حسب الشريحة
+    }
+    
     for _, current_slice in selected_slices.iterrows():
         slice_min = current_slice["Min_Tones"]
         slice_max = current_slice["Max_Tones"]
+        slice_key = f"{slice_min}-{slice_max}"
+        
         needed_service_raw = current_slice.get("Service", "")
         needed_parts = split_needed_services(needed_service_raw)
         needed_norm = [normalize_name(p) for p in needed_parts]
+        
+        # تحديث إحصائيات الخدمات المطلوبة
+        service_stats["by_slice"][slice_key] = {
+            "needed": needed_parts,
+            "done": [],
+            "not_done": [],
+            "total_needed": len(needed_parts),
+            "total_done": 0
+        }
+        
+        for service in needed_parts:
+            service_stats["service_counts"][service] = service_stats["service_counts"].get(service, 0) + 1
+        service_stats["total_needed_services"] += len(needed_parts)
 
         # البحث في خدمات الماكينة
         mask = (services_df.get("Min_Tones", 0).fillna(0) <= slice_max) & (services_df.get("Max_Tones", 0).fillna(0) >= slice_min)
@@ -615,6 +638,9 @@ def check_service_status(card_num, current_tons, all_sheets):
                     if val and val.lower() not in ["nan", "none", "", "null", "0"]:
                         if val.lower() not in ["no", "false", "not done", "لم تتم", "x", "-"]:
                             done_services_set.add(col)
+                            # تحديث إحصائيات الخدمات المنفذة
+                            service_stats["service_done_counts"][col] = service_stats["service_done_counts"].get(col, 0) + 1
+                            service_stats["total_done_services"] += 1
 
                 # جمع بيانات السيرفيس فقط
                 current_date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
@@ -626,11 +652,17 @@ def check_service_status(card_num, current_tons, all_sheets):
                 done_services = sorted(list(done_services_set))
                 done_norm = [normalize_name(c) for c in done_services]
                 
+                # تحديث إحصائيات الشريحة
+                service_stats["by_slice"][slice_key]["done"].extend(done_services)
+                service_stats["by_slice"][slice_key]["total_done"] += len(done_services)
+                
                 # مقارنة الخدمات المنجزة مع المطلوبة
                 not_done = []
                 for needed_part, needed_norm_part in zip(needed_parts, needed_norm):
                     if needed_norm_part not in done_norm:
                         not_done.append(needed_part)
+                
+                service_stats["by_slice"][slice_key]["not_done"].extend(not_done)
 
                 all_results.append({
                     "Card Number": card_num,
@@ -656,12 +688,18 @@ def check_service_status(card_num, current_tons, all_sheets):
                 "Servised by": "-",
                 "Date": "-"
             })
+            
+            # تحديث إحصائيات الشريحة (لا يوجد خدمات منفذة)
+            service_stats["by_slice"][slice_key]["not_done"] = needed_parts.copy()
 
     result_df = pd.DataFrame(all_results).dropna(how="all").reset_index(drop=True)
 
     st.markdown("### 📋 نتائج فحص السيرفيس")
     if not result_df.empty:
         st.dataframe(result_df.style.apply(style_table, axis=1), use_container_width=True)
+
+        # عرض الإحصائيات والنسب
+        show_service_statistics(service_stats, result_df)
 
         # تنزيل النتائج
         buffer = io.BytesIO()
@@ -674,6 +712,254 @@ def check_service_status(card_num, current_tons, all_sheets):
         )
     else:
         st.info("ℹ️ لا توجد خدمات مسجلة لهذه الماكينة.")
+
+def show_service_statistics(service_stats, result_df):
+    """عرض الإحصائيات والنسب المئوية لفحص السيرفيس"""
+    st.markdown("---")
+    st.markdown("### 📊 الإحصائيات والنسب المئوية")
+    
+    if service_stats["total_needed_services"] == 0:
+        st.info("ℹ️ لا توجد خدمات مطلوبة في النطاق المحدد.")
+        return
+    
+    # حساب النسبة العامة
+    completion_rate = (service_stats["total_done_services"] / service_stats["total_needed_services"]) * 100 if service_stats["total_needed_services"] > 0 else 0
+    
+    # عرض النسب العامة
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="📈 نسبة الإنجاز العامة",
+            value=f"{completion_rate:.1f}%",
+            delta=f"{service_stats['total_done_services']}/{service_stats['total_needed_services']}"
+        )
+    
+    with col2:
+        st.metric(
+            label="🔢 عدد الخدمات المطلوبة",
+            value=service_stats["total_needed_services"]
+        )
+    
+    with col3:
+        st.metric(
+            label="✅ الخدمات المنفذة",
+            value=service_stats["total_done_services"]
+        )
+    
+    with col4:
+        remaining = service_stats["total_needed_services"] - service_stats["total_done_services"]
+        st.metric(
+            label="⏳ الخدمات المتبقية",
+            value=remaining
+        )
+    
+    st.markdown("---")
+    
+    # تبويبات للإحصائيات التفصيلية
+    stat_tabs = st.tabs([
+        "📝 إحصائيات الخدمات",
+        "📋 توزيع الخدمات",
+        "📊 حسب الشريحة"
+    ])
+    
+    with stat_tabs[0]:
+        st.markdown("#### 📝 إحصائيات مفصلة لكل خدمة")
+        
+        # إنشاء DataFrame للإحصائيات
+        stat_data = []
+        all_services = set(service_stats["service_counts"].keys()).union(
+            set(service_stats["service_done_counts"].keys())
+        )
+        
+        for service in sorted(all_services):
+            needed_count = service_stats["service_counts"].get(service, 0)
+            done_count = service_stats["service_done_counts"].get(service, 0)
+            completion_rate_service = (done_count / needed_count * 100) if needed_count > 0 else 0
+            
+            stat_data.append({
+                "الخدمة": service,
+                "مطلوبة": needed_count,
+                "منفذة": done_count,
+                "متبقية": needed_count - done_count,
+                "نسبة الإنجاز": f"{completion_rate_service:.1f}%",
+                "حالة": "✅ ممتاز" if completion_rate_service >= 90 else 
+                       "🟢 جيد" if completion_rate_service >= 70 else 
+                       "🟡 متوسط" if completion_rate_service >= 50 else 
+                       "🔴 ضعيف"
+            })
+        
+        if stat_data:
+            stat_df = pd.DataFrame(stat_data)
+            st.dataframe(stat_df, use_container_width=True, height=400)
+        else:
+            st.info("ℹ️ لا توجد بيانات إحصائية للخدمات.")
+    
+    with stat_tabs[1]:
+        st.markdown("#### 📋 توزيع الخدمات")
+        
+        if service_stats["service_counts"]:
+            # إنشاء مخطط شريطي للنسب
+            import plotly.express as px
+            
+            plot_data = []
+            for service, needed_count in service_stats["service_counts"].items():
+                done_count = service_stats["service_done_counts"].get(service, 0)
+                completion_rate = (done_count / needed_count * 100) if needed_count > 0 else 0
+                
+                plot_data.append({
+                    "الخدمة": service,
+                    "النوع": "مطلوبة",
+                    "العدد": needed_count
+                })
+                plot_data.append({
+                    "الخدمة": service,
+                    "النوع": "منفذة",
+                    "العدد": done_count
+                })
+            
+            plot_df = pd.DataFrame(plot_data)
+            
+            # عرض المخطط
+            fig = px.bar(
+                plot_df, 
+                x="الخدمة", 
+                y="العدد", 
+                color="النوع",
+                barmode="group",
+                title="توزيع الخدمات المطلوبة والمنفذة",
+                color_discrete_map={
+                    "مطلوبة": "#FF6B6B",
+                    "منفذة": "#4ECDC4"
+                }
+            )
+            fig.update_layout(
+                xaxis_title="الخدمة",
+                yaxis_title="العدد",
+                showlegend=True,
+                height=500
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # مخطط دائري للنسبة العامة
+            fig2 = px.pie(
+                names=["✅ منفذة", "⏳ غير منفذة"],
+                values=[service_stats["total_done_services"], 
+                       service_stats["total_needed_services"] - service_stats["total_done_services"]],
+                title="نسبة الإنجاز العامة",
+                color_discrete_sequence=["#4ECDC4", "#FF6B6B"]
+            )
+            fig2.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info("ℹ️ لا توجد بيانات كافية لعرض المخططات.")
+    
+    with stat_tabs[2]:
+        st.markdown("#### 📊 الإحصائيات حسب الشريحة")
+        
+        slice_stats_data = []
+        for slice_key, slice_data in service_stats["by_slice"].items():
+            completion_rate_slice = (slice_data["total_done"] / slice_data["total_needed"] * 100) if slice_data["total_needed"] > 0 else 0
+            
+            slice_stats_data.append({
+                "الشريحة": slice_key,
+                "الخدمات المطلوبة": slice_data["total_needed"],
+                "الخدمات المنفذة": slice_data["total_done"],
+                "الخدمات المتبقية": slice_data["total_needed"] - slice_data["total_done"],
+                "نسبة الإنجاز": f"{completion_rate_slice:.1f}%",
+                "حالة الشريحة": "✅ ممتازة" if completion_rate_slice >= 90 else 
+                               "🟢 جيدة" if completion_rate_slice >= 70 else 
+                               "🟡 متوسطة" if completion_rate_slice >= 50 else 
+                               "🔴 ضعيفة"
+            })
+        
+        if slice_stats_data:
+            slice_stats_df = pd.DataFrame(slice_stats_data)
+            st.dataframe(slice_stats_df, use_container_width=True, height=400)
+            
+            # مخطط خطي لنسب الإنجاز حسب الشريحة
+            import plotly.graph_objects as go
+            
+            # تحليل نطاقات الشرائح
+            slice_ranges = []
+            completion_rates = []
+            
+            for slice_key in sorted(slice_stats_data, key=lambda x: x["الشريحة"]):
+                slice_range = slice_key.split("-")
+                if len(slice_range) == 2:
+                    mid_point = (int(slice_range[0]) + int(slice_range[1])) / 2
+                    slice_ranges.append(mid_point)
+                    
+                    # استخراج النسبة من النص
+                    rate_text = slice_key["نسبة الإنجاز"]
+                    rate_value = float(rate_text.replace("%", "").strip())
+                    completion_rates.append(rate_value)
+            
+            if slice_ranges and completion_rates:
+                fig3 = go.Figure()
+                fig3.add_trace(go.Scatter(
+                    x=slice_ranges,
+                    y=completion_rates,
+                    mode='lines+markers',
+                    name='نسبة الإنجاز',
+                    line=dict(color='#4ECDC4', width=3),
+                    marker=dict(size=10, color='#FF6B6B')
+                ))
+                
+                fig3.update_layout(
+                    title="نسبة الإنجاز حسب نطاق الأطنان",
+                    xaxis_title="نطاق الأطنان (منتصف الشريحة)",
+                    yaxis_title="نسبة الإنجاز (%)",
+                    height=400,
+                    showlegend=True
+                )
+                
+                st.plotly_chart(fig3, use_container_width=True)
+        else:
+            st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
+    
+    # ملخص النتائج
+    st.markdown("---")
+    st.markdown("### 📝 ملخص النتائج")
+    
+    summary_col1, summary_col2 = st.columns(2)
+    
+    with summary_col1:
+        st.markdown("#### 🏆 أفضل الخدمات أداءً")
+        best_services = []
+        for service in service_stats["service_done_counts"]:
+            needed = service_stats["service_counts"].get(service, 0)
+            if needed > 0:
+                rate = (service_stats["service_done_counts"][service] / needed) * 100
+                best_services.append((service, rate))
+        
+        best_services.sort(key=lambda x: x[1], reverse=True)
+        
+        for service, rate in best_services[:5]:
+            st.metric(
+                label=f"✅ {service}",
+                value=f"{rate:.1f}%"
+            )
+    
+    with summary_col2:
+        st.markdown("#### ⚠️ الخدمات الأكثر تأخراً")
+        worst_services = []
+        for service in service_stats["service_counts"]:
+            done = service_stats["service_done_counts"].get(service, 0)
+            needed = service_stats["service_counts"][service]
+            if needed > 0:
+                rate = (done / needed) * 100
+                if rate < 50:  # فقط الخدمات ذات الأداء الضعيف
+                    worst_services.append((service, rate, needed - done))
+        
+        worst_services.sort(key=lambda x: x[1])
+        
+        for service, rate, remaining in worst_services[:5]:
+            st.metric(
+                label=f"🔴 {service}",
+                value=f"{rate:.1f}%",
+                delta=f"{remaining} متبقية"
+            )
 
 # -------------------------------
 # 🖥 دالة فحص الإيفينت والكوريكشن - واجهة مبسطة واحترافية
