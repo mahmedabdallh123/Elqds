@@ -1008,621 +1008,653 @@ def show_service_statistics(service_stats, result_df):
             st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
 
 # -------------------------------
-# -------------------------------
-# 🖥 دالة فحص الإيفينت والكوريكشن - الواجهة البسيطة
+# 🖥 دالة فحص الإيفينت والكوريكشن - واجهة مبسطة واحترافية
 # -------------------------------
 def check_events_and_corrections(all_sheets):
-    """فحص الإيفينت والكوريكشن بواجهة بسيطة ومباشرة"""
+    """فحص الإيفينت والكوريكشن بواجهة مبسطة واحترافية"""
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
     
-    st.markdown("### 🔍 اختر طريقة البحث")
-    
-    # أربع خيارات بسيطة
-    search_mode = st.radio(
-        "اختر طريقة البحث:",
-        ["🔎 بحث متعدد المعايير", "📅 عرض تسلسلي", "📊 احصائيات عامة", "🔧 تحليل مشاكل محددة"],
-        horizontal=True,
-        key="simple_events_mode"
-    )
-    
-    if search_mode == "🔎 بحث متعدد المعايير":
-        # الدالة المبسطة للبحث
-        simple_search_interface(all_sheets)
-    elif search_mode == "📅 عرض تسلسلي":
-        simple_sequential_interface(all_sheets)
-    elif search_mode == "📊 احصائيات عامة":
-        simple_statistics_interface(all_sheets)
-    else:
-        simple_problems_analysis(all_sheets)
-
-def simple_search_interface(all_sheets):
-    """واجهة بحث بسيطة"""
-    st.markdown("### 🔍 معايير البحث")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # نطاق الماكينات
-        st.markdown("**🔢 نطاق الماكينات:**")
-        card_start = st.number_input("من:", min_value=1, max_value=50, value=1, step=1, key="card_start")
-        card_end = st.number_input("إلى:", min_value=1, max_value=50, value=24, step=1, key="card_end")
-        
-        # التاريخ
-        st.markdown("**📅 التاريخ:**")
-        date_search = st.text_input(
-            "ابحث بتاريخ (مثال: 2024 أو 1/2024):",
-            placeholder="اتركه فارغاً للبحث في كل التواريخ",
-            key="simple_date"
-        )
-    
-    with col2:
-        # نص البحث
-        st.markdown("**📝 نص البحث:**")
-        search_text = st.text_input(
-            "ابحث في نص الحدث أو التصحيح:",
-            placeholder="مثال: سير، محور، صيانة",
-            key="simple_text"
-        )
-        
-        # خيار البحث النصي
-        exact_match = st.checkbox("🔍 مطابقة كاملة للنص", False, key="simple_exact")
-        
-        # فني الخدمة
-        st.markdown("**👨‍🔧 فني الخدمة (اختياري):**")
-        tech_search = st.text_input(
-            "اسم فني الخدمة:",
-            placeholder="اتركه فارغاً للبحث في كل الفنيين",
-            key="simple_tech"
-        )
-    
-    # زر البحث
-    if st.button("🔍 بدء البحث", type="primary", key="simple_search_btn"):
-        # جمع معايير البحث
-        search_params = {
-            "card_start": card_start,
-            "card_end": card_end,
-            "tech": tech_search.strip() if tech_search else "",
-            "date": date_search.strip() if date_search else "",
-            "text": search_text.strip() if search_text else "",
-            "exact": exact_match
+    # تهيئة session state إذا لزم الأمر
+    if "search_params" not in st.session_state:
+        st.session_state.search_params = {
+            "card_numbers": "",
+            "date_range": "",
+            "tech_names": "",
+            "search_text": "",
+            "exact_match": False,
+            "include_empty": True,
+            "sort_by": "رقم الماكينة"
         }
+    
+    if "search_triggered" not in st.session_state:
+        st.session_state.search_triggered = False
+    
+    # قسم البحث - واجهة احترافية
+    with st.container():
+        st.markdown("### 🔍 بحث متعدد المعايير")
+        st.markdown("استخدم الحقول التالية للبحث المحدد. يمكنك ملء واحد أو أكثر من الحقول.")
+        
+        # تقسيم الشاشة إلى أعمدة
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            # قسم أرقام الماكينات
+            with st.expander("🔢 **أرقام الماكينات**", expanded=True):
+                st.caption("أدخل أرقام الماكينات (مفصولة بفواصل أو نطاقات)")
+                card_numbers = st.text_input(
+                    "مثال: 1,3,5 أو 1-5 أو 2,4,7-10",
+                    value=st.session_state.search_params.get("card_numbers", ""),
+                    key="input_cards",
+                    placeholder="اتركه فارغاً للبحث في كل الماكينات"
+                )
+                
+                # أزرار سريعة لأرقام الماكينات
+                st.caption("أو اختر من:")
+                quick_cards_col1, quick_cards_col2, quick_cards_col3 = st.columns(3)
+                with quick_cards_col1:
+                    if st.button("🔟 أول 10 ماكينات", key="quick_10"):
+                        st.session_state.search_params["card_numbers"] = "1-10"
+                        st.session_state.search_triggered = True
+                        st.rerun()
+                with quick_cards_col2:
+                    if st.button("🔟 ماكينات 11-20", key="quick_20"):
+                        st.session_state.search_params["card_numbers"] = "11-20"
+                        st.session_state.search_triggered = True
+                        st.rerun()
+                with quick_cards_col3:
+                    if st.button("🗑 مسح", key="clear_cards"):
+                        st.session_state.search_params["card_numbers"] = ""
+                        st.rerun()
+            
+            # قسم التواريخ
+            with st.expander("📅 **التواريخ**", expanded=True):
+                st.caption("ابحث بالتاريخ (سنة، شهر/سنة)")
+                date_input = st.text_input(
+                    "مثال: 2024 أو 1/2024 أو 2024,2025",
+                    value=st.session_state.search_params.get("date_range", ""),
+                    key="input_date",
+                    placeholder="اتركه فارغاً للبحث في كل التواريخ"
+                )
+                
+                # شهور السنة
+                months = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", 
+                         "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
+                
+                month_cols = st.columns(4)
+                for i, month in enumerate(months):
+                    with month_cols[i % 4]:
+                        if st.button(f"{i+1}. {month}", key=f"month_{i+1}"):
+                            current_date = st.session_state.search_params.get("date_range", "")
+                            if current_date:
+                                st.session_state.search_params["date_range"] = f"{current_date},{i+1}/"
+                            else:
+                                st.session_state.search_params["date_range"] = f"{i+1}/"
+                            st.rerun()
+        
+        with col2:
+            # قسم فنيي الخدمة
+            with st.expander("👨‍🔧 **فنيو الخدمة**", expanded=True):
+                st.caption("ابحث بأسماء فنيي الخدمة")
+                tech_names = st.text_input(
+                    "مثال: أحمد, محمد, علي",
+                    value=st.session_state.search_params.get("tech_names", ""),
+                    key="input_techs",
+                    placeholder="اتركه فارغاً للبحث في كل الفنيين"
+                )
+                
+                # استخراج أسماء الفنيين المتاحة
+                available_techs = extract_available_techs(all_sheets)
+                if available_techs:
+                    st.caption(f"📋 فنيون متاحون ({len(available_techs)}):")
+                    
+                    # الحصول على الفنيين المحددين حالياً بشكل آمن
+                    current_techs_input = st.session_state.search_params.get("tech_names", "")
+                    current_techs = []
+                    if current_techs_input:
+                        # تنظيف القائمة من القيم الفارغة
+                        current_techs = [t.strip() for t in current_techs_input.split(',') 
+                                        if t.strip() and t.strip() in available_techs]
+                    
+                    # استخدام multiselect بدون default أولاً
+                    selected_techs = st.multiselect(
+                        "اختر فنيين:",
+                        options=available_techs,
+                        key="select_techs",
+                        label_visibility="collapsed"
+                    )
+                    
+                    # تحديث الحقل النصي بناءً على الاختيار
+                    if selected_techs:
+                        tech_names = ", ".join(selected_techs)
+            
+            # قسم نص البحث
+            with st.expander("📝 **نص البحث**", expanded=True):
+                st.caption("ابحث في وصف الحدث أو التصحيح")
+                search_text = st.text_input(
+                    "مثال: صيانة, إصلاح, تغيير",
+                    value=st.session_state.search_params.get("search_text", ""),
+                    key="input_text",
+                    placeholder="اتركه فارغاً للبحث في كل النصوص"
+                )
+                
+                # كلمات شائعة
+                common_words = ["صيانة", "إصلاح", "تغيير", "تنظيف", "فحص", "تركيب", "تبديل"]
+                word_cols = st.columns(4)
+                for i, word in enumerate(common_words):
+                    with word_cols[i % 4]:
+                        if st.button(word, key=f"word_{word}"):
+                            current_text = st.session_state.search_params.get("search_text", "")
+                            if current_text:
+                                st.session_state.search_params["search_text"] = f"{current_text},{word}"
+                            else:
+                                st.session_state.search_params["search_text"] = word
+                            st.rerun()
+        
+        # قسم خيارات البحث المتقدمة
+        with st.expander("⚙ **خيارات متقدمة**", expanded=False):
+            col_adv1, col_adv2, col_adv3 = st.columns(3)
+            with col_adv1:
+                search_mode = st.radio(
+                    "🔍 طريقة البحث:",
+                    ["بحث جزئي", "مطابقة كاملة"],
+                    index=0 if not st.session_state.search_params.get("exact_match") else 1,
+                    key="radio_search_mode",
+                    help="بحث جزئي: يبحث عن النص في أي مكان. مطابقة كاملة: يبحث عن النص مطابق تماماً"
+                )
+            with col_adv2:
+                include_empty = st.checkbox(
+                    "🔍 تضمين الحقول الفارغة",
+                    value=st.session_state.search_params.get("include_empty", True),
+                    key="checkbox_include_empty",
+                    help="تضمين النتائج التي تحتوي على حقول فارغة"
+                )
+            with col_adv3:
+                sort_by = st.selectbox(
+                    "📊 ترتيب النتائج:",
+                    ["رقم الماكينة", "التاريخ", "فني الخدمة"],
+                    index=["رقم الماكينة", "التاريخ", "فني الخدمة"].index(
+                        st.session_state.search_params.get("sort_by", "رقم الماكينة")
+                    ),
+                    key="select_sort_by"
+                )
+        
+        # زر البحث الرئيسي
+        st.markdown("---")
+        col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 1])
+        with col_btn1:
+            search_clicked = st.button(
+                "🔍 **بدء البحث**",
+                type="primary",
+                use_container_width=True,
+                key="main_search_btn"
+            )
+        with col_btn2:
+            if st.button("🗑 **مسح الحقول**", use_container_width=True, key="clear_fields"):
+                st.session_state.search_params = {
+                    "card_numbers": "",
+                    "date_range": "",
+                    "tech_names": "",
+                    "search_text": "",
+                    "exact_match": False,
+                    "include_empty": True,
+                    "sort_by": "رقم الماكينة"
+                }
+                st.session_state.search_triggered = False
+                st.rerun()
+        with col_btn3:
+            if st.button("📊 **عرض كل البيانات**", use_container_width=True, key="show_all"):
+                st.session_state.search_params = {
+                    "card_numbers": "",
+                    "date_range": "",
+                    "tech_names": "",
+                    "search_text": "",
+                    "exact_match": False,
+                    "include_empty": True,
+                    "sort_by": "رقم الماكينة"
+                }
+                st.session_state.search_triggered = True
+                st.rerun()
+    
+    # تحديث معايير البحث عند تغيير الحقول
+    if card_numbers != st.session_state.search_params.get("card_numbers", ""):
+        st.session_state.search_params["card_numbers"] = card_numbers
+    
+    if date_input != st.session_state.search_params.get("date_range", ""):
+        st.session_state.search_params["date_range"] = date_input
+    
+    if tech_names != st.session_state.search_params.get("tech_names", ""):
+        st.session_state.search_params["tech_names"] = tech_names
+    
+    if search_text != st.session_state.search_params.get("search_text", ""):
+        st.session_state.search_params["search_text"] = search_text
+    
+    st.session_state.search_params["exact_match"] = (search_mode == "مطابقة كاملة")
+    st.session_state.search_params["include_empty"] = include_empty
+    st.session_state.search_params["sort_by"] = sort_by
+    
+    # تحديث tech_names من multiselect إذا تم الاختيار
+    if "select_techs" in st.session_state and st.session_state.select_techs:
+        selected_techs_list = st.session_state.select_techs
+        if selected_techs_list:
+            st.session_state.search_params["tech_names"] = ", ".join(selected_techs_list)
+    
+    # معالجة البحث
+    if search_clicked or st.session_state.search_triggered:
+        st.session_state.search_triggered = True
+        
+        # جمع معايير البحث
+        search_params = st.session_state.search_params.copy()
+        
+        # عرض معايير البحث
+        show_search_params(search_params)
         
         # تنفيذ البحث
-        execute_simple_search(search_params, all_sheets)
+        show_advanced_search_results(search_params, all_sheets)
 
-def execute_simple_search(params, all_sheets):
-    """تنفيذ البحث البسيط"""
-    st.markdown("### 📋 نتائج البحث")
+def extract_available_techs(all_sheets):
+    """استخراج أسماء فنيي الخدمة المتاحة في البيانات"""
+    techs_set = set()
     
-    with st.spinner("🔍 جاري البحث..."):
-        results = []
-        
-        # جمع النتائج
-        for card_num in range(params["card_start"], params["card_end"] + 1):
-            sheet_name = f"Card{card_num}"
-            if sheet_name in all_sheets:
-                df = all_sheets[sheet_name]
-                
-                for _, row in df.iterrows():
-                    # تطبيق معايير البحث
-                    if not check_simple_row(row, df, card_num, params):
-                        continue
-                    
-                    # استخراج البيانات
-                    result = extract_simple_row_data(row, df, card_num)
-                    if result:
-                        results.append(result)
-        
-        # عرض النتائج
-        if results:
-            display_simple_results(results, params)
-        else:
-            st.warning("⚠ لم يتم العثور على نتائج تطابق معايير البحث")
+    for sheet_name, df in all_sheets.items():
+        if sheet_name == "ServicePlan":
+            continue
+            
+        for _, row in df.iterrows():
+            tech = get_servised_by_value(row)
+            if tech != "-":
+                techs_set.add(tech)
+    
+    return sorted(list(techs_set))
 
-def check_simple_row(row, df, card_num, params):
-    """التحقق من مطابقة الصف لمعايير البحث البسيطة"""
-    
-    # التحقق من فني الخدمة
-    if params["tech"]:
-        row_tech = get_servised_by_value(row).strip()
-        if not row_tech or row_tech == "-":
-            return False
-        if params["tech"].lower() not in row_tech.lower():
-            return False
-    
-    # التحقق من التاريخ
-    if params["date"]:
-        row_date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else ""
-        if not row_date:
-            return False
-        if params["date"] not in row_date:
-            return False
-    
-    # التحقق من نص البحث
-    if params["text"]:
-        event, correction = extract_event_correction(row, df)
-        combined_text = f"{event} {correction}"
+def show_search_params(search_params):
+    """عرض معايير البحث المستخدمة"""
+    with st.container():
+        st.markdown("### ⚙ معايير البحث المستخدمة")
         
-        if params["exact"]:
-            # مطابقة كاملة
-            if params["text"].lower() not in [event.lower(), correction.lower()]:
-                return False
+        params_display = []
+        if search_params["card_numbers"]:
+            params_display.append(f"**🔢 أرقام الماكينات:** {search_params['card_numbers']}")
+        if search_params["date_range"]:
+            params_display.append(f"**📅 التواريخ:** {search_params['date_range']}")
+        if search_params["tech_names"]:
+            params_display.append(f"**👨‍🔧 فنيو الخدمة:** {search_params['tech_names']}")
+        if search_params["search_text"]:
+            params_display.append(f"**📝 نص البحث:** {search_params['search_text']}")
+        
+        if params_display:
+            st.info(" | ".join(params_display))
         else:
-            # بحث جزئي
-            if params["text"].lower() not in combined_text.lower():
-                return False
+            st.info("🔍 **بحث في كل البيانات**")
+
+def show_advanced_search_results(search_params, all_sheets):
+    """عرض نتائج البحث المتقدم"""
+    st.markdown("### 📊 نتائج البحث")
+    
+    # شريط التقدم
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # البحث في البيانات
+    all_results = []
+    total_machines = 0
+    processed_machines = 0
+    
+    # حساب إجمالي عدد الماكينات
+    for sheet_name in all_sheets.keys():
+        if sheet_name != "ServicePlan" and sheet_name.startswith("Card"):
+            total_machines += 1
+    
+    # معالجة أرقام الماكينات المطلوبة
+    target_card_numbers = parse_card_numbers(search_params["card_numbers"])
+    
+    # معالجة أسماء الفنيين
+    target_techs = []
+    if search_params["tech_names"]:
+        techs = search_params["tech_names"].split(',')
+        target_techs = [tech.strip().lower() for tech in techs if tech.strip()]
+    
+    # معالجة التواريخ
+    target_dates = []
+    if search_params["date_range"]:
+        dates = search_params["date_range"].split(',')
+        target_dates = [date.strip().lower() for date in dates if date.strip()]
+    
+    # معالجة نص البحث
+    search_terms = []
+    if search_params["search_text"]:
+        terms = search_params["search_text"].split(',')
+        search_terms = [term.strip().lower() for term in terms if term.strip()]
+    
+    # البحث في جميع الشيتات
+    for sheet_name in all_sheets.keys():
+        if sheet_name == "ServicePlan":
+            continue
+        
+        # استخراج رقم الماكينة
+        card_num_match = re.search(r'Card(\d+)', sheet_name)
+        if not card_num_match:
+            continue
+            
+        card_num = int(card_num_match.group(1))
+        
+        # التحقق من رقم الماكينة إذا كان هناك تحديد
+        if target_card_numbers and card_num not in target_card_numbers:
+            continue
+        
+        processed_machines += 1
+        if total_machines > 0:
+            progress_bar.progress(processed_machines / total_machines)
+        status_text.text(f"🔍 جاري معالجة الماكينة {card_num}...")
+        
+        df = all_sheets[sheet_name].copy()
+        
+        # البحث في الصفوف
+        for _, row in df.iterrows():
+            # تطبيق معايير البحث
+            if not check_row_criteria(row, df, card_num, target_techs, target_dates, 
+                                     search_terms, search_params):
+                continue
+            
+            # استخراج البيانات
+            result = extract_row_data(row, df, card_num)
+            if result:
+                all_results.append(result)
+    
+    # إخفاء شريط التقدم
+    progress_bar.empty()
+    status_text.empty()
+    
+    # عرض النتائج
+    if all_results:
+        display_search_results(all_results, search_params)
+    else:
+        st.warning("⚠ لم يتم العثور على نتائج تطابق معايير البحث")
+        st.info("💡 حاول تعديل معايير البحث أو استخدام مصطلحات أوسع")
+
+def check_row_criteria(row, df, card_num, target_techs, target_dates, 
+                      search_terms, search_params):
+    """التحقق من مطابقة الصف لمعايير البحث"""
+    
+    # 1. التحقق من فني الخدمة
+    if target_techs:
+        row_tech = get_servised_by_value(row).lower()
+        if row_tech == "-" and not search_params["include_empty"]:
+            return False
+        
+        tech_match = False
+        if row_tech != "-":
+            for tech in target_techs:
+                if search_params["exact_match"]:
+                    if tech == row_tech:
+                        tech_match = True
+                        break
+                else:
+                    if tech in row_tech:
+                        tech_match = True
+                        break
+        
+        if not tech_match:
+            return False
+    
+    # 2. التحقق من التاريخ
+    if target_dates:
+        row_date = str(row.get("Date", "")).strip().lower() if pd.notna(row.get("Date")) else ""
+        if not row_date and not search_params["include_empty"]:
+            return False
+        
+        date_match = False
+        if row_date:
+            for date_term in target_dates:
+                if search_params["exact_match"]:
+                    if date_term == row_date:
+                        date_match = True
+                        break
+                else:
+                    if date_term in row_date:
+                        date_match = True
+                        break
+        
+        if not date_match:
+            return False
+    
+    # 3. التحقق من نص البحث
+    if search_terms:
+        row_event, row_correction = extract_event_correction(row, df)
+        row_event_lower = row_event.lower()
+        row_correction_lower = row_correction.lower()
+        
+        if not row_event and not row_correction and not search_params["include_empty"]:
+            return False
+        
+        text_match = False
+        combined_text = f"{row_event_lower} {row_correction_lower}"
+        
+        for term in search_terms:
+            if search_params["exact_match"]:
+                if term == row_event_lower or term == row_correction_lower:
+                    text_match = True
+                    break
+            else:
+                if term in combined_text:
+                    text_match = True
+                    break
+        
+        if not text_match:
+            return False
     
     return True
 
-def extract_simple_row_data(row, df, card_num):
-    """استخراج بيانات الصف بشكل بسيط"""
+def extract_event_correction(row, df):
+    """استخراج الحدث والتصحيح من الصف"""
+    event_value = "-"
+    correction_value = "-"
+    
+    for col in df.columns:
+        col_normalized = normalize_name(col)
+        if "event" in col_normalized or "الحدث" in col_normalized:
+            if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
+                event_value = str(row[col]).strip()
+        
+        if "correction" in col_normalized or "تصحيح" in col_normalized:
+            if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
+                correction_value = str(row[col]).strip()
+    
+    return event_value, correction_value
+
+def extract_row_data(row, df, card_num):
+    """استخراج بيانات الصف"""
+    card_num_value = str(row.get("card", "")).strip() if pd.notna(row.get("card")) else str(card_num)
     date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
     tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
     
-    event, correction = extract_event_correction(row, df)
-    servised_by = get_servised_by_value(row)
+    event_value, correction_value = extract_event_correction(row, df)
     
     # إذا كانت كل الحقول فارغة، نتجاهل الصف
-    if event == "-" and correction == "-" and date == "-" and tones == "-":
+    if (event_value == "-" and correction_value == "-" and 
+        date == "-" and tones == "-"):
         return None
     
+    servised_by_value = get_servised_by_value(row)
+    
     return {
-        "رقم الماكينة": card_num,
-        "التاريخ": date,
-        "الأطنان": tones,
-        "الحدث": event,
-        "التصحيح": correction,
-        "فني الخدمة": servised_by
+        "Card Number": card_num_value,
+        "Event": event_value,
+        "Correction": correction_value,
+        "Servised by": servised_by_value,
+        "Tones": tones,
+        "Date": date
     }
 
-def display_simple_results(results, params):
-    """عرض نتائج البحث بشكل بسيط"""
+def parse_card_numbers(card_numbers_str):
+    """تحليل سلسلة أرقام الماكينات إلى قائمة أرقام"""
+    if not card_numbers_str:
+        return set()
+    
+    numbers = set()
+    
+    try:
+        parts = card_numbers_str.split(',')
+        for part in parts:
+            part = part.strip()
+            if '-' in part:
+                try:
+                    start_str, end_str = part.split('-')
+                    start = int(start_str.strip())
+                    end = int(end_str.strip())
+                    numbers.update(range(start, end + 1))
+                except:
+                    continue
+            else:
+                try:
+                    num = int(part)
+                    numbers.add(num)
+                except:
+                    continue
+    except:
+        return set()
+    
+    return numbers
+
+def display_search_results(results, search_params):
+    """عرض نتائج البحث بشكل احترافي"""
     # تحويل النتائج إلى DataFrame
     result_df = pd.DataFrame(results)
     
-    # ترتيب النتائج حسب الماكينة ثم التاريخ
-    result_df = result_df.sort_values(["رقم الماكينة", "التاريخ"])
+    # ترتيب النتائج
+    if search_params["sort_by"] == "التاريخ":
+        result_df = result_df.sort_values(by="Date", ascending=False)
+    elif search_params["sort_by"] == "فني الخدمة":
+        result_df = result_df.sort_values(by="Servised by")
+    else:  # رقم الماكينة
+        result_df = result_df.sort_values(by="Card Number")
     
-    # عرض إحصائيات
-    st.markdown("#### 📊 إحصائيات النتائج")
+    # عرض الإحصائيات
+    st.markdown("### 📈 إحصائيات النتائج")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("🔢 عدد الماكينات", result_df["رقم الماكينة"].nunique())
-    
-    with col2:
         st.metric("📋 عدد النتائج", len(result_df))
     
+    with col2:
+        unique_machines = result_df["Card Number"].nunique()
+        st.metric("🔢 عدد الماكينات", unique_machines)
+    
     with col3:
-        with_correction = result_df[result_df["التصحيح"] != "-"].shape[0]
-        st.metric("✏ بها تصحيح", with_correction)
+        if "Servised by" in result_df.columns:
+            unique_techs = result_df[result_df["Servised by"] != "-"]["Servised by"].nunique()
+            st.metric("👨‍🔧 فنيين مختلفين", unique_techs)
+    
+    with col4:
+        with_correction = result_df[result_df["Correction"] != "-"].shape[0]
+        st.metric("✏ تحتوي على تصحيح", with_correction)
+    
+    # توزيع النتائج
+    st.markdown("#### 📊 توزيع النتائج")
+    
+    tab1, tab2, tab3 = st.tabs(["حسب الماكينة", "حسب فني الخدمة", "حسب السنة"])
+    
+    with tab1:
+        if not result_df.empty:
+            machine_dist = result_df["Card Number"].value_counts().head(15)
+            dist_df = pd.DataFrame({
+                "رقم الماكينة": machine_dist.index,
+                "عدد الأحداث": machine_dist.values,
+                "النسبة %": (machine_dist.values / len(result_df) * 100).round(1)
+            })
+            st.dataframe(dist_df, use_container_width=True, height=300)
+    
+    with tab2:
+        if "Servised by" in result_df.columns and not result_df[result_df["Servised by"] != "-"].empty:
+            tech_dist = result_df[result_df["Servised by"] != "-"]["Servised by"].value_counts().head(10)
+            tech_df = pd.DataFrame({
+                "فني الخدمة": tech_dist.index,
+                "عدد الأحداث": tech_dist.values,
+                "النسبة %": (tech_dist.values / len(result_df) * 100).round(1)
+            })
+            st.dataframe(tech_df, use_container_width=True, height=300)
+    
+    with tab3:
+        if "Date" in result_df.columns:
+            years = []
+            for date_str in result_df["Date"]:
+                if date_str != "-":
+                    year_match = re.search(r'(\d{4})', str(date_str))
+                    if year_match:
+                        years.append(year_match.group(1))
+            
+            if years:
+                year_stats = pd.Series(years).value_counts().sort_index()
+                year_df = pd.DataFrame({
+                    "السنة": year_stats.index,
+                    "عدد الأحداث": year_stats.values
+                })
+                st.dataframe(year_df, use_container_width=True, height=300)
+    
+    # عرض النتائج الرئيسية
+    st.markdown("### 📋 النتائج التفصيلية")
     
     # فلترة النتائج
-    st.markdown("#### 🔍 خيارات العرض")
-    
-    filter_col1, filter_col2 = st.columns(2)
+    st.markdown("#### 🔍 فلترة النتائج")
+    filter_col1, filter_col2, filter_col3 = st.columns(3)
     
     with filter_col1:
-        show_only_with_events = st.checkbox("عرض الصفوف بها أحداث فقط", False, key="filter_events_only")
-        show_only_with_corrections = st.checkbox("عرض الصفوف بها تصحيحات فقط", False, key="filter_corrections_only")
-    
+        show_with_event = st.checkbox("📝 مع حدث", True, key="filter_event")
     with filter_col2:
-        sort_by = st.selectbox(
-            "ترتيب النتائج:",
-            ["رقم الماكينة", "التاريخ", "فني الخدمة"],
-            key="simple_sort_by"
-        )
+        show_with_correction = st.checkbox("✏ مع تصحيح", True, key="filter_correction")
+    with filter_col3:
+        show_with_tech = st.checkbox("👨‍🔧 مع فني خدمة", True, key="filter_tech")
     
     # تطبيق الفلاتر
     filtered_df = result_df.copy()
     
-    if show_only_with_events:
-        filtered_df = filtered_df[filtered_df["الحدث"] != "-"]
+    if not show_with_event:
+        filtered_df = filtered_df[filtered_df["Event"] == "-"]
+    if not show_with_correction:
+        filtered_df = filtered_df[filtered_df["Correction"] == "-"]
+    if not show_with_tech:
+        filtered_df = filtered_df[filtered_df["Servised by"] == "-"]
     
-    if show_only_with_corrections:
-        filtered_df = filtered_df[filtered_df["التصحيح"] != "-"]
-    
-    # الترتيب
-    if sort_by == "التاريخ":
-        filtered_df = filtered_df.sort_values("التاريخ", ascending=False)
-    elif sort_by == "فني الخدمة":
-        filtered_df = filtered_df.sort_values("فني الخدمة")
-    else:
-        filtered_df = filtered_df.sort_values("رقم الماكينة")
-    
-    # عرض الجدول
-    st.markdown(f"#### 📋 النتائج ({len(filtered_df)} صف)")
-    
-    # تلوين الصفوف
-    def color_simple_row(row):
-        styles = []
-        for col in row.index:
-            value = row[col]
-            if col == "رقم الماكينة":
-                styles.append("background-color: #e3f2fd; font-weight: bold;")
-            elif col == "التاريخ" and value != "-":
-                styles.append("background-color: #fff3cd;")
-            elif col == "الحدث" and value != "-":
-                styles.append("background-color: #d4edda;")
-            elif col == "التصحيح" and value != "-":
-                styles.append("background-color: #f8d7da;")
-            else:
-                styles.append("")
-        return styles
-    
-    styled_df = filtered_df.style.apply(color_simple_row, axis=1)
-    
+    # عرض البيانات
     st.dataframe(
-        styled_df,
+        filtered_df.style.apply(style_table, axis=1),
         use_container_width=True,
         height=500
     )
-    
-    # تحليل إضافي إذا كان البحث عن "سير"
-    if params.get("text", "").lower() in ["سير", "حزام", "belt"]:
-        st.markdown("#### 📈 تحليل مشاكل السير")
-        analyze_specific_problem(filtered_df, "سير")
     
     # خيارات التصدير
     st.markdown("---")
     st.markdown("### 💾 خيارات التصدير")
     
-    col_exp1, col_exp2 = st.columns(2)
+    export_col1, export_col2 = st.columns(2)
     
-    with col_exp1:
+    with export_col1:
         # تصدير Excel
-        buffer = io.BytesIO()
-        filtered_df.to_excel(buffer, index=False, engine="openpyxl")
+        buffer_excel = io.BytesIO()
+        result_df.to_excel(buffer_excel, index=False, engine="openpyxl")
         st.download_button(
             label="📊 حفظ كملف Excel",
-            data=buffer.getvalue(),
-            file_name=f"بحث_نتائج_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            data=buffer_excel.getvalue(),
+            file_name=f"بحث_أحداث_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
     
-    with col_exp2:
+    with export_col2:
         # تصدير CSV
-        buffer = io.BytesIO()
-        filtered_df.to_csv(buffer, index=False, encoding='utf-8-sig')
+        buffer_csv = io.BytesIO()
+        result_df.to_csv(buffer_csv, index=False, encoding='utf-8-sig')
         st.download_button(
             label="📄 حفظ كملف CSV",
-            data=buffer.getvalue(),
-            file_name=f"بحث_نتائج_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            data=buffer_csv.getvalue(),
+            file_name=f"بحث_أحداث_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
             use_container_width=True
         )
 
-def analyze_specific_problem(df, problem_type):
-    """تحليل مشكلة محددة مثل السير"""
-    st.markdown(f"##### 🔧 تحليل مشاكل {problem_type}")
-    
-    # البحث عن المشكلة
-    if problem_type == "سير":
-        problem_keywords = ["سير", "حزام", "belt"]
-    else:
-        problem_keywords = [problem_type]
-    
-    problem_rows = df[
-        df["الحدث"].str.contains('|'.join(problem_keywords), case=False, na=False) |
-        df["التصحيح"].str.contains('|'.join(problem_keywords), case=False, na=False)
-    ]
-    
-    if not problem_rows.empty:
-        # تحليل حسب الماكينة
-        machine_analysis = problem_rows.groupby("رقم الماكينة").agg({
-            "التاريخ": "count",
-            "الحدث": lambda x: ", ".join([str(v)[:30] for v in x[x != "-"].unique()[:2]]),
-            "التصحيح": lambda x: ", ".join([str(v)[:30] for v in x[x != "-"].unique()[:2]])
-        }).rename(columns={"التاريخ": "عدد مرات المشكلة"})
-        
-        st.dataframe(machine_analysis, use_container_width=True)
-        
-        # تحليل زمني بسيط
-        st.markdown("##### 📅 توزيع المشاكل حسب الماكينة")
-        machine_counts = problem_rows["رقم الماكينة"].value_counts().sort_index()
-        
-        chart_data = pd.DataFrame({
-            "رقم الماكينة": machine_counts.index,
-            "عدد المشاكل": machine_counts.values
-        })
-        
-        st.bar_chart(chart_data.set_index("رقم الماكينة"))
-
-def simple_sequential_interface(all_sheets):
-    """عرض تسلسلي بسيط"""
-    st.markdown("### 📅 العرض التسلسلي")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # نطاق الماكينات
-        st.markdown("**🔢 نطاق الماكينات:**")
-        seq_start = st.number_input("من الماكينة:", min_value=1, max_value=50, value=1, step=1, key="seq_start")
-        seq_end = st.number_input("إلى الماكينة:", min_value=1, max_value=50, value=24, step=1, key="seq_end")
-        
-        # نوع العرض
-        st.markdown("**📊 نوع العرض:**")
-        display_type = st.selectbox(
-            "اختر طريقة العرض:",
-            ["تسلسل حسب الماكينة", "تسلسل حسب التاريخ"],
-            key="display_type"
-        )
-    
-    with col2:
-        # تصفية
-        st.markdown("**🔍 خيارات التصفية:**")
-        show_only_events = st.checkbox("عرض الصفوف بها أحداث فقط", False, key="seq_show_events")
-        show_only_corrections = st.checkbox("عرض الصفوف بها تصحيحات فقط", False, key="seq_show_corrections")
-    
-    if st.button("📋 عرض البيانات", type="primary", key="seq_display_btn"):
-        # جمع البيانات
-        all_data = []
-        
-        for card_num in range(seq_start, seq_end + 1):
-            sheet_name = f"Card{card_num}"
-            if sheet_name in all_sheets:
-                df = all_sheets[sheet_name]
-                
-                for _, row in df.iterrows():
-                    date_str = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else ""
-                    tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
-                    event, correction = extract_event_correction(row, df)
-                    servised_by = get_servised_by_value(row)
-                    
-                    # تطبيق الفلاتر
-                    if show_only_events and event == "-":
-                        continue
-                    if show_only_corrections and correction == "-":
-                        continue
-                    
-                    all_data.append({
-                        "رقم الماكينة": card_num,
-                        "التاريخ": date_str,
-                        "الأطنان": tones,
-                        "الحدث": event,
-                        "التصحيح": correction,
-                        "فني الخدمة": servised_by
-                    })
-        
-        if all_data:
-            seq_df = pd.DataFrame(all_data)
-            
-            if display_type == "تسلسل حسب الماكينة":
-                seq_df = seq_df.sort_values(["رقم الماكينة", "التاريخ"])
-                st.markdown(f"#### 📋 العرض حسب الماكينة ({len(seq_df)} حدث)")
-            else:
-                seq_df = seq_df.sort_values(["التاريخ", "رقم الماكينة"])
-                st.markdown(f"#### 📅 العرض حسب التاريخ ({len(seq_df)} حدث)")
-            
-            # عرض البيانات
-            st.dataframe(
-                seq_df,
-                use_container_width=True,
-                height=500
-            )
-        else:
-            st.warning("⚠ لا توجد بيانات للعرض")
-
-def simple_statistics_interface(all_sheets):
-    """عرض إحصائيات عامة"""
-    st.markdown("### 📊 إحصائيات عامة")
-    
-    # نطاق الماكينات
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        stat_start = st.number_input("من الماكينة:", min_value=1, max_value=50, value=1, step=1, key="stat_start")
-        stat_end = st.number_input("إلى الماكينة:", min_value=1, max_value=50, value=24, step=1, key="stat_end")
-    
-    if st.button("📈 عرض الإحصائيات", type="primary", key="stat_btn"):
-        with st.spinner("📊 جاري تحليل البيانات..."):
-            # جمع البيانات
-            all_data = []
-            
-            for card_num in range(stat_start, stat_end + 1):
-                sheet_name = f"Card{card_num}"
-                if sheet_name in all_sheets:
-                    df = all_sheets[sheet_name]
-                    
-                    for _, row in df.iterrows():
-                        date_str = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else ""
-                        event, correction = extract_event_correction(row, df)
-                        servised_by = get_servised_by_value(row)
-                        
-                        all_data.append({
-                            "رقم الماكينة": card_num,
-                            "التاريخ": date_str,
-                            "الحدث": event,
-                            "التصحيح": correction,
-                            "فني الخدمة": servised_by
-                        })
-            
-            if all_data:
-                stat_df = pd.DataFrame(all_data)
-                display_simple_stats(stat_df)
-            else:
-                st.warning("⚠ لا توجد بيانات للتحليل")
-
-def display_simple_stats(df):
-    """عرض إحصائيات بسيطة"""
-    st.markdown("#### 📈 الإحصائيات العامة")
-    
-    # الإحصائيات الأساسية
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        total_machines = df["رقم الماكينة"].nunique()
-        st.metric("🔢 عدد الماكينات", total_machines)
-    
-    with col2:
-        total_events = df[df["الحدث"] != "-"].shape[0]
-        st.metric("📝 إجمالي الأحداث", total_events)
-    
-    with col3:
-        total_corrections = df[df["التصحيح"] != "-"].shape[0]
-        st.metric("✏ إجمالي التصحيحات", total_corrections)
-    
-    # تحليل الماكينات
-    st.markdown("---")
-    st.markdown("#### 🔢 أكثر الماكينات نشاطاً")
-    
-    machine_events = df[df["الحدث"] != "-"].groupby("رقم الماكينة").size().sort_values(ascending=False).head(10)
-    
-    if not machine_events.empty:
-        machine_df = pd.DataFrame({
-            "رقم الماكينة": machine_events.index,
-            "عدد الأحداث": machine_events.values
-        })
-        
-        st.dataframe(
-            machine_df.style.background_gradient(subset=["عدد الأحداث"], cmap="Reds"),
-            use_container_width=True,
-            height=300
-        )
-    
-    # المشاكل الشائعة
-    st.markdown("---")
-    st.markdown("#### 🔧 المشاكل الشائعة")
-    
-    if not df[df["الحدث"] != "-"].empty:
-        common_events = df[df["الحدث"] != "-"]["الحدث"].value_counts().head(10)
-        events_df = pd.DataFrame({
-            "المشكلة": common_events.index,
-            "التكرار": common_events.values
-        })
-        
-        st.dataframe(
-            events_df.style.background_gradient(subset=["التكرار"], cmap="Greens"),
-            use_container_width=True,
-            height=300
-        )
-
-def simple_problems_analysis(all_sheets):
-    """تحليل مشاكل محددة"""
-    st.markdown("### 🔧 تحليل مشاكل محددة")
-    
-    st.markdown("#### 🔍 اختر نوع المشكلة")
-    
-    problem_types = {
-        "سير": ["سير", "حزام", "belt"],
-        "محور": ["محور", "عمود", "شفت"],
-        "ماتور": ["ماتور", "موتور", "محرك"],
-        "كهرباء": ["كهرباء", "كابلات", "أسلاك", "فيوز"],
-        "تزييت": ["زيت", "تزييت", "شحم", "لبركة"],
-        "تنظيف": ["تنظيف", "غسيل", "نظافة"]
-    }
-    
-    selected_problem = st.selectbox(
-        "اختر نوع المشكلة للتحليل:",
-        list(problem_types.keys()),
-        key="problem_type"
-    )
-    
-    # نطاق الماكينات
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        problem_start = st.number_input("من الماكينة:", min_value=1, max_value=50, value=1, step=1, key="problem_start")
-        problem_end = st.number_input("إلى الماكينة:", min_value=1, max_value=50, value=24, step=1, key="problem_end")
-    
-    with col2:
-        show_details = st.checkbox("عرض التفاصيل الكاملة", True, key="problem_details")
-    
-    if st.button("🔧 تحليل المشكلة", type="primary", key="analyze_btn"):
-        # جمع البيانات
-        all_data = []
-        
-        for card_num in range(problem_start, problem_end + 1):
-            sheet_name = f"Card{card_num}"
-            if sheet_name in all_sheets:
-                df = all_sheets[sheet_name]
-                
-                for _, row in df.iterrows():
-                    date_str = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else ""
-                    tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
-                    event, correction = extract_event_correction(row, df)
-                    servised_by = get_servised_by_value(row)
-                    
-                    # البحث عن المشكلة في النص
-                    search_terms = problem_types[selected_problem]
-                    problem_found = False
-                    
-                    for term in search_terms:
-                        if term.lower() in str(event).lower() or term.lower() in str(correction).lower():
-                            problem_found = True
-                            break
-                    
-                    if problem_found:
-                        all_data.append({
-                            "رقم الماكينة": card_num,
-                            "التاريخ": date_str,
-                            "الأطنان": tones,
-                            "الحدث": event,
-                            "التصحيح": correction,
-                            "فني الخدمة": servised_by
-                        })
-        
-        if all_data:
-            problem_df = pd.DataFrame(all_data)
-            
-            # عرض الإحصائيات
-            st.markdown(f"#### 🔧 تحليل مشاكل {selected_problem}")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                affected_machines = problem_df["رقم الماكينة"].nunique()
-                st.metric("🔢 عدد الماكينات المتأثرة", affected_machines)
-            
-            with col2:
-                total_occurrences = len(problem_df)
-                st.metric("📋 عدد مرات الحدوث", total_occurrences)
-            
-            with col3:
-                if problem_df["التاريخ"].notna().any() and problem_df["التاريخ"].str.strip().ne("").any():
-                    first_date = problem_df[problem_df["التاريخ"] != ""]["التاريخ"].min()
-                    last_date = problem_df[problem_df["التاريخ"] != ""]["التاريخ"].max()
-                    st.metric("📅 النطاق الزمني", f"{first_date} - {last_date}")
-                else:
-                    st.metric("📅 النطاق الزمني", "-")
-            
-            # تحليل الماكينات الأكثر تعرضاً للمشكلة
-            st.markdown("---")
-            st.markdown("##### 🔢 الماكينات الأكثر تعرضاً للمشكلة")
-            
-            machine_counts = problem_df.groupby("رقم الماكينة").size().sort_values(ascending=False)
-            
-            if not machine_counts.empty:
-                machine_df = pd.DataFrame({
-                    "رقم الماكينة": machine_counts.index,
-                    "عدد مرات المشكلة": machine_counts.values
-                })
-                
-                st.dataframe(
-                    machine_df.style.background_gradient(subset=["عدد مرات المشكلة"], cmap="Reds"),
-                    use_container_width=True,
-                    height=300
-                )
-            
-            # عرض التفاصيل إذا طلب المستخدم
-            if show_details:
-                st.markdown("---")
-                st.markdown("##### 📋 التفاصيل الكاملة")
-                
-                # ترتيب حسب الماكينة ثم التاريخ
-                problem_df = problem_df.sort_values(["رقم الماكينة", "التاريخ"])
-                
-                st.dataframe(
-                    problem_df,
-                    use_container_width=True,
-                    height=400
-                )
-        else:
-            st.warning(f"⚠ لم يتم العثور على مشاكل {selected_problem} في النطاق المحدد")
+# -------------------------------
 # 🖥 دالة إضافة إيفينت جديد - في الشيت المنفصل
 # -------------------------------
 def add_new_event(sheets_edit):
