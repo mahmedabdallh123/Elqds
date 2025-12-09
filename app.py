@@ -27,8 +27,8 @@ APP_CONFIG = {
     # إعدادات GitHub
     "REPO_NAME": "mahmedabdallh123/Elqds",
     "BRANCH": "main",
-    "FILE_PATH": "l4.xlsx",
-    "LOCAL_FILE": "l4.xlsx",
+    "FILE_PATH": "l3.xlsx",
+    "LOCAL_FILE": "l3.xlsx",
     
     # إعدادات الأمان
     "MAX_ACTIVE_USERS": 2,
@@ -516,35 +516,6 @@ def get_servised_by_value(row):
     
     return "-"
 
-def prepare_search_results_for_display(results_df):
-    """تحضير نتائج البحث للعرض بترتيب متسلسل"""
-    if results_df.empty:
-        return results_df
-    
-    # نسخة من البيانات
-    df = results_df.copy()
-    
-    # تحويل التواريخ لترتيب زمني
-    df['Date_Parsed'] = pd.to_datetime(df['Date'], errors='coerce', dayfirst=True)
-    
-    # ترتيب حسب رقم الماكينة ثم التاريخ
-    df = df.sort_values(['Card Number', 'Date_Parsed'], ascending=[True, False])
-    
-    # إضافة ترتيب الأحداث لكل ماكينة
-    df['Event_Sequence'] = df.groupby('Card Number').cumcount() + 1
-    df['Total_Events_Per_Machine'] = df.groupby('Card Number')['Card Number'].transform('count')
-    
-    # تنسيق التاريخ للعرض
-    df['Date_Display'] = df['Date_Parsed'].dt.strftime('%Y-%m-%d')
-    df['Date_Display'] = df['Date_Display'].fillna(df['Date'])
-    
-    # إضافة معلومات إضافية
-    df['Has_Event'] = df['Event'] != '-'
-    df['Has_Correction'] = df['Correction'] != '-'
-    df['Has_Technician'] = df['Servised by'] != '-'
-    
-    return df
-
 # -------------------------------
 # 🖥 دالة فحص السيرفيس فقط - من الشيتات الجديدة
 # -------------------------------
@@ -796,245 +767,6 @@ def show_service_statistics(service_stats, result_df):
         )
     
     st.markdown("---")
-    
-    # تبويبات للإحصائيات التفصيلية
-    stat_tabs = st.tabs([
-        "📝 إحصائيات الخدمات",
-        "📋 توزيع الخدمات",
-        "📊 حسب الشريحة"
-    ])
-    
-    with stat_tabs[0]:
-        st.markdown("#### 📝 إحصائيات مفصلة لكل خدمة")
-        
-        # إنشاء DataFrame للإحصائيات
-        stat_data = []
-        all_services = set(service_stats["service_counts"].keys()).union(
-            set(service_stats["service_done_counts"].keys())
-        )
-        
-        for service in sorted(all_services):
-            needed_count = service_stats["service_counts"].get(service, 0)
-            done_count = service_stats["service_done_counts"].get(service, 0)
-            completion_rate_service = (done_count / needed_count * 100) if needed_count > 0 else 0
-            
-            stat_data.append({
-                "الخدمة": service,
-                "مطلوبة": needed_count,
-                "منفذة": done_count,
-                "متبقية": needed_count - done_count,
-                "نسبة الإنجاز": f"{completion_rate_service:.1f}%",
-                "حالة": "✅ ممتاز" if completion_rate_service >= 90 else 
-                       "🟢 جيد" if completion_rate_service >= 70 else 
-                       "🟡 متوسط" if completion_rate_service >= 50 else 
-                       "🔴 ضعيف"
-            })
-        
-        if stat_data:
-            stat_df = pd.DataFrame(stat_data)
-            st.dataframe(stat_df, use_container_width=True, height=400)
-        else:
-            st.info("ℹ️ لا توجد بيانات إحصائية للخدمات.")
-    
-    with stat_tabs[1]:
-        st.markdown("#### 📋 توزيع الخدمات")
-        
-        if service_stats["service_counts"]:
-            # محاولة استخدام plotly إذا كان متاحاً
-            try:
-                import plotly.express as px
-                
-                plot_data = []
-                for service, needed_count in service_stats["service_counts"].items():
-                    done_count = service_stats["service_done_counts"].get(service, 0)
-                    
-                    plot_data.append({
-                        "الخدمة": service,
-                        "النوع": "مطلوبة",
-                        "العدد": needed_count
-                    })
-                    plot_data.append({
-                        "الخدمة": service,
-                        "النوع": "منفذة",
-                        "العدد": done_count
-                    })
-                
-                plot_df = pd.DataFrame(plot_data)
-                
-                # عرض المخطط
-                fig = px.bar(
-                    plot_df, 
-                    x="الخدمة", 
-                    y="العدد", 
-                    color="النوع",
-                    barmode="group",
-                    title="توزيع الخدمات المطلوبة والمنفذة",
-                    color_discrete_map={
-                        "مطلوبة": "#FF6B6B",
-                        "منفذة": "#4ECDC4"
-                    }
-                )
-                fig.update_layout(
-                    xaxis_title="الخدمة",
-                    yaxis_title="العدد",
-                    showlegend=True,
-                    height=500
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # مخطط دائري للنسبة العامة
-                fig2 = px.pie(
-                    names=["✅ منفذة", "⏳ غير منفذة"],
-                    values=[service_stats["total_done_services"], 
-                           service_stats["total_needed_services"] - service_stats["total_done_services"]],
-                    title="نسبة الإنجاز العامة",
-                    color_discrete_sequence=["#4ECDC4", "#FF6B6B"]
-                )
-                fig2.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig2, use_container_width=True)
-                
-            except ImportError:
-                # استخدام streamlit native charts بدلاً من plotly
-                st.info("📊 عرض البيانات باستخدام الرسوم البيانية المضمنة في Streamlit")
-                
-                # عرض جدول بسيط للتوزيع
-                st.markdown("**📋 توزيع الخدمات:**")
-                
-                dist_data = []
-                for service, needed_count in service_stats["service_counts"].items():
-                    done_count = service_stats["service_done_counts"].get(service, 0)
-                    completion_rate = (done_count / needed_count * 100) if needed_count > 0 else 0
-                    
-                    dist_data.append({
-                        "الخدمة": service,
-                        "مطلوبة": needed_count,
-                        "منفذة": done_count,
-                        "نسبة": f"{completion_rate:.1f}%"
-                    })
-                
-                if dist_data:
-                    dist_df = pd.DataFrame(dist_data).sort_values("نسبة", ascending=False)
-                    st.dataframe(dist_df, use_container_width=True, height=300)
-                
-                # مخطط شريطي بسيط باستخدام streamlit
-                st.markdown("**📊 مخطط الخدمات المطلوبة مقابل المنفذة:**")
-                
-                # تحضير البيانات للرسم البياني
-                chart_data = pd.DataFrame({
-                    "الخدمة": list(service_stats["service_counts"].keys()),
-                    "مطلوبة": list(service_stats["service_counts"].values()),
-                    "منفذة": [service_stats["service_done_counts"].get(service, 0) 
-                              for service in service_stats["service_counts"].keys()]
-                })
-                
-                # أخذ أول 10 خدمات لعرضها بشكل أوضح
-                if len(chart_data) > 10:
-                    chart_data = chart_data.nlargest(10, "مطلوبة")
-                
-                st.bar_chart(
-                    chart_data.set_index("الخدمة"),
-                    height=400
-                )
-                
-                # عرض النسبة العامة كـ progress bar
-                st.markdown(f"**📈 نسبة الإنجاز العامة:** {completion_rate:.1f}%")
-                st.progress(completion_rate / 100)
-        else:
-            st.info("ℹ️ لا توجد بيانات كافية لعرض المخططات.")
-    
-    with stat_tabs[2]:
-        st.markdown("#### 📊 الإحصائيات حسب الشريحة")
-        
-        slice_stats_data = []
-        for slice_key, slice_data in service_stats["by_slice"].items():
-            completion_rate_slice = (slice_data["total_done"] / slice_data["total_needed"] * 100) if slice_data["total_needed"] > 0 else 0
-            
-            slice_stats_data.append({
-                "الشريحة": slice_key,
-                "الخدمات المطلوبة": slice_data["total_needed"],
-                "الخدمات المنفذة": slice_data["total_done"],
-                "الخدمات المتبقية": slice_data["total_needed"] - slice_data["total_done"],
-                "نسبة الإنجاز": f"{completion_rate_slice:.1f}%",
-                "حالة الشريحة": "✅ ممتازة" if completion_rate_slice >= 90 else 
-                               "🟢 جيدة" if completion_rate_slice >= 70 else 
-                               "🟡 متوسطة" if completion_rate_slice >= 50 else 
-                               "🔴 ضعيفة"
-            })
-        
-        if slice_stats_data:
-            slice_stats_df = pd.DataFrame(slice_stats_data)
-            st.dataframe(slice_stats_df, use_container_width=True, height=400)
-            
-            # محاولة استخدام plotly للمخططات التفاعلية
-            try:
-                import plotly.graph_objects as go
-                
-                # تحليل نطاقات الشرائح
-                slice_ranges = []
-                completion_rates = []
-                
-                for slice_item in slice_stats_data:
-                    slice_key = slice_item["الشريحة"]
-                    slice_range = slice_key.split("-")
-                    if len(slice_range) == 2:
-                        try:
-                            mid_point = (int(slice_range[0]) + int(slice_range[1])) / 2
-                            slice_ranges.append(mid_point)
-                            
-                            # استخراج النسبة من النص
-                            rate_text = slice_item["نسبة الإنجاز"]
-                            rate_value = float(rate_text.replace("%", "").strip())
-                            completion_rates.append(rate_value)
-                        except:
-                            continue
-                
-                if slice_ranges and completion_rates:
-                    fig3 = go.Figure()
-                    fig3.add_trace(go.Scatter(
-                        x=slice_ranges,
-                        y=completion_rates,
-                        mode='lines+markers',
-                        name='نسبة الإنجاز',
-                        line=dict(color='#4ECDC4', width=3),
-                        marker=dict(size=10, color='#FF6B6B')
-                    ))
-                    
-                    fig3.update_layout(
-                        title="نسبة الإنجاز حسب نطاق الأطنان",
-                        xaxis_title="نطاق الأطنان (منتصف الشريحة)",
-                        yaxis_title="نسبة الإنجاز (%)",
-                        height=400,
-                        showlegend=True
-                    )
-                    
-                    st.plotly_chart(fig3, use_container_width=True)
-                    
-            except ImportError:
-                # استخدام streamlit line chart بديل
-                if slice_stats_data:
-                    # تحضير البيانات للرسم البياني
-                    chart_data = []
-                    for slice_item in slice_stats_data:
-                        slice_key = slice_item["الشريحة"]
-                        slice_range = slice_key.split("-")
-                        if len(slice_range) == 2:
-                            try:
-                                mid_point = (int(slice_range[0]) + int(slice_range[1])) / 2
-                                rate_text = slice_item["نسبة الإنجاز"]
-                                rate_value = float(rate_text.replace("%", "").strip())
-                                
-                                chart_data.append({
-                                    "نطاق الأطنان": mid_point,
-                                    "نسبة الإنجاز": rate_value
-                                })
-                            except:
-                                continue
-                    
-                    if chart_data:
-                        chart_df = pd.DataFrame(chart_data).sort_values("نطاق الأطنان")
-                        st.line_chart(chart_df.set_index("نطاق الأطنان"), height=400)
-        else:
-            st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
 
 # -------------------------------
 # 🖥 دالة فحص الإيفينت والكوريكشن - واجهة مبسطة واحترافية
@@ -1106,21 +838,6 @@ def check_events_and_corrections(all_sheets):
                     key="input_date",
                     placeholder="اتركه فارغاً للبحث في كل التواريخ"
                 )
-                
-                # شهور السنة
-                months = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", 
-                         "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
-                
-                month_cols = st.columns(4)
-                for i, month in enumerate(months):
-                    with month_cols[i % 4]:
-                        if st.button(f"{i+1}. {month}", key=f"month_{i+1}"):
-                            current_date = st.session_state.search_params.get("date_range", "")
-                            if current_date:
-                                st.session_state.search_params["date_range"] = f"{current_date},{i+1}/"
-                            else:
-                                st.session_state.search_params["date_range"] = f"{i+1}/"
-                            st.rerun()
         
         with col2:
             # قسم فنيي الخدمة
@@ -1132,31 +849,6 @@ def check_events_and_corrections(all_sheets):
                     key="input_techs",
                     placeholder="اتركه فارغاً للبحث في كل الفنيين"
                 )
-                
-                # استخراج أسماء الفنيين المتاحة
-                available_techs = extract_available_techs(all_sheets)
-                if available_techs:
-                    st.caption(f"📋 فنيون متاحون ({len(available_techs)}):")
-                    
-                    # الحصول على الفنيين المحددين حالياً بشكل آمن
-                    current_techs_input = st.session_state.search_params.get("tech_names", "")
-                    current_techs = []
-                    if current_techs_input:
-                        # تنظيف القائمة من القيم الفارغة
-                        current_techs = [t.strip() for t in current_techs_input.split(',') 
-                                        if t.strip() and t.strip() in available_techs]
-                    
-                    # استخدام multiselect بدون default أولاً
-                    selected_techs = st.multiselect(
-                        "اختر فنيين:",
-                        options=available_techs,
-                        key="select_techs",
-                        label_visibility="collapsed"
-                    )
-                    
-                    # تحديث الحقل النصي بناءً على الاختيار
-                    if selected_techs:
-                        tech_names = ", ".join(selected_techs)
             
             # قسم نص البحث
             with st.expander("📝 **نص البحث**", expanded=True):
@@ -1167,19 +859,6 @@ def check_events_and_corrections(all_sheets):
                     key="input_text",
                     placeholder="اتركه فارغاً للبحث في كل النصوص"
                 )
-                
-                # كلمات شائعة
-                common_words = ["صيانة", "إصلاح", "تغيير", "تنظيف", "فحص", "تركيب", "تبديل"]
-                word_cols = st.columns(4)
-                for i, word in enumerate(common_words):
-                    with word_cols[i % 4]:
-                        if st.button(word, key=f"word_{word}"):
-                            current_text = st.session_state.search_params.get("search_text", "")
-                            if current_text:
-                                st.session_state.search_params["search_text"] = f"{current_text},{word}"
-                            else:
-                                st.session_state.search_params["search_text"] = word
-                            st.rerun()
         
         # قسم خيارات البحث المتقدمة
         with st.expander("⚙ **خيارات متقدمة**", expanded=False):
@@ -1262,12 +941,6 @@ def check_events_and_corrections(all_sheets):
     st.session_state.search_params["exact_match"] = (search_mode == "مطابقة كاملة")
     st.session_state.search_params["include_empty"] = include_empty
     st.session_state.search_params["sort_by"] = sort_by
-    
-    # تحديث tech_names من multiselect إذا تم الاختيار
-    if "select_techs" in st.session_state and st.session_state.select_techs:
-        selected_techs_list = st.session_state.select_techs
-        if selected_techs_list:
-            st.session_state.search_params["tech_names"] = ", ".join(selected_techs_list)
     
     # معالجة البحث
     if search_clicked or st.session_state.search_triggered:
@@ -1397,10 +1070,7 @@ def show_advanced_search_results(search_params, all_sheets):
     
     # عرض النتائج
     if all_results:
-        # تحضير النتائج للعرض بترتيب متسلسل
-        result_df = pd.DataFrame(all_results)
-        prepared_df = prepare_search_results_for_display(result_df)
-        display_search_results(prepared_df, search_params)
+        display_search_results(all_results, search_params)
     else:
         st.warning("⚠ لم يتم العثور على نتائج تطابق معايير البحث")
         st.info("💡 حاول تعديل معايير البحث أو استخدام مصطلحات أوسع")
@@ -1552,19 +1222,29 @@ def parse_card_numbers(card_numbers_str):
 def display_search_results(results, search_params):
     """عرض نتائج البحث بشكل احترافي مع ترتيب متسلسل"""
     # تحويل النتائج إلى DataFrame
+    if not results:
+        st.warning("⚠ لا توجد نتائج لعرضها")
+        return
+    
     result_df = pd.DataFrame(results)
     
-    # 1. تنظيف وترتيب البيانات
-    if not result_df.empty:
-        # تحويل التواريخ لترتيب زمني صحيح
-        result_df['Date_Clean'] = pd.to_datetime(result_df['Date'], errors='coerce')
-        
-        # ترتيب النتائج أولاً حسب رقم الماكينة ثم التاريخ
-        result_df = result_df.sort_values(by=['Card Number', 'Date_Clean'], ascending=[True, False])
-        
-        # إضافة ترتيب زمني لكل ماكينة
-        result_df['Event_Order'] = result_df.groupby('Card Number').cumcount() + 1
-        result_df['Event_Total'] = result_df.groupby('Card Number')['Card Number'].transform('count')
+    # تحويل رقم الماكينة إلى رقم صحيح للترتيب
+    result_df['Card_Number_Int'] = pd.to_numeric(result_df['Card Number'], errors='coerce')
+    
+    # تحويل التواريخ لترتيب زمني
+    result_df['Date_Parsed'] = pd.to_datetime(result_df['Date'], errors='coerce', dayfirst=True)
+    
+    # ترتيب النتائج حسب رقم الماكينة ثم التاريخ
+    if search_params["sort_by"] == "التاريخ":
+        result_df = result_df.sort_values(by=['Date_Parsed', 'Card_Number_Int'], ascending=[False, True])
+    elif search_params["sort_by"] == "فني الخدمة":
+        result_df = result_df.sort_values(by=['Servised by', 'Card_Number_Int', 'Date_Parsed'], ascending=[True, True, False])
+    else:  # رقم الماكينة (الافتراضي)
+        result_df = result_df.sort_values(by=['Card_Number_Int', 'Date_Parsed'], ascending=[True, False])
+    
+    # إضافة ترتيب الأحداث لكل ماكينة
+    result_df['Event_Order'] = result_df.groupby('Card Number').cumcount() + 1
+    result_df['Total_Events'] = result_df.groupby('Card Number')['Card Number'].transform('count')
     
     # عرض الإحصائيات
     st.markdown("### 📈 إحصائيات النتائج")
@@ -1579,21 +1259,21 @@ def display_search_results(results, search_params):
         st.metric("🔢 عدد الماكينات", unique_machines)
     
     with col3:
-        # حساب عدد الماكينات التي لديها أكثر من حدث
-        events_per_machine = result_df.groupby('Card Number').size()
-        machines_with_multiple_events = (events_per_machine > 1).sum()
-        st.metric("🔢 مكن متعدد الأحداث", machines_with_multiple_events)
+        # عدد الماكينات التي لديها أكثر من حدث
+        machine_counts = result_df.groupby('Card Number').size()
+        multi_event_machines = (machine_counts > 1).sum()
+        st.metric("🔢 مكن متعددة الأحداث", multi_event_machines)
     
     with col4:
         with_correction = result_df[result_df["Correction"] != "-"].shape[0]
         st.metric("✏ تحتوي على تصحيح", with_correction)
     
-    # عرض النتائج بشكل متسلسل ومجموع حسب الماكينة
+    # عرض النتائج بشكل متسلسل
     st.markdown("### 📋 النتائج التفصيلية (مرتبة)")
     
     # فلترة النتائج
     st.markdown("#### 🔍 فلترة النتائج")
-    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+    filter_col1, filter_col2, filter_col3 = st.columns(3)
     
     with filter_col1:
         show_with_event = st.checkbox("📝 مع حدث", True, key="filter_event")
@@ -1601,13 +1281,6 @@ def display_search_results(results, search_params):
         show_with_correction = st.checkbox("✏ مع تصحيح", True, key="filter_correction")
     with filter_col3:
         show_with_tech = st.checkbox("👨‍🔧 مع فني خدمة", True, key="filter_tech")
-    with filter_col4:
-        # فلترة حسب عدد الأحداث للماكينة
-        event_count_filter = st.selectbox(
-            "عدد الأحداث:",
-            ["الكل", "ماكينات بأكثر من حدث", "ماكينات بحدث واحد"],
-            key="filter_event_count"
-        )
     
     # تطبيق الفلاتر
     filtered_df = result_df.copy()
@@ -1619,91 +1292,62 @@ def display_search_results(results, search_params):
     if not show_with_tech:
         filtered_df = filtered_df[filtered_df["Servised by"] == "-"]
     
-    # فلترة حسب عدد الأحداث
-    if event_count_filter == "ماكينات بأكثر من حدث":
-        machine_event_counts = filtered_df.groupby('Card Number').size()
-        machines_with_multiple = machine_event_counts[machine_event_counts > 1].index
-        filtered_df = filtered_df[filtered_df['Card Number'].isin(machines_with_multiple)]
-    elif event_count_filter == "ماكينات بحدث واحد":
-        machine_event_counts = filtered_df.groupby('Card Number').size()
-        machines_with_single = machine_event_counts[machine_event_counts == 1].index
-        filtered_df = filtered_df[filtered_df['Card Number'].isin(machines_with_single)]
-    
-    # إضافة عمود المجموع لكل ماكينة
-    filtered_df['Machine_Total'] = filtered_df.groupby('Card Number')['Card Number'].transform('count')
-    
-    # عرض النتائج بشكل جميل
+    # عرض النتائج
     if not filtered_df.empty:
         # استخدام تبويبات لعرض النتائج بطريقتين
         display_tabs = st.tabs(["📊 عرض جدولي", "📋 عرض تفصيلي حسب الماكينة"])
         
         with display_tabs[0]:
             # العرض الجدولي التقليدي
+            display_columns = ['Card Number', 'Event', 'Correction', 'Servised by', 'Tones', 'Date', 'Event_Order', 'Total_Events']
+            display_df = filtered_df[display_columns].copy()
+            display_df = display_df.sort_values(['Card Number', 'Event_Order'])
+            
             st.dataframe(
-                filtered_df[['Card Number', 'Event', 'Correction', 'Servised by', 'Tones', 'Date', 'Machine_Total']]
-                .style.apply(style_table, axis=1),
+                display_df.style.apply(style_table, axis=1),
                 use_container_width=True,
                 height=500
             )
         
         with display_tabs[1]:
             # عرض تفصيلي لكل ماكينة بشكل منفصل
-            machines = filtered_df['Card Number'].unique()
+            # تجميع الماكينات الفريدة
+            unique_machines = sorted(filtered_df['Card Number'].unique(), 
+                                   key=lambda x: pd.to_numeric(x, errors='coerce') if str(x).isdigit() else float('inf'))
             
-            for machine in sorted(machines, key=lambda x: int(str(x)) if str(x).isdigit() else 0):
+            for machine in unique_machines:
                 machine_data = filtered_df[filtered_df['Card Number'] == machine].copy()
+                machine_data = machine_data.sort_values('Event_Order')
                 
-                with st.expander(f"🔧 الماكينة {machine} - عدد الأحداث: {len(machine_data)}", expanded=len(machines) <= 10):
+                with st.expander(f"🔧 الماكينة {machine} - عدد الأحداث: {len(machine_data)}", expanded=len(unique_machines) <= 5):
                     
-                    # معلومات عامة عن الماكينة
-                    col_info1, col_info2, col_info3 = st.columns(3)
-                    with col_info1:
-                        st.metric(f"🔢 رقم الماكينة", machine)
-                    with col_info2:
-                        st.metric(f"📋 عدد الأحداث", len(machine_data))
-                    with col_info3:
-                        if 'Date_Clean' in machine_data.columns and machine_data['Date_Clean'].notna().any():
-                            last_date = machine_data['Date_Clean'].max()
-                            first_date = machine_data['Date_Clean'].min()
-                            st.metric(f"📅 نطاق التواريخ", 
-                                     f"من {first_date.strftime('%Y-%m-%d')}\nإلى {last_date.strftime('%Y-%m-%d')}")
+                    # عرض إحصائيات الماكينة
+                    col_stats1, col_stats2, col_stats3 = st.columns(3)
+                    with col_stats1:
+                        st.metric("📅 أول حدث", machine_data['Date'].iloc[0] if not machine_data.empty else "-")
+                    with col_stats2:
+                        st.metric("📅 آخر حدث", machine_data['Date'].iloc[-1] if not machine_data.empty else "-")
+                    with col_stats3:
+                        st.metric("👨‍🔧 فنيين مختلفين", machine_data['Servised by'].nunique() if not machine_data.empty else 0)
                     
-                    # عرض أحداث الماكينة مرتبة زمنياً
-                    machine_data = machine_data.sort_values('Date_Clean', ascending=False)
-                    
+                    # عرض أحداث الماكينة
                     for idx, row in machine_data.iterrows():
-                        with st.container():
-                            st.markdown("---")
-                            col_event1, col_event2 = st.columns([3, 2])
-                            
-                            with col_event1:
-                                st.markdown(f"**📅 التاريخ:** {row['Date'] if row['Date'] != '-' else 'غير محدد'}")
-                                if row['Event'] != '-':
-                                    st.markdown(f"**📝 الحدث:** {row['Event']}")
-                                if row['Correction'] != '-':
-                                    st.markdown(f"**✏ التصحيح:** {row['Correction']}")
-                            
-                            with col_event2:
-                                st.markdown(f"**👨‍🔧 فني الخدمة:** {row['Servised by'] if row['Servised by'] != '-' else 'غير محدد'}")
-                                if row['Tones'] != '-':
-                                    st.markdown(f"**⚖️ الأطنان:** {row['Tones']}")
-                                
-                                # ترتيب الحدث
-                                event_order = row.get('Event_Order', '?')
-                                event_total = row.get('Event_Total', '?')
-                                st.markdown(f"**🔢 ترتيب الحدث:** {event_order}/{event_total}")
-                    
-                    # إحصائيات خاصة بالماكينة
-                    machine_stats = {
-                        'مع حدث': (machine_data['Event'] != '-').sum(),
-                        'مع تصحيح': (machine_data['Correction'] != '-').sum(),
-                        'مع فني خدمة': (machine_data['Servised by'] != '-').sum()
-                    }
-                    
-                    cols_stats = st.columns(3)
-                    for idx, (stat_name, stat_value) in enumerate(machine_stats.items()):
-                        with cols_stats[idx]:
-                            st.metric(f"📊 {stat_name}", stat_value)
+                        st.markdown("---")
+                        col_event1, col_event2 = st.columns([3, 2])
+                        
+                        with col_event1:
+                            st.markdown(f"**الحدث #{row['Event_Order']} من {row['Total_Events']}**")
+                            st.markdown(f"**📅 التاريخ:** {row['Date']}")
+                            if row['Event'] != '-':
+                                st.markdown(f"**📝 الحدث:** {row['Event']}")
+                            if row['Correction'] != '-':
+                                st.markdown(f"**✏ التصحيح:** {row['Correction']}")
+                        
+                        with col_event2:
+                            if row['Servised by'] != '-':
+                                st.markdown(f"**👨‍🔧 فني الخدمة:** {row['Servised by']}")
+                            if row['Tones'] != '-':
+                                st.markdown(f"**⚖️ الأطنان:** {row['Tones']}")
     else:
         st.warning("⚠ لم يتم العثور على نتائج تطابق معايير الفلترة")
     
@@ -1711,20 +1355,16 @@ def display_search_results(results, search_params):
     st.markdown("---")
     st.markdown("### 💾 خيارات التصدير")
     
-    export_col1, export_col2, export_col3 = st.columns(3)
+    export_col1, export_col2 = st.columns(2)
     
     with export_col1:
-        # تصدير Excel مع الترتيب الزمني
-        result_df_export = result_df.copy()
-        if 'Date_Clean' in result_df_export.columns:
-            result_df_export['Date'] = result_df_export['Date_Clean'].dt.strftime('%Y-%m-%d')
-        
+        # تصدير Excel
         buffer_excel = io.BytesIO()
-        result_df_export[['Card Number', 'Event', 'Correction', 'Servised by', 'Tones', 'Date']].to_excel(
-            buffer_excel, index=False, engine="openpyxl"
-        )
+        export_df = result_df[['Card Number', 'Event', 'Correction', 'Servised by', 'Tones', 'Date']].copy()
+        export_df = export_df.sort_values(['Card Number', 'Date_Parsed'], ascending=[True, False])
+        export_df.to_excel(buffer_excel, index=False, engine="openpyxl")
         st.download_button(
-            label="📊 حفظ كملف Excel (مرتب)",
+            label="📊 حفظ كملف Excel",
             data=buffer_excel.getvalue(),
             file_name=f"بحث_أحداث_مرتب_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1734,34 +1374,12 @@ def display_search_results(results, search_params):
     with export_col2:
         # تصدير CSV
         buffer_csv = io.BytesIO()
-        result_df[['Card Number', 'Event', 'Correction', 'Servised by', 'Tones', 'Date']].to_csv(
-            buffer_csv, index=False, encoding='utf-8-sig'
-        )
+        export_df.to_csv(buffer_csv, index=False, encoding='utf-8-sig')
         st.download_button(
             label="📄 حفظ كملف CSV",
             data=buffer_csv.getvalue(),
             file_name=f"بحث_أحداث_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
-            use_container_width=True
-        )
-    
-    with export_col3:
-        # تصدير ملخص الماكينات
-        machine_summary = result_df.groupby('Card Number').agg({
-            'Event': lambda x: sum(1 for item in x if item != '-'),
-            'Correction': lambda x: sum(1 for item in x if item != '-'),
-            'Date': 'count',
-            'Servised by': lambda x: ', '.join(set(filter(lambda y: y != '-', x)))
-        }).reset_index()
-        machine_summary.columns = ['رقم الماكينة', 'عدد الأحداث', 'عدد التصحيحات', 'إجمالي السجلات', 'فنيي الخدمة']
-        
-        buffer_summary = io.BytesIO()
-        machine_summary.to_excel(buffer_summary, index=False, engine="openpyxl")
-        st.download_button(
-            label="📋 ملخص الماكينات",
-            data=buffer_summary.getvalue(),
-            file_name=f"ملخص_الماكينات_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
 
