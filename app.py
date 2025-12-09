@@ -516,6 +516,35 @@ def get_servised_by_value(row):
     
     return "-"
 
+def prepare_search_results_for_display(results_df):
+    """تحضير نتائج البحث للعرض بترتيب متسلسل"""
+    if results_df.empty:
+        return results_df
+    
+    # نسخة من البيانات
+    df = results_df.copy()
+    
+    # تحويل التواريخ لترتيب زمني
+    df['Date_Parsed'] = pd.to_datetime(df['Date'], errors='coerce', dayfirst=True)
+    
+    # ترتيب حسب رقم الماكينة ثم التاريخ
+    df = df.sort_values(['Card Number', 'Date_Parsed'], ascending=[True, False])
+    
+    # إضافة ترتيب الأحداث لكل ماكينة
+    df['Event_Sequence'] = df.groupby('Card Number').cumcount() + 1
+    df['Total_Events_Per_Machine'] = df.groupby('Card Number')['Card Number'].transform('count')
+    
+    # تنسيق التاريخ للعرض
+    df['Date_Display'] = df['Date_Parsed'].dt.strftime('%Y-%m-%d')
+    df['Date_Display'] = df['Date_Display'].fillna(df['Date'])
+    
+    # إضافة معلومات إضافية
+    df['Has_Event'] = df['Event'] != '-'
+    df['Has_Correction'] = df['Correction'] != '-'
+    df['Has_Technician'] = df['Servised by'] != '-'
+    
+    return df
+
 # -------------------------------
 # 🖥 دالة فحص السيرفيس فقط - من الشيتات الجديدة
 # -------------------------------
@@ -1368,7 +1397,10 @@ def show_advanced_search_results(search_params, all_sheets):
     
     # عرض النتائج
     if all_results:
-        display_search_results(all_results, search_params)
+        # تحضير النتائج للعرض بترتيب متسلسل
+        result_df = pd.DataFrame(all_results)
+        prepared_df = prepare_search_results_for_display(result_df)
+        display_search_results(prepared_df, search_params)
     else:
         st.warning("⚠ لم يتم العثور على نتائج تطابق معايير البحث")
         st.info("💡 حاول تعديل معايير البحث أو استخدام مصطلحات أوسع")
@@ -1518,17 +1550,21 @@ def parse_card_numbers(card_numbers_str):
     return numbers
 
 def display_search_results(results, search_params):
-    """عرض نتائج البحث بشكل احترافي"""
+    """عرض نتائج البحث بشكل احترافي مع ترتيب متسلسل"""
     # تحويل النتائج إلى DataFrame
     result_df = pd.DataFrame(results)
     
-    # ترتيب النتائج
-    if search_params["sort_by"] == "التاريخ":
-        result_df = result_df.sort_values(by="Date", ascending=False)
-    elif search_params["sort_by"] == "فني الخدمة":
-        result_df = result_df.sort_values(by="Servised by")
-    else:  # رقم الماكينة
-        result_df = result_df.sort_values(by="Card Number")
+    # 1. تنظيف وترتيب البيانات
+    if not result_df.empty:
+        # تحويل التواريخ لترتيب زمني صحيح
+        result_df['Date_Clean'] = pd.to_datetime(result_df['Date'], errors='coerce')
+        
+        # ترتيب النتائج أولاً حسب رقم الماكينة ثم التاريخ
+        result_df = result_df.sort_values(by=['Card Number', 'Date_Clean'], ascending=[True, False])
+        
+        # إضافة ترتيب زمني لكل ماكينة
+        result_df['Event_Order'] = result_df.groupby('Card Number').cumcount() + 1
+        result_df['Event_Total'] = result_df.groupby('Card Number')['Card Number'].transform('count')
     
     # عرض الإحصائيات
     st.markdown("### 📈 إحصائيات النتائج")
@@ -1543,62 +1579,21 @@ def display_search_results(results, search_params):
         st.metric("🔢 عدد الماكينات", unique_machines)
     
     with col3:
-        if "Servised by" in result_df.columns:
-            unique_techs = result_df[result_df["Servised by"] != "-"]["Servised by"].nunique()
-            st.metric("👨‍🔧 فنيين مختلفين", unique_techs)
+        # حساب عدد الماكينات التي لديها أكثر من حدث
+        events_per_machine = result_df.groupby('Card Number').size()
+        machines_with_multiple_events = (events_per_machine > 1).sum()
+        st.metric("🔢 مكن متعدد الأحداث", machines_with_multiple_events)
     
     with col4:
         with_correction = result_df[result_df["Correction"] != "-"].shape[0]
         st.metric("✏ تحتوي على تصحيح", with_correction)
     
-    # توزيع النتائج
-    st.markdown("#### 📊 توزيع النتائج")
-    
-    tab1, tab2, tab3 = st.tabs(["حسب الماكينة", "حسب فني الخدمة", "حسب السنة"])
-    
-    with tab1:
-        if not result_df.empty:
-            machine_dist = result_df["Card Number"].value_counts().head(15)
-            dist_df = pd.DataFrame({
-                "رقم الماكينة": machine_dist.index,
-                "عدد الأحداث": machine_dist.values,
-                "النسبة %": (machine_dist.values / len(result_df) * 100).round(1)
-            })
-            st.dataframe(dist_df, use_container_width=True, height=300)
-    
-    with tab2:
-        if "Servised by" in result_df.columns and not result_df[result_df["Servised by"] != "-"].empty:
-            tech_dist = result_df[result_df["Servised by"] != "-"]["Servised by"].value_counts().head(10)
-            tech_df = pd.DataFrame({
-                "فني الخدمة": tech_dist.index,
-                "عدد الأحداث": tech_dist.values,
-                "النسبة %": (tech_dist.values / len(result_df) * 100).round(1)
-            })
-            st.dataframe(tech_df, use_container_width=True, height=300)
-    
-    with tab3:
-        if "Date" in result_df.columns:
-            years = []
-            for date_str in result_df["Date"]:
-                if date_str != "-":
-                    year_match = re.search(r'(\d{4})', str(date_str))
-                    if year_match:
-                        years.append(year_match.group(1))
-            
-            if years:
-                year_stats = pd.Series(years).value_counts().sort_index()
-                year_df = pd.DataFrame({
-                    "السنة": year_stats.index,
-                    "عدد الأحداث": year_stats.values
-                })
-                st.dataframe(year_df, use_container_width=True, height=300)
-    
-    # عرض النتائج الرئيسية
-    st.markdown("### 📋 النتائج التفصيلية")
+    # عرض النتائج بشكل متسلسل ومجموع حسب الماكينة
+    st.markdown("### 📋 النتائج التفصيلية (مرتبة)")
     
     # فلترة النتائج
     st.markdown("#### 🔍 فلترة النتائج")
-    filter_col1, filter_col2, filter_col3 = st.columns(3)
+    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
     
     with filter_col1:
         show_with_event = st.checkbox("📝 مع حدث", True, key="filter_event")
@@ -1606,6 +1601,13 @@ def display_search_results(results, search_params):
         show_with_correction = st.checkbox("✏ مع تصحيح", True, key="filter_correction")
     with filter_col3:
         show_with_tech = st.checkbox("👨‍🔧 مع فني خدمة", True, key="filter_tech")
+    with filter_col4:
+        # فلترة حسب عدد الأحداث للماكينة
+        event_count_filter = st.selectbox(
+            "عدد الأحداث:",
+            ["الكل", "ماكينات بأكثر من حدث", "ماكينات بحدث واحد"],
+            key="filter_event_count"
+        )
     
     # تطبيق الفلاتر
     filtered_df = result_df.copy()
@@ -1617,27 +1619,114 @@ def display_search_results(results, search_params):
     if not show_with_tech:
         filtered_df = filtered_df[filtered_df["Servised by"] == "-"]
     
-    # عرض البيانات
-    st.dataframe(
-        filtered_df.style.apply(style_table, axis=1),
-        use_container_width=True,
-        height=500
-    )
+    # فلترة حسب عدد الأحداث
+    if event_count_filter == "ماكينات بأكثر من حدث":
+        machine_event_counts = filtered_df.groupby('Card Number').size()
+        machines_with_multiple = machine_event_counts[machine_event_counts > 1].index
+        filtered_df = filtered_df[filtered_df['Card Number'].isin(machines_with_multiple)]
+    elif event_count_filter == "ماكينات بحدث واحد":
+        machine_event_counts = filtered_df.groupby('Card Number').size()
+        machines_with_single = machine_event_counts[machine_event_counts == 1].index
+        filtered_df = filtered_df[filtered_df['Card Number'].isin(machines_with_single)]
+    
+    # إضافة عمود المجموع لكل ماكينة
+    filtered_df['Machine_Total'] = filtered_df.groupby('Card Number')['Card Number'].transform('count')
+    
+    # عرض النتائج بشكل جميل
+    if not filtered_df.empty:
+        # استخدام تبويبات لعرض النتائج بطريقتين
+        display_tabs = st.tabs(["📊 عرض جدولي", "📋 عرض تفصيلي حسب الماكينة"])
+        
+        with display_tabs[0]:
+            # العرض الجدولي التقليدي
+            st.dataframe(
+                filtered_df[['Card Number', 'Event', 'Correction', 'Servised by', 'Tones', 'Date', 'Machine_Total']]
+                .style.apply(style_table, axis=1),
+                use_container_width=True,
+                height=500
+            )
+        
+        with display_tabs[1]:
+            # عرض تفصيلي لكل ماكينة بشكل منفصل
+            machines = filtered_df['Card Number'].unique()
+            
+            for machine in sorted(machines, key=lambda x: int(str(x)) if str(x).isdigit() else 0):
+                machine_data = filtered_df[filtered_df['Card Number'] == machine].copy()
+                
+                with st.expander(f"🔧 الماكينة {machine} - عدد الأحداث: {len(machine_data)}", expanded=len(machines) <= 10):
+                    
+                    # معلومات عامة عن الماكينة
+                    col_info1, col_info2, col_info3 = st.columns(3)
+                    with col_info1:
+                        st.metric(f"🔢 رقم الماكينة", machine)
+                    with col_info2:
+                        st.metric(f"📋 عدد الأحداث", len(machine_data))
+                    with col_info3:
+                        if 'Date_Clean' in machine_data.columns and machine_data['Date_Clean'].notna().any():
+                            last_date = machine_data['Date_Clean'].max()
+                            first_date = machine_data['Date_Clean'].min()
+                            st.metric(f"📅 نطاق التواريخ", 
+                                     f"من {first_date.strftime('%Y-%m-%d')}\nإلى {last_date.strftime('%Y-%m-%d')}")
+                    
+                    # عرض أحداث الماكينة مرتبة زمنياً
+                    machine_data = machine_data.sort_values('Date_Clean', ascending=False)
+                    
+                    for idx, row in machine_data.iterrows():
+                        with st.container():
+                            st.markdown("---")
+                            col_event1, col_event2 = st.columns([3, 2])
+                            
+                            with col_event1:
+                                st.markdown(f"**📅 التاريخ:** {row['Date'] if row['Date'] != '-' else 'غير محدد'}")
+                                if row['Event'] != '-':
+                                    st.markdown(f"**📝 الحدث:** {row['Event']}")
+                                if row['Correction'] != '-':
+                                    st.markdown(f"**✏ التصحيح:** {row['Correction']}")
+                            
+                            with col_event2:
+                                st.markdown(f"**👨‍🔧 فني الخدمة:** {row['Servised by'] if row['Servised by'] != '-' else 'غير محدد'}")
+                                if row['Tones'] != '-':
+                                    st.markdown(f"**⚖️ الأطنان:** {row['Tones']}")
+                                
+                                # ترتيب الحدث
+                                event_order = row.get('Event_Order', '?')
+                                event_total = row.get('Event_Total', '?')
+                                st.markdown(f"**🔢 ترتيب الحدث:** {event_order}/{event_total}")
+                    
+                    # إحصائيات خاصة بالماكينة
+                    machine_stats = {
+                        'مع حدث': (machine_data['Event'] != '-').sum(),
+                        'مع تصحيح': (machine_data['Correction'] != '-').sum(),
+                        'مع فني خدمة': (machine_data['Servised by'] != '-').sum()
+                    }
+                    
+                    cols_stats = st.columns(3)
+                    for idx, (stat_name, stat_value) in enumerate(machine_stats.items()):
+                        with cols_stats[idx]:
+                            st.metric(f"📊 {stat_name}", stat_value)
+    else:
+        st.warning("⚠ لم يتم العثور على نتائج تطابق معايير الفلترة")
     
     # خيارات التصدير
     st.markdown("---")
     st.markdown("### 💾 خيارات التصدير")
     
-    export_col1, export_col2 = st.columns(2)
+    export_col1, export_col2, export_col3 = st.columns(3)
     
     with export_col1:
-        # تصدير Excel
+        # تصدير Excel مع الترتيب الزمني
+        result_df_export = result_df.copy()
+        if 'Date_Clean' in result_df_export.columns:
+            result_df_export['Date'] = result_df_export['Date_Clean'].dt.strftime('%Y-%m-%d')
+        
         buffer_excel = io.BytesIO()
-        result_df.to_excel(buffer_excel, index=False, engine="openpyxl")
+        result_df_export[['Card Number', 'Event', 'Correction', 'Servised by', 'Tones', 'Date']].to_excel(
+            buffer_excel, index=False, engine="openpyxl"
+        )
         st.download_button(
-            label="📊 حفظ كملف Excel",
+            label="📊 حفظ كملف Excel (مرتب)",
             data=buffer_excel.getvalue(),
-            file_name=f"بحث_أحداث_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            file_name=f"بحث_أحداث_مرتب_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
@@ -1645,12 +1734,34 @@ def display_search_results(results, search_params):
     with export_col2:
         # تصدير CSV
         buffer_csv = io.BytesIO()
-        result_df.to_csv(buffer_csv, index=False, encoding='utf-8-sig')
+        result_df[['Card Number', 'Event', 'Correction', 'Servised by', 'Tones', 'Date']].to_csv(
+            buffer_csv, index=False, encoding='utf-8-sig'
+        )
         st.download_button(
             label="📄 حفظ كملف CSV",
             data=buffer_csv.getvalue(),
             file_name=f"بحث_أحداث_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
+            use_container_width=True
+        )
+    
+    with export_col3:
+        # تصدير ملخص الماكينات
+        machine_summary = result_df.groupby('Card Number').agg({
+            'Event': lambda x: sum(1 for item in x if item != '-'),
+            'Correction': lambda x: sum(1 for item in x if item != '-'),
+            'Date': 'count',
+            'Servised by': lambda x: ', '.join(set(filter(lambda y: y != '-', x)))
+        }).reset_index()
+        machine_summary.columns = ['رقم الماكينة', 'عدد الأحداث', 'عدد التصحيحات', 'إجمالي السجلات', 'فنيي الخدمة']
+        
+        buffer_summary = io.BytesIO()
+        machine_summary.to_excel(buffer_summary, index=False, engine="openpyxl")
+        st.download_button(
+            label="📋 ملخص الماكينات",
+            data=buffer_summary.getvalue(),
+            file_name=f"ملخص_الماكينات_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
 
