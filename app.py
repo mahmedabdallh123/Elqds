@@ -206,8 +206,16 @@ def login_ui():
 
     st.title(f"{APP_CONFIG['APP_ICON']} تسجيل الدخول - {APP_CONFIG['APP_TITLE']}")
 
+    # تحميل قائمة المستخدمين مباشرة من الملف
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            current_users = json.load(f)
+        user_list = list(current_users.keys())
+    except:
+        user_list = list(users.keys())
+
     # اختيار المستخدم
-    username_input = st.selectbox("👤 اختر المستخدم", list(users.keys()))
+    username_input = st.selectbox("👤 اختر المستخدم", user_list)
     password = st.text_input("🔑 كلمة المرور", type="password")
 
     active_users = [u for u, v in state.items() if v.get("active")]
@@ -216,7 +224,10 @@ def login_ui():
 
     if not st.session_state.logged_in:
         if st.button("تسجيل الدخول"):
-            if username_input in users and users[username_input]["password"] == password:
+            # تحميل المستخدمين من جديد للتأكد من أحدث بيانات
+            current_users = load_users()
+            
+            if username_input in current_users and current_users[username_input]["password"] == password:
                 if username_input == "admin":
                     pass
                 elif username_input in active_users:
@@ -225,12 +236,15 @@ def login_ui():
                 elif active_count >= MAX_ACTIVE_USERS:
                     st.error("🚫 الحد الأقصى للمستخدمين المتصلين حالياً.")
                     return False
+                
                 state[username_input] = {"active": True, "login_time": datetime.now().isoformat()}
                 save_state(state)
+                
                 st.session_state.logged_in = True
                 st.session_state.username = username_input
-                st.session_state.user_role = users[username_input].get("role", "viewer")
-                st.session_state.user_permissions = users[username_input].get("permissions", ["view"])
+                st.session_state.user_role = current_users[username_input].get("role", "viewer")
+                st.session_state.user_permissions = current_users[username_input].get("permissions", ["view"])
+                
                 st.success(f"✅ تم تسجيل الدخول: {username_input} ({st.session_state.user_role})")
                 st.rerun()
             else:
@@ -448,34 +462,32 @@ def style_table(row):
 
 def get_user_permissions(user_role, user_permissions):
     """الحصول على صلاحيات المستخدم بناءً على الدور والصلاحيات"""
-    if "all" in user_permissions:
+    # إذا كان الدور admin، يعطى جميع الصلاحيات
+    if user_role == "admin":
         return {
             "can_view": True,
             "can_edit": True,
             "can_manage_users": True,
             "can_see_tech_support": True
         }
-    elif "edit" in user_permissions:
+    
+    # إذا كان الدور editor
+    elif user_role == "editor":
         return {
             "can_view": True,
             "can_edit": True,
             "can_manage_users": False,
             "can_see_tech_support": False
         }
-    elif "view" in user_permissions:
-        return {
-            "can_view": True,
-            "can_edit": False,
-            "can_manage_users": False,
-            "can_see_tech_support": False
-        }
+    
+    # إذا كان الدور viewer أو أي دور آخر
     else:
-        # صلاحيات افتراضية للعرض فقط
+        # التحقق من الصلاحيات الفردية
         return {
-            "can_view": True,
-            "can_edit": False,
-            "can_manage_users": False,
-            "can_see_tech_support": False
+            "can_view": "view" in user_permissions or "edit" in user_permissions or "all" in user_permissions,
+            "can_edit": "edit" in user_permissions or "all" in user_permissions,
+            "can_manage_users": "manage_users" in user_permissions or "all" in user_permissions,
+            "can_see_tech_support": "tech_support" in user_permissions or "all" in user_permissions
         }
 
 def get_servised_by_value(row):
@@ -996,6 +1008,491 @@ def show_service_statistics(service_stats, result_df):
             st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
 
 # -------------------------------
+# 📅 دالة العرض التسلسلي حسب التاريخ ورقم الماكينة
+# -------------------------------
+def display_sequential_timeline(all_sheets):
+    """عرض إيفينت وكوريكشن بتسلسل رقمي وزمني"""
+    st.subheader("📅 العرض التسلسلي حسب التاريخ ورقم الماكينة")
+    
+    if not all_sheets:
+        st.error("❌ لم يتم تحميل أي شيتات.")
+        return
+    
+    # تقسيم الصفحة إلى قسمين
+    col_config, col_display = st.columns([1, 3])
+    
+    with col_config:
+        st.markdown("### ⚙ إعدادات العرض")
+        
+        # إعدادات الأرقام
+        st.markdown("#### 🔢 أرقام الماكينات")
+        card_range = st.slider(
+            "نطاق أرقام الماكينات:",
+            min_value=1,
+            max_value=50,
+            value=(1, 24),
+            step=1,
+            key="timeline_card_range"
+        )
+        
+        # إعدادات التاريخ
+        st.markdown("#### 📅 نطاق التاريخ")
+        year_options = list(range(2020, 2031))
+        selected_year = st.selectbox(
+            "السنة:",
+            year_options,
+            index=year_options.index(2025),
+            key="timeline_year"
+        )
+        
+        month_options = [
+            "كل الشهور", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+            "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
+        ]
+        selected_month = st.selectbox(
+            "الشهر:",
+            month_options,
+            key="timeline_month"
+        )
+        
+        # خيارات التصفية
+        st.markdown("#### 🔍 خيارات التصفية")
+        show_empty = st.checkbox("عرض الصفوف الفارغة", False, key="timeline_show_empty")
+        group_by_date = st.checkbox("تجميع حسب التاريخ", True, key="timeline_group_by_date")
+        show_stats = st.checkbox("عرض الإحصائيات", True, key="timeline_show_stats")
+    
+    # معالجة البيانات
+    with st.spinner("📊 جاري معالجة البيانات..."):
+        all_events = []
+        
+        # جمع البيانات من جميع الماكينات في النطاق المحدد
+        for card_num in range(card_range[0], card_range[1] + 1):
+            sheet_name = f"Card{card_num}"
+            if sheet_name in all_sheets:
+                df = all_sheets[sheet_name]
+                
+                for _, row in df.iterrows():
+                    # استخراج البيانات
+                    date_str = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else ""
+                    tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
+                    
+                    # استخراج الإيفينت والكوريكشن
+                    event_value, correction_value = extract_event_correction(row, df)
+                    
+                    # استخراج فني الخدمة
+                    servised_by_value = get_servised_by_value(row)
+                    
+                    # إذا كانت كل الحقول فارغة وكان التصفية نشطة، نتجاوز
+                    if (not show_empty and 
+                        event_value == "-" and 
+                        correction_value == "-" and 
+                        date_str == "" and 
+                        tones == "-"):
+                        continue
+                    
+                    # تحليل التاريخ
+                    month_name = ""
+                    month_num = 0
+                    year_num = 0
+                    
+                    if date_str:
+                        # محاولة تحليل التاريخ
+                        date_parts = re.split(r'[/\-\\\. ]', date_str)
+                        if len(date_parts) >= 2:
+                            try:
+                                # افتراض أن التاريخ بصيغة يوم/شهر/سنة
+                                day = int(date_parts[0]) if date_parts[0].isdigit() else 0
+                                month_num = int(date_parts[1]) if date_parts[1].isdigit() else 0
+                                if len(date_parts) >= 3:
+                                    year_num = int(date_parts[2]) if date_parts[2].isdigit() else 0
+                            except:
+                                pass
+                    
+                    # أسماء الشهور
+                    months_dict = {
+                        1: "يناير", 2: "فبراير", 3: "مارس", 4: "أبريل",
+                        5: "مايو", 6: "يونيو", 7: "يوليو", 8: "أغسطس",
+                        9: "سبتمبر", 10: "أكتوبر", 11: "نوفمبر", 12: "ديسمبر"
+                    }
+                    
+                    month_name = months_dict.get(month_num, "")
+                    
+                    # التحقق من تطابق السنة
+                    if selected_year != 2020 and year_num != 0 and year_num != selected_year:
+                        continue
+                    
+                    # التحقق من تطابق الشهر
+                    if (selected_month != "كل الشهور" and 
+                        month_name and 
+                        selected_month != month_name):
+                        continue
+                    
+                    # إضافة الحدث إلى القائمة
+                    all_events.append({
+                        "رقم الماكينة": card_num,
+                        "التاريخ": date_str if date_str else "-",
+                        "الشهر": month_name if month_name else "-",
+                        "السنة": year_num if year_num else "-",
+                        "الأطنان": tones,
+                        "الحدث": event_value,
+                        "التصحيح": correction_value,
+                        "فني الخدمة": servised_by_value,
+                        "الشهر_رقم": month_num,
+                        "اليوم": int(date_parts[0]) if date_str and len(date_parts) > 0 and date_parts[0].isdigit() else 0
+                    })
+        
+        # إذا لم توجد بيانات
+        if not all_events:
+            st.warning("⚠ لم يتم العثور على أحداث في النطاق المحدد.")
+            return
+        
+        # تحويل إلى DataFrame
+        events_df = pd.DataFrame(all_events)
+        
+        # ترتيب البيانات
+        if group_by_date:
+            events_df = events_df.sort_values(
+                by=["السنة", "الشهر_رقم", "اليوم", "رقم الماكينة"],
+                ascending=[False, True, True, True]
+            )
+        else:
+            events_df = events_df.sort_values(
+                by=["رقم الماكينة", "السنة", "الشهر_رقم", "اليوم"],
+                ascending=[True, False, True, True]
+            )
+    
+    # عرض البيانات
+    with col_display:
+        st.markdown(f"### 📋 العرض التسلسلي ({len(events_df)} حدث)")
+        
+        # عرض الإحصائيات إذا كان مفعلاً
+        if show_stats:
+            display_timeline_statistics(events_df)
+        
+        # تبويبات العرض المختلفة
+        timeline_tabs = st.tabs(["📋 جدول تفصيلي", "📊 جدول تلخيصي", "📅 عرض زمني"])
+        
+        with timeline_tabs[0]:
+            display_detailed_timeline(events_df, group_by_date)
+        
+        with timeline_tabs[1]:
+            display_summary_timeline(events_df)
+        
+        with timeline_tabs[2]:
+            display_calendar_timeline(events_df)
+
+def display_timeline_statistics(events_df):
+    """عرض إحصائيات الخط الزمني"""
+    st.markdown("#### 📈 إحصائيات البيانات")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        unique_cards = events_df["رقم الماكينة"].nunique()
+        st.metric("🔢 عدد الماكينات", unique_cards)
+    
+    with col2:
+        events_count = events_df[events_df["الحدث"] != "-"].shape[0]
+        st.metric("📝 عدد الأحداث", events_count)
+    
+    with col3:
+        corrections_count = events_df[events_df["التصحيح"] != "-"].shape[0]
+        st.metric("✏ عدد التصحيحات", corrections_count)
+    
+    with col4:
+        # حساب عدد الأيام التي تحتوي على أحداث
+        event_dates = events_df[events_df["التاريخ"] != "-"]["التاريخ"].nunique()
+        st.metric("📅 أيام تحتوي أحداث", event_dates)
+    
+    # توزيع البيانات حسب الشهر
+    if "الشهر" in events_df.columns:
+        monthly_dist = events_df[events_df["الشهر"] != "-"]["الشهر"].value_counts()
+        if not monthly_dist.empty:
+            st.markdown("#### 📊 توزيع الأحداث حسب الشهر")
+            
+            # إعادة ترتيب الشهور
+            months_order = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+                          "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
+            
+            # فلترة لأسماء الشهور الموجودة فقط
+            existing_months = [m for m in months_order if m in monthly_dist.index]
+            monthly_dist_sorted = monthly_dist.reindex(existing_months)
+            
+            # عرض كمخطط شريطي
+            monthly_df = pd.DataFrame({
+                "الشهر": monthly_dist_sorted.index,
+                "عدد الأحداث": monthly_dist_sorted.values
+            })
+            
+            st.bar_chart(monthly_df.set_index("الشهر"))
+
+def display_detailed_timeline(events_df, group_by_date):
+    """عرض جدول تفصيلي للخط الزمني"""
+    st.markdown("#### 📋 التفاصيل الكاملة")
+    
+    # أزرار التصدير
+    col_exp1, col_exp2 = st.columns(2)
+    
+    with col_exp1:
+        if st.button("📊 تصدير Excel", key="export_timeline_excel"):
+            buffer = io.BytesIO()
+            events_df.to_excel(buffer, index=False, engine="openpyxl")
+            st.download_button(
+                label="💾 تحميل كملف Excel",
+                data=buffer.getvalue(),
+                file_name=f"timeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    
+    with col_exp2:
+        if st.button("📄 تصدير CSV", key="export_timeline_csv"):
+            buffer = io.BytesIO()
+            events_df.to_csv(buffer, index=False, encoding='utf-8-sig')
+            st.download_button(
+                label="💾 تحميل كملف CSV",
+                data=buffer.getvalue(),
+                file_name=f"timeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+    
+    # فلترة البيانات
+    st.markdown("#### 🔍 فلترة البيانات")
+    filter_col1, filter_col2, filter_col3 = st.columns(3)
+    
+    with filter_col1:
+        filter_has_event = st.checkbox("عرض الصفوف بها أحداث", True, key="filter_has_event")
+    
+    with filter_col2:
+        filter_has_correction = st.checkbox("عرض الصفوف بها تصحيحات", True, key="filter_has_correction")
+    
+    with filter_col3:
+        filter_has_date = st.checkbox("عرض الصفوب بتاريخ", True, key="filter_has_date")
+    
+    # تطبيق الفلاتر
+    filtered_df = events_df.copy()
+    
+    if not filter_has_event:
+        filtered_df = filtered_df[filtered_df["الحدث"] == "-"]
+    if not filter_has_correction:
+        filtered_df = filtered_df[filtered_df["التصحيح"] == "-"]
+    if not filter_has_date:
+        filtered_df = filtered_df[filtered_df["التاريخ"] == "-"]
+    
+    # تحديد عدد الصفوف المعروضة
+    row_count = st.slider("عدد الصفوف المعروضة:", 10, 200, 50, 10, key="timeline_row_count")
+    
+    # عرض البيانات
+    display_df = filtered_df.head(row_count)
+    
+    # تنسيق الجدول
+    def format_timeline_row(row):
+        styles = []
+        for col in row.index:
+            value = row[col]
+            if col == "رقم الماكينة":
+                styles.append("background-color: #e3f2fd; font-weight: bold;")
+            elif col == "التاريخ" and value != "-":
+                styles.append("background-color: #fff3cd; font-weight: bold;")
+            elif col == "الحدث" and value != "-":
+                styles.append("background-color: #d4edda;")
+            elif col == "التصحيح" and value != "-":
+                styles.append("background-color: #f8d7da;")
+            elif col == "فني الخدمة" and value != "-":
+                styles.append("background-color: #e8f5e9;")
+            else:
+                styles.append("")
+        return styles
+    
+    styled_df = display_df.style.apply(format_timeline_row, axis=1)
+    
+    st.dataframe(
+        styled_df,
+        use_container_width=True,
+        height=400
+    )
+    
+    # عرض ملخص
+    st.info(f"📊 عرض {len(display_df)} من أصل {len(filtered_df)} صف")
+
+def display_summary_timeline(events_df):
+    """عرض جدول تلخيصي للخط الزمني"""
+    st.markdown("#### 📊 جدول تلخيصي")
+    
+    # إنشاء جدول تلخيصي
+    summary_data = []
+    
+    # تجميع البيانات حسب الماكينة والشهر
+    grouped = events_df.groupby(["رقم الماكينة", "الشهر"])
+    
+    for (card_num, month_name), group in grouped:
+        if month_name == "-":
+            continue
+            
+        events_count = group[group["الحدث"] != "-"].shape[0]
+        corrections_count = group[group["التصحيح"] != "-"].shape[0]
+        
+        # جلب تفاصيل الإيفينت الأخير
+        last_event = group[group["الحدث"] != "-"].iloc[-1] if not group[group["الحدث"] != "-"].empty else None
+        last_event_text = last_event["الحدث"] if last_event is not None else "-"
+        
+        # جلب تفاصيل الكوريكشن الأخير
+        last_correction = group[group["التصحيح"] != "-"].iloc[-1] if not group[group["التصحيح"] != "-"].empty else None
+        last_correction_text = last_correction["التصحيح"] if last_correction is not None else "-"
+        
+        # جلب فني الخدمة
+        tech_names = group[group["فني الخدمة"] != "-"]["فني الخدمة"].unique()
+        tech_summary = ", ".join(tech_names) if len(tech_names) > 0 else "-"
+        
+        summary_data.append({
+            "الماكينة": card_num,
+            "الشهر": month_name,
+            "عدد الأحداث": events_count,
+            "عدد التصحيحات": corrections_count,
+            "آخر حدث": last_event_text[:50] + "..." if len(last_event_text) > 50 else last_event_text,
+            "آخر تصحيح": last_correction_text[:50] + "..." if len(last_correction_text) > 50 else last_correction_text,
+            "فنيو الخدمة": tech_summary
+        })
+    
+    if summary_data:
+        summary_df = pd.DataFrame(summary_data)
+        
+        # ترتيب حسب الماكينة والشهر
+        months_order = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+                       "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
+        
+        summary_df["شهر_رقم"] = summary_df["الشهر"].apply(
+            lambda x: months_order.index(x) + 1 if x in months_order else 99
+        )
+        summary_df = summary_df.sort_values(["الماكينة", "شهر_رقم"]).drop(columns=["شهر_رقم"])
+        
+        # تلوين الصفوف
+        def color_summary_row(row):
+            styles = []
+            for col in row.index:
+                if col == "الماكينة":
+                    styles.append("background-color: #f0f8ff; font-weight: bold;")
+                elif col == "عدد الأحداث" and row[col] > 0:
+                    styles.append("background-color: #d4edda; font-weight: bold;")
+                elif col == "عدد التصحيحات" and row[col] > 0:
+                    styles.append("background-color: #f8d7da; font-weight: bold;")
+                elif col == "الشهر":
+                    styles.append("background-color: #fff3cd;")
+                else:
+                    styles.append("")
+            return styles
+        
+        styled_summary = summary_df.style.apply(color_summary_row, axis=1)
+        
+        st.dataframe(
+            styled_summary,
+            use_container_width=True,
+            height=500
+        )
+    else:
+        st.info("ℹ️ لا توجد بيانات للعرض التلخيصي")
+
+def display_calendar_timeline(events_df):
+    """عرض الخط الزمني بشكل تقويمي"""
+    st.markdown("#### 📅 عرض تقويمي")
+    
+    # تحضير البيانات للعرض التقويمي
+    calendar_data = []
+    
+    # تجميع حسب الشهر والماكينة
+    for card_num in sorted(events_df["رقم الماكينة"].unique()):
+        card_events = events_df[events_df["رقم الماكينة"] == card_num]
+        
+        for month_name in ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+                          "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]:
+            month_events = card_events[card_events["الشهر"] == month_name]
+            
+            if not month_events.empty:
+                events_count = month_events[month_events["الحدث"] != "-"].shape[0]
+                corrections_count = month_events[month_events["التصحيح"] != "-"].shape[0]
+                
+                # تحديد لون الخلية بناءً على النشاط
+                if events_count > 0 and corrections_count > 0:
+                    cell_color = "#ffcccc"  # أحمر فاتح للأيام التي تحتوي على أحداث وتصحيحات
+                elif events_count > 0:
+                    cell_color = "#ccffcc"  # أخضر فاتح للأيام التي تحتوي على أحداث فقط
+                elif corrections_count > 0:
+                    cell_color = "#ccccff"  # أزرق فاتح للأيام التي تحتوي على تصحيحات فقط
+                else:
+                    cell_color = "#f0f0f0"  # رمادي فاتح للأيام التي لا تحتوي على شيء
+                
+                calendar_data.append({
+                    "الماكينة": card_num,
+                    "الشهر": month_name,
+                    "الأحداث": events_count,
+                    "التصحيحات": corrections_count,
+                    "اللون": cell_color,
+                    "النشاط": f"أحداث: {events_count} | تصحيحات: {corrections_count}"
+                })
+    
+    if calendar_data:
+        calendar_df = pd.DataFrame(calendar_data)
+        
+        # عرض كمصفوفة تقويمية
+        st.markdown("##### 📆 مصفوفة النشاط (الماكينة × الشهر)")
+        
+        # إنشاء مصفوفة
+        pivot_table = calendar_df.pivot_table(
+            index="الماكينة",
+            columns="الشهر",
+            values="الأحداث",
+            fill_value=0
+        )
+        
+        # إعادة ترتيب الأعمدة حسب ترتيب الشهور
+        months_order = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+                       "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
+        
+        # فلترة لأسماء الشهور الموجودة فقط
+        existing_months = [m for m in months_order if m in pivot_table.columns]
+        pivot_table = pivot_table[existing_months]
+        
+        # عرض المصفوفة
+        st.dataframe(
+            pivot_table.style.background_gradient(cmap='RdYlGn', axis=None),
+            use_container_width=True,
+            height=400
+        )
+        
+        # تفسير الألوان
+        st.markdown("##### 🎨 تفسير الألوان:")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown("""
+            <div style='background-color: #ccffcc; padding: 10px; border-radius: 5px;'>
+            <strong>أخضر:</strong> أحداث فقط
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("""
+            <div style='background-color: #ccccff; padding: 10px; border-radius: 5px;'>
+            <strong>أزرق:</strong> تصحيحات فقط
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown("""
+            <div style='background-color: #ffcccc; padding: 10px; border-radius: 5px;'>
+            <strong>أحمر:</strong> أحداث وتصحيحات
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown("""
+            <div style='background-color: #f0f0f0; padding: 10px; border-radius: 5px;'>
+            <strong>رمادي:</strong> لا يوجد نشاط
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("ℹ️ لا توجد بيانات للعرض التقويمي")
+
+# -------------------------------
 # 🖥 دالة فحص الإيفينت والكوريكشن - واجهة مبسطة واحترافية
 # -------------------------------
 def check_events_and_corrections(all_sheets):
@@ -1004,6 +1501,23 @@ def check_events_and_corrections(all_sheets):
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
     
+    # خيار العرض
+    st.markdown("### 📊 اختر طريقة العرض")
+    display_mode = st.radio(
+        "اختر طريقة العرض المناسبة:",
+        ["🔍 بحث متعدد المعايير", "📅 عرض تسلسلي حسب التاريخ ورقم الماكينة"],
+        horizontal=True,
+        key="events_display_mode"
+    )
+    
+    if display_mode == "🔍 بحث متعدد المعايير":
+        advanced_search_interface(all_sheets)
+    else:
+        # العرض التسلسلي الجديد
+        display_sequential_timeline(all_sheets)
+
+def advanced_search_interface(all_sheets):
+    """واجهة البحث المتعدد المعايير"""
     # تهيئة session state إذا لزم الأمر
     if "search_params" not in st.session_state:
         st.session_state.search_params = {
@@ -1880,7 +2394,7 @@ def manage_users():
             # اختيار الصلاحيات بناءً على الدور
             if user_role == "admin":
                 default_permissions = ["all"]
-                available_permissions = ["all", "view", "edit", "manage_users"]
+                available_permissions = ["all", "view", "edit", "manage_users", "tech_support"]
             elif user_role == "editor":
                 default_permissions = ["view", "edit"]
                 available_permissions = ["view", "edit", "export"]
@@ -1964,16 +2478,16 @@ def manage_users():
                         key="edit_user_role"
                     )
                     
-                    # تغيير الصلاحيات
+                    # تغيير الصلاحيات بناءً على الدور الجديد
                     if new_role == "admin":
-                        available_permissions = ["all", "view", "edit", "manage_users"]
                         default_permissions = ["all"]
+                        available_permissions = ["all", "view", "edit", "manage_users", "tech_support"]
                     elif new_role == "editor":
-                        available_permissions = ["view", "edit", "export"]
                         default_permissions = ["view", "edit"]
+                        available_permissions = ["view", "edit", "export"]
                     else:
-                        available_permissions = ["view", "export"]
                         default_permissions = ["view"]
+                        available_permissions = ["view", "export"]
                     
                     current_permissions = user_info.get("permissions", default_permissions)
                     new_permissions = st.multiselect(
@@ -2010,6 +2524,13 @@ def manage_users():
                         if updated:
                             if save_users(users):
                                 st.success(f"✅ تم تحديث المستخدم '{user_to_edit}' بنجاح!")
+                                
+                                # إذا كان المستخدم الحالي هو الذي تم تعديله، قم بتحديث session state
+                                if st.session_state.get("username") == user_to_edit:
+                                    st.session_state.user_role = new_role
+                                    st.session_state.user_permissions = new_permissions if new_permissions else default_permissions
+                                    st.info("🔁 تم تحديث بيانات جلسة العمل الحالية.")
+                                
                                 st.rerun()
                             else:
                                 st.error("❌ حدث خطأ أثناء حفظ التعديلات.")
@@ -2195,6 +2716,19 @@ with st.sidebar:
             st.rerun()
         except Exception as e:
             st.error(f"❌ خطأ في مسح الكاش: {e}")
+    
+    # زر تحديث الجلسة
+    if st.button("🔄 تحديث الجلسة", key="refresh_session"):
+        # تحميل أحدث بيانات المستخدم
+        users = load_users()
+        username = st.session_state.get("username")
+        if username and username in users:
+            st.session_state.user_role = users[username].get("role", "viewer")
+            st.session_state.user_permissions = users[username].get("permissions", ["view"])
+            st.success("✅ تم تحديث بيانات الجلسة!")
+            st.rerun()
+        else:
+            st.warning("⚠ لا يمكن تحديث الجلسة.")
     
     st.markdown("---")
     # زر لإعادة تسجيل الخروج
