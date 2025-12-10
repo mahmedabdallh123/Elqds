@@ -1796,19 +1796,19 @@ def manage_users():
         
         col1, col2 = st.columns(2)
         with col1:
-            new_username = st.text_input("اسم المستخدم الجديد:", key="new_username")
-            new_password = st.text_input("كلمة المرور:", type="password", key="new_password")
-            confirm_password = st.text_input("تأكيد كلمة المرور:", type="password", key="confirm_password")
+            new_username = st.text_input("اسم المستخدم الجديد:", key="new_username_add")
+            new_password = st.text_input("كلمة المرور:", type="password", key="new_password_add")
+            confirm_password = st.text_input("تأكيد كلمة المرور:", type="password", key="confirm_password_add")
         
         with col2:
-            new_role = st.selectbox("الدور:", ["admin", "editor", "viewer"], key="new_role")
+            new_role = st.selectbox("الدور:", ["admin", "editor", "viewer"], key="new_role_add")
             
             # صلاحيات إضافية
             st.write("الصلاحيات الإضافية:")
-            can_edit = st.checkbox("تعديل البيانات", value=(new_role == "editor" or new_role == "admin"))
-            can_manage_users = st.checkbox("إدارة المستخدمين", value=(new_role == "admin"))
-            can_see_tech = st.checkbox("الدعم الفني", value=(new_role == "admin"))
-            can_see_maintenance = st.checkbox("نظام التتبع", value=True)
+            can_edit = st.checkbox("تعديل البيانات", value=(new_role == "editor" or new_role == "admin"), key="can_edit_add")
+            can_manage_users = st.checkbox("إدارة المستخدمين", value=(new_role == "admin"), key="can_manage_users_add")
+            can_see_tech = st.checkbox("الدعم الفني", value=(new_role == "admin"), key="can_see_tech_add")
+            can_see_maintenance = st.checkbox("نظام التتبع", value=True, key="can_see_maintenance_add")
         
         if st.button("💾 إضافة المستخدم", type="primary", key="add_user_btn"):
             if not new_username or not new_password:
@@ -1867,10 +1867,10 @@ def manage_users():
                 st.write("الصلاحيات الحالية:")
                 current_perms = user_info.get("permissions", [])
                 
-                edit_perm = st.checkbox("تعديل البيانات", value=("edit" in current_perms or "all" in current_perms))
-                manage_perm = st.checkbox("إدارة المستخدمين", value=("manage_users" in current_perms or "all" in current_perms))
-                tech_perm = st.checkbox("الدعم الفني", value=("tech_support" in current_perms or "all" in current_perms))
-                maint_perm = st.checkbox("نظام التتبع", value=("maintenance" in current_perms or "all" in current_perms))
+                edit_perm = st.checkbox("تعديل البيانات", value=("edit" in current_perms or "all" in current_perms), key="edit_perm_check")
+                manage_perm = st.checkbox("إدارة المستخدمين", value=("manage_users" in current_perms or "all" in current_perms), key="manage_perm_check")
+                tech_perm = st.checkbox("الدعم الفني", value=("tech_support" in current_perms or "all" in current_perms), key="tech_perm_check")
+                maint_perm = st.checkbox("نظام التتبع", value=("maintenance" in current_perms or "all" in current_perms), key="maint_perm_check")
             
             if st.button("💾 حفظ التعديلات", type="primary", key="save_user_edit"):
                 # تحديث كلمة المرور إذا تم إدخالها
