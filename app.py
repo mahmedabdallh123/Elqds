@@ -607,6 +607,8 @@ def maintenance_tracking_system():
 
 def show_maintenance_dashboard(maintenance_data):
     """عرض لوحة تحكم الصيانة"""
+    global MAINTENANCE_CONFIG
+    
     st.subheader("📊 لوحة التحكم - حالة الماكينات")
     
     # تحميل بيانات الماكينات من ملف Excel
@@ -758,6 +760,8 @@ def show_maintenance_dashboard(maintenance_data):
 
 def get_machine_maintenance_status(machine_num, maintenance_data, all_sheets):
     """الحصول على حالة الصيانة لماكينة معينة"""
+    global MAINTENANCE_CONFIG
+    
     machine_id = str(machine_num)
     current_time = datetime.now()
     
@@ -881,6 +885,8 @@ def get_machine_current_hours(machine_num, all_sheets):
 
 def record_maintenance(maintenance_data):
     """تسجيل صيانة جديدة"""
+    global MAINTENANCE_CONFIG
+    
     st.subheader("➕ تسجيل صيانة جديدة")
     
     # تحميل بيانات الماكينات
@@ -1191,6 +1197,8 @@ def show_machine_history(machine_num, maintenance_data):
 
 def update_maintenance_settings(maintenance_data):
     """تحديث إعدادات الصيانة"""
+    global MAINTENANCE_CONFIG  # الإعلان عن global في البداية
+    
     st.subheader("⚙ إعدادات نظام التتبع")
     
     st.info("**⚙ الإعدادات الحالية:**")
@@ -1242,7 +1250,6 @@ def update_maintenance_settings(maintenance_data):
         }
         
         # تحديث الإعدادات العالمية
-        global MAINTENANCE_CONFIG
         MAINTENANCE_CONFIG.update(maintenance_data["settings"])
         
         if save_maintenance_data(maintenance_data):
@@ -1251,7 +1258,773 @@ def update_maintenance_settings(maintenance_data):
         else:
             st.error("❌ حدث خطأ أثناء حفظ الإعدادات.")
 
-# ... (استمرار باقي الكود كما هو مع إضافة تبويب الصيانة في الواجهة الرئيسية) ...
+# -------------------------------
+# 📊 فحص حالة السيرفيس
+# -------------------------------
+def check_service_status(card_num, current_tons, all_sheets):
+    """فحص حالة السيرفيس لماكينة محددة"""
+    sheet_name = f"Card{card_num}"
+    if sheet_name not in all_sheets:
+        st.warning(f"❌ لم يتم العثور على الشيت: {sheet_name}")
+        return
+    
+    df = all_sheets[sheet_name]
+    
+    # البحث عن عمود Service Needed
+    service_needed_col = None
+    for col in df.columns:
+        if normalize_name(col) == "serviceneeded":
+            service_needed_col = col
+            break
+    
+    if service_needed_col is None:
+        st.warning("❌ عمود 'Service Needed' غير موجود في هذا الشيت.")
+        return
+    
+    # استخراج الـ Service Needed
+    service_needed_str = ""
+    last_row = df.iloc[-1] if len(df) > 0 else pd.Series()
+    if service_needed_col in last_row:
+        service_needed_str = str(last_row[service_needed_col])
+    
+    # تقسيم الـ Service Needed
+    needed_services = split_needed_services(service_needed_str)
+    
+    if not needed_services:
+        st.info("✅ لا توجد خدمات مطلوبة حالياً.")
+        return
+    
+    # عرض نتائج الفحص
+    st.subheader(f"نتائج فحص السيرفيس للماكينة {card_num}")
+    
+    # البحث في شيت الخدمات
+    services_sheet = f"Card{card_num}_Services"
+    service_statuses = []
+    
+    for service in needed_services:
+        found = False
+        service_normalized = normalize_name(service)
+        
+        # البحث في شيت الخدمات إذا كان موجوداً
+        if services_sheet in all_sheets:
+            service_df = all_sheets[services_sheet]
+            for _, row in service_df.iterrows():
+                # البحث في جميع الأعمدة
+                for col in row.index:
+                    if pd.notna(row[col]):
+                        cell_normalized = normalize_name(str(row[col]))
+                        if service_normalized in cell_normalized or service_normalized == cell_normalized:
+                            found = True
+                            service_statuses.append({
+                                "service": service,
+                                "status": "✅ مكتمل",
+                                "details": f"موجود في {col}: {row[col]}"
+                            })
+                            break
+                    if found:
+                        break
+        
+        if not found:
+            service_statuses.append({
+                "service": service,
+                "status": "❌ غير مكتمل",
+                "details": f"لم يتم العثور على هذه الخدمة في سجلات الصيانة"
+            })
+    
+    # عرض النتائج في جدول
+    status_df = pd.DataFrame(service_statuses)
+    st.dataframe(status_df, use_container_width=True)
+    
+    # إحصائيات
+    completed = len([s for s in service_statuses if s["status"] == "✅ مكتمل"])
+    total = len(service_statuses)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📊 إجمالي الخدمات المطلوبة", total)
+    with col2:
+        st.metric("✅ الخدمات المكتملة", completed)
+    with col3:
+        st.metric("❌ الخدمات المعلقة", total - completed)
+
+# -------------------------------
+# 📋 فحص الإيفينت والكوريكشن
+# -------------------------------
+def check_events_and_corrections(all_sheets):
+    """فحص الإيفينت والكوريكشن"""
+    # خيارات البحث
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        search_type = st.radio("نوع البحث:", ["رقم الماكينة", "كلمة في الإيفينت", "كلمة في الكوريكشن"])
+    
+    with col2:
+        if search_type == "رقم الماكينة":
+            machine_num = st.number_input("رقم الماكينة:", min_value=1, step=1, key="event_machine_num")
+            search_term = str(machine_num)
+        else:
+            search_term = st.text_input("كلمة البحث:", key="event_search_term")
+    
+    # البحث في التاريخ
+    date_option = st.radio("بحث في التاريخ:", ["لا", "نطاق زمني", "تاريخ محدد"])
+    
+    if date_option == "نطاق زمني":
+        col_date1, col_date2 = st.columns(2)
+        with col_date1:
+            start_date = st.date_input("من تاريخ:", key="start_date")
+        with col_date2:
+            end_date = st.date_input("إلى تاريخ:", key="end_date")
+    elif date_option == "تاريخ محدد":
+        specific_date = st.date_input("تاريخ محدد:", key="specific_date")
+    
+    if st.button("🔍 بحث", key="search_events"):
+        search_results = []
+        
+        # البحث في جميع الشيتات
+        for sheet_name, df in all_sheets.items():
+            if sheet_name.startswith("Card") and not sheet_name.endswith("_Services"):
+                for idx, row in df.iterrows():
+                    # التحقق من التواريخ إذا كانت مطبقة
+                    include_row = True
+                    
+                    if date_option != "لا" and "Date" in df.columns:
+                        try:
+                            row_date = pd.to_datetime(row["Date"]).date()
+                            if date_option == "نطاق زمني":
+                                if not (start_date <= row_date <= end_date):
+                                    include_row = False
+                            elif date_option == "تاريخ محدد":
+                                if row_date != specific_date:
+                                    include_row = False
+                        except:
+                            pass
+                    
+                    if include_row:
+                        # البحث حسب النوع
+                        if search_type == "رقم الماكينة":
+                            # التحقق إذا كان رقم الماكينة موجوداً في أي عمود
+                            for col in row.index:
+                                if str(search_term) in str(row[col]):
+                                    search_results.append({
+                                        "sheet": sheet_name,
+                                        "row": idx + 2,  # +2 لأن Excel يبدأ من 1 وheader في الصف 1
+                                        "row_data": row
+                                    })
+                                    break
+                        
+                        elif search_type == "كلمة في الإيفينت":
+                            if "Event" in row.index and search_term.lower() in str(row["Event"]).lower():
+                                search_results.append({
+                                    "sheet": sheet_name,
+                                    "row": idx + 2,
+                                    "row_data": row
+                                })
+                        
+                        elif search_type == "كلمة في الكوريكشن":
+                            if "Correction" in row.index and search_term.lower() in str(row["Correction"]).lower():
+                                search_results.append({
+                                    "sheet": sheet_name,
+                                    "row": idx + 2,
+                                    "row_data": row
+                                })
+        
+        # عرض النتائج
+        if search_results:
+            st.subheader(f"نتائج البحث ({len(search_results)} نتيجة)")
+            
+            # تحويل النتائج إلى DataFrame
+            results_data = []
+            for result in search_results:
+                row_dict = {
+                    "الشيت": result["sheet"],
+                    "الصف": result["row"],
+                    "فني الخدمة": get_servised_by_value(result["row_data"])
+                }
+                
+                # إضافة الأعمدة الأخرى
+                for col in ["Date", "Event", "Correction", "Tones", "Service Needed"]:
+                    if col in result["row_data"].index:
+                        row_dict[col] = result["row_data"][col]
+                
+                results_data.append(row_dict)
+            
+            results_df = pd.DataFrame(results_data)
+            
+            # تطبيق التنسيق
+            styled_df = results_df.style.apply(style_table, axis=0)
+            st.dataframe(styled_df, use_container_width=True, height=400)
+            
+            # خيارات التصدير
+            st.markdown("---")
+            col_exp1, col_exp2 = st.columns(2)
+            
+            with col_exp1:
+                buffer_excel = io.BytesIO()
+                results_df.to_excel(buffer_excel, index=False, engine="openpyxl")
+                st.download_button(
+                    label="📊 تصدير إلى Excel",
+                    data=buffer_excel.getvalue(),
+                    file_name=f"نتائج_البحث_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            
+            with col_exp2:
+                buffer_csv = io.BytesIO()
+                results_df.to_csv(buffer_csv, index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="📄 تصدير إلى CSV",
+                    data=buffer_csv.getvalue(),
+                    file_name=f"نتائج_البحث_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+        else:
+            st.warning("⚠ لم يتم العثور على نتائج تطابق معايير البحث.")
+
+# -------------------------------
+# 🛠 تعديل وإدارة البيانات
+# -------------------------------
+def edit_sheet_with_save_button(sheets_edit):
+    """عرض شيت وتعديله مع زر الحفظ"""
+    sheet_names = list(sheets_edit.keys())
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        selected_sheet = st.selectbox("اختر الشيت للتعديل:", sheet_names, key="edit_sheet_select")
+    with col2:
+        if st.button("🔄 تحديث من GitHub", key="refresh_from_github_edit"):
+            if fetch_from_github_requests():
+                st.rerun()
+    
+    if selected_sheet:
+        df = sheets_edit[selected_sheet].astype(str).reset_index(drop=True)
+        
+        # عرض عدد الصفوف والأعمدة
+        st.info(f"📊 الشيت: {selected_sheet} | عدد الصفوف: {len(df)} | عدد الأعمدة: {len(df.columns)}")
+        
+        # خيارات التعديل
+        edit_mode = st.radio("وضع التعديل:", ["عرض فقط", "تعديل مباشر"], key=f"edit_mode_{selected_sheet}")
+        
+        if edit_mode == "تعديل مباشر":
+            # استخدام st.data_editor للتعديل المباشر
+            edited_df = st.data_editor(
+                df,
+                use_container_width=True,
+                height=400,
+                num_rows="dynamic",
+                key=f"data_editor_{selected_sheet}"
+            )
+            
+            # حفظ التغييرات
+            col_save1, col_save2, col_save3 = st.columns(3)
+            with col_save1:
+                if st.button("💾 حفظ التغييرات", key=f"save_changes_{selected_sheet}", type="primary"):
+                    sheets_edit[selected_sheet] = edited_df.astype(object)
+                    
+                    new_sheets = auto_save_to_github(
+                        sheets_edit,
+                        f"تعديل شيت {selected_sheet}"
+                    )
+                    if new_sheets is not None:
+                        st.success("✅ تم حفظ التغييرات بنجاح!")
+                        st.rerun()
+            
+            with col_save2:
+                if st.button("🗑 استعادة النسخة الأصلية", key=f"reset_{selected_sheet}"):
+                    if fetch_from_github_requests():
+                        st.rerun()
+            
+            with col_save3:
+                if st.button("📊 تصدير الشيت", key=f"export_{selected_sheet}"):
+                    buffer = io.BytesIO()
+                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                        edited_df.to_excel(writer, index=False, sheet_name=selected_sheet)
+                    
+                    st.download_button(
+                        label="⬇ تحميل Excel",
+                        data=buffer.getvalue(),
+                        file_name=f"{selected_sheet}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+        else:
+            # عرض فقط مع إمكانية البحث والترشيح
+            st.dataframe(df, use_container_width=True, height=400)
+    
+    return sheets_edit
+
+def add_new_event(sheets_edit):
+    """إضافة إيفينت جديد"""
+    st.subheader("➕ إضافة حدث (Event) جديد")
+    
+    # اختيار الشيت
+    sheet_names = [name for name in sheets_edit.keys() if name.startswith("Card")]
+    
+    if not sheet_names:
+        st.warning("❗ لا توجد شيتات للماكينات.")
+        return
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        selected_sheet = st.selectbox("اختر الماكينة:", sheet_names, key="add_event_sheet")
+    
+    with col2:
+        # عرض أعمدة الشيت المحدد
+        if selected_sheet:
+            df = sheets_edit[selected_sheet].astype(str)
+            columns = list(df.columns)
+            st.info(f"أعمدة الشيت: {', '.join(columns[:5])}...")
+    
+    # تفاصيل الحدث الجديد
+    st.markdown("### 📝 تفاصيل الحدث الجديد")
+    
+    # حقل التاريخ
+    event_date = st.date_input("📅 تاريخ الحدث:", value=datetime.now(), key="new_event_date")
+    
+    # حقل الإيفينت
+    event_description = st.text_area("📝 وصف الحدث:", placeholder="أدخل وصف الحدث...", height=100, key="new_event_desc")
+    
+    # حقل الكوريكشن
+    correction = st.text_area("🛠 التصحيح:", placeholder="أدخل التصحيح المطلوب...", height=100, key="new_correction")
+    
+    # حقل فني الخدمة
+    servised_by = st.text_input("👨‍🔧 فني الخدمة:", placeholder="أدخل اسم الفني...", key="new_servised_by")
+    
+    # حقل الأطنان
+    tones = st.number_input("⚖️ الأطنان:", min_value=0, step=1, value=0, key="new_tones")
+    
+    # زر الإضافة
+    if st.button("💾 إضافة الحدث الجديد", type="primary", key="add_new_event_btn"):
+        if not event_description.strip():
+            st.warning("⚠ الرجاء إدخال وصف للحدث.")
+            return
+        
+        # إنشاء سجل جديد
+        new_record = {}
+        
+        # تعبئة الحقول الأساسية
+        new_record["Date"] = event_date.strftime("%Y-%m-%d")
+        new_record["Event"] = event_description
+        new_record["Correction"] = correction if correction.strip() else ""
+        new_record["Servised by"] = servised_by if servised_by.strip() else ""
+        new_record["Tones"] = str(tones)
+        
+        # إضافة أي أعمدة أخرى موجودة في الشيت
+        df = sheets_edit[selected_sheet].astype(str)
+        for col in df.columns:
+            if col not in new_record:
+                new_record[col] = ""
+        
+        # إضافة الصف الجديد
+        new_row_df = pd.DataFrame([new_record])
+        df_new = pd.concat([df, new_row_df], ignore_index=True)
+        sheets_edit[selected_sheet] = df_new.astype(object)
+        
+        # الحفظ في GitHub
+        new_sheets = auto_save_to_github(
+            sheets_edit,
+            f"إضافة حدث جديد في {selected_sheet}"
+        )
+        
+        if new_sheets is not None:
+            st.success("✅ تم إضافة الحدث الجديد بنجاح!")
+            st.rerun()
+
+def edit_events_and_corrections(sheets_edit):
+    """تعديل الإيفينت والكوريكشن"""
+    st.subheader("✏ تعديل الإيفينت والكوريكشن")
+    
+    # اختيار الشيت
+    sheet_names = [name for name in sheets_edit.keys() if name.startswith("Card")]
+    
+    if not sheet_names:
+        st.warning("❗ لا توجد شيتات للماكينات.")
+        return
+    
+    selected_sheet = st.selectbox("اختر الماكينة:", sheet_names, key="edit_event_sheet")
+    
+    if selected_sheet:
+        df = sheets_edit[selected_sheet].astype(str)
+        
+        # البحث عن صف محدد
+        search_option = st.radio("البحث عن الصف:", ["بالصف", "بالتاريخ", "بالإيفينت"])
+        
+        row_index = 0
+        
+        if search_option == "بالصف":
+            row_index = st.number_input("رقم الصف:", min_value=0, max_value=len(df)-1, value=0, step=1, key="edit_row_num")
+        elif search_option == "بالتاريخ":
+            date_str = st.text_input("التاريخ (YYYY-MM-DD):", key="edit_date_search")
+            if date_str:
+                matching_rows = df[df["Date"] == date_str] if "Date" in df.columns else pd.DataFrame()
+                if not matching_rows.empty:
+                    row_index = matching_rows.index[0]
+                    st.info(f"تم العثور على الصف {row_index + 2}")
+                else:
+                    st.warning("لم يتم العثور على تاريخ مطابق")
+        elif search_option == "بالإيفينت":
+            event_search = st.text_input("كلمة في الإيفينت:", key="edit_event_search")
+            if event_search and "Event" in df.columns:
+                matching_rows = df[df["Event"].str.contains(event_search, case=False, na=False)]
+                if not matching_rows.empty:
+                    row_index = matching_rows.index[0]
+                    st.info(f"تم العثور على الصف {row_index + 2}")
+                else:
+                    st.warning("لم يتم العثور على إيفينت مطابق")
+        
+        # عرض وتعديل الصف المحدد
+        if row_index < len(df):
+            st.markdown(f"### تعديل الصف {row_index + 2}")
+            
+            # إنشاء حقول التعديل
+            edited_row = {}
+            
+            for col in df.columns:
+                current_value = df.iloc[row_index][col] if col in df.iloc[row_index] else ""
+                
+                if col == "Date":
+                    # حقل التاريخ
+                    try:
+                        date_value = datetime.strptime(str(current_value), "%Y-%m-%d").date()
+                    except:
+                        date_value = datetime.now().date()
+                    
+                    edited_row[col] = st.date_input(col, value=date_value, key=f"edit_{col}_{row_index}")
+                elif col in ["Event", "Correction"]:
+                    # حقول نصية طويلة
+                    edited_row[col] = st.text_area(col, value=str(current_value), height=100, key=f"edit_{col}_{row_index}")
+                else:
+                    # حقول نصية عادية
+                    edited_row[col] = st.text_input(col, value=str(current_value), key=f"edit_{col}_{row_index}")
+            
+            # أزرار التعديل
+            col_btn1, col_btn2, col_btn3 = st.columns(3)
+            
+            with col_btn1:
+                if st.button("💾 حفظ التعديلات", type="primary", key=f"save_row_{row_index}"):
+                    # تحديث الصف
+                    for col in df.columns:
+                        if col == "Date":
+                            df.at[row_index, col] = edited_row[col].strftime("%Y-%m-%d")
+                        else:
+                            df.at[row_index, col] = str(edited_row[col])
+                    
+                    sheets_edit[selected_sheet] = df.astype(object)
+                    
+                    # الحفظ
+                    new_sheets = auto_save_to_github(
+                        sheets_edit,
+                        f"تعديل صف {row_index + 2} في {selected_sheet}"
+                    )
+                    
+                    if new_sheets is not None:
+                        st.success("✅ تم حفظ التعديلات بنجاح!")
+                        st.rerun()
+            
+            with col_btn2:
+                if st.button("🗑 حذف الصف", key=f"delete_row_{row_index}"):
+                    # تأكيد الحذف
+                    confirm = st.checkbox("تأكيد حذف الصف", key=f"confirm_delete_{row_index}")
+                    if confirm:
+                        df_new = df.drop(row_index).reset_index(drop=True)
+                        sheets_edit[selected_sheet] = df_new.astype(object)
+                        
+                        new_sheets = auto_save_to_github(
+                            sheets_edit,
+                            f"حذف صف {row_index + 2} من {selected_sheet}"
+                        )
+                        
+                        if new_sheets is not None:
+                            st.success("✅ تم حذف الصف بنجاح!")
+                            st.rerun()
+            
+            with col_btn3:
+                if st.button("🔄 استعادة الأصل", key=f"reset_row_{row_index}"):
+                    st.rerun()
+        else:
+            st.warning("❗ رقم الصف غير صالح.")
+
+# -------------------------------
+# 👥 إدارة المستخدمين
+# -------------------------------
+def manage_users():
+    """إدارة المستخدمين والصلاحيات"""
+    st.header("👥 إدارة المستخدمين")
+    
+    # تحميل بيانات المستخدمين
+    users = load_users()
+    current_user = st.session_state.get("username")
+    
+    if current_user != "admin":
+        st.error("🚫 صلاحية غير كافية. فقط المسؤول يمكنه إدارة المستخدمين.")
+        return
+    
+    # تبويبات إدارة المستخدمين
+    user_tabs = st.tabs(["📋 عرض المستخدمين", "➕ إضافة مستخدم جديد", "✏ تعديل مستخدم", "🗑 حذف مستخدم"])
+    
+    with user_tabs[0]:
+        # عرض جميع المستخدمين
+        st.subheader("📋 قائمة المستخدمين")
+        
+        users_list = []
+        for username, info in users.items():
+            users_list.append({
+                "اسم المستخدم": username,
+                "الدور": info.get("role", "viewer"),
+                "تاريخ الإنشاء": info.get("created_at", ""),
+                "النشط": "نعم" if st.session_state.get("username") == username else "غير معروف"
+            })
+        
+        users_df = pd.DataFrame(users_list)
+        st.dataframe(users_df, use_container_width=True)
+        
+        # إحصائيات
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("👥 إجمالي المستخدمين", len(users))
+        with col2:
+            admins = sum(1 for u in users.values() if u.get("role") == "admin")
+            st.metric("👑 المسؤولون", admins)
+        with col3:
+            editors = sum(1 for u in users.values() if u.get("role") == "editor")
+            st.metric("✏ المحررون", editors)
+    
+    with user_tabs[1]:
+        # إضافة مستخدم جديد
+        st.subheader("➕ إضافة مستخدم جديد")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            new_username = st.text_input("اسم المستخدم الجديد:", key="new_username")
+            new_password = st.text_input("كلمة المرور:", type="password", key="new_password")
+            confirm_password = st.text_input("تأكيد كلمة المرور:", type="password", key="confirm_password")
+        
+        with col2:
+            new_role = st.selectbox("الدور:", ["admin", "editor", "viewer"], key="new_role")
+            
+            # صلاحيات إضافية
+            st.write("الصلاحيات الإضافية:")
+            can_edit = st.checkbox("تعديل البيانات", value=(new_role == "editor" or new_role == "admin"))
+            can_manage_users = st.checkbox("إدارة المستخدمين", value=(new_role == "admin"))
+            can_see_tech = st.checkbox("الدعم الفني", value=(new_role == "admin"))
+            can_see_maintenance = st.checkbox("نظام التتبع", value=True)
+        
+        if st.button("💾 إضافة المستخدم", type="primary", key="add_user_btn"):
+            if not new_username or not new_password:
+                st.warning("⚠ الرجاء إدخال اسم المستخدم وكلمة المرور.")
+            elif new_username in users:
+                st.error("❌ اسم المستخدم موجود مسبقاً.")
+            elif new_password != confirm_password:
+                st.error("❌ كلمة المرور غير متطابقة.")
+            else:
+                # تحديد الصلاحيات بناءً على الدور والخيارات
+                permissions = ["view"]
+                if can_edit or new_role in ["editor", "admin"]:
+                    permissions.append("edit")
+                if can_manage_users or new_role == "admin":
+                    permissions.append("manage_users")
+                if can_see_tech or new_role == "admin":
+                    permissions.append("tech_support")
+                if can_see_maintenance:
+                    permissions.append("maintenance")
+                if new_role == "admin":
+                    permissions = ["all"]
+                
+                # إضافة المستخدم
+                users[new_username] = {
+                    "password": new_password,
+                    "role": new_role,
+                    "permissions": permissions,
+                    "created_at": datetime.now().isoformat()
+                }
+                
+                if save_users(users):
+                    st.success(f"✅ تم إضافة المستخدم {new_username} بنجاح!")
+                    st.rerun()
+                else:
+                    st.error("❌ حدث خطأ أثناء حفظ المستخدم.")
+    
+    with user_tabs[2]:
+        # تعديل مستخدم
+        st.subheader("✏ تعديل مستخدم")
+        
+        user_to_edit = st.selectbox("اختر المستخدم للتعديل:", list(users.keys()), key="edit_user_select")
+        
+        if user_to_edit:
+            user_info = users[user_to_edit]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                new_password = st.text_input("كلمة المرور الجديدة (اترك فارغاً للحفاظ على القديمة):", 
+                                           type="password", key="edit_password")
+                new_role = st.selectbox("الدور:", ["admin", "editor", "viewer"], 
+                                      index=["admin", "editor", "viewer"].index(user_info.get("role", "viewer")),
+                                      key="edit_role")
+            
+            with col2:
+                # عرض الصلاحيات الحالية
+                st.write("الصلاحيات الحالية:")
+                current_perms = user_info.get("permissions", [])
+                
+                edit_perm = st.checkbox("تعديل البيانات", value=("edit" in current_perms or "all" in current_perms))
+                manage_perm = st.checkbox("إدارة المستخدمين", value=("manage_users" in current_perms or "all" in current_perms))
+                tech_perm = st.checkbox("الدعم الفني", value=("tech_support" in current_perms or "all" in current_perms))
+                maint_perm = st.checkbox("نظام التتبع", value=("maintenance" in current_perms or "all" in current_perms))
+            
+            if st.button("💾 حفظ التعديلات", type="primary", key="save_user_edit"):
+                # تحديث كلمة المرور إذا تم إدخالها
+                if new_password:
+                    users[user_to_edit]["password"] = new_password
+                
+                # تحديث الدور
+                users[user_to_edit]["role"] = new_role
+                
+                # تحديث الصلاحيات
+                new_permissions = ["view"]
+                if edit_perm:
+                    new_permissions.append("edit")
+                if manage_perm:
+                    new_permissions.append("manage_users")
+                if tech_perm:
+                    new_permissions.append("tech_support")
+                if maint_perm:
+                    new_permissions.append("maintenance")
+                if new_role == "admin":
+                    new_permissions = ["all"]
+                
+                users[user_to_edit]["permissions"] = new_permissions
+                
+                if save_users(users):
+                    st.success(f"✅ تم تحديث المستخدم {user_to_edit} بنجاح!")
+                    st.rerun()
+                else:
+                    st.error("❌ حدث خطأ أثناء حفظ التعديلات.")
+    
+    with user_tabs[3]:
+        # حذف مستخدم
+        st.subheader("🗑 حذف مستخدم")
+        
+        user_to_delete = st.selectbox("اختر المستخدم للحذف:", 
+                                     [u for u in users.keys() if u != "admin" and u != st.session_state.get("username")],
+                                     key="delete_user_select")
+        
+        if user_to_delete:
+            user_info = users[user_to_delete]
+            st.warning(f"⚠ أنت على وشك حذف المستخدم: **{user_to_delete}**")
+            st.write(f"الدور: {user_info.get('role', 'viewer')}")
+            st.write(f"تاريخ الإنشاء: {user_info.get('created_at', 'غير معروف')}")
+            
+            confirm_delete = st.checkbox("تأكيد الحذف", key="confirm_user_delete")
+            
+            if confirm_delete and st.button("🗑 حذف المستخدم", type="primary", key="delete_user_btn"):
+                del users[user_to_delete]
+                
+                if save_users(users):
+                    st.success(f"✅ تم حذف المستخدم {user_to_delete} بنجاح!")
+                    st.rerun()
+                else:
+                    st.error("❌ حدث خطأ أثناء حذف المستخدم.")
+
+# -------------------------------
+# 📞 الدعم الفني
+# -------------------------------
+def tech_support():
+    """واجهة الدعم الفني"""
+    st.header("📞 الدعم الفني")
+    
+    # معلومات الاتصال
+    st.info("""
+    **معلومات الاتصال:**
+    - 📧 البريد الإلكتروني: support@cmms.com
+    - 📱 الهاتف: +20 100 000 0000
+    - 🕒 ساعات العمل: 9 صباحاً - 5 مساءً (بتوقيت القاهرة)
+    """)
+    
+    # الإبلاغ عن مشكلة
+    st.subheader("📝 الإبلاغ عن مشكلة")
+    
+    with st.form("tech_support_form"):
+        problem_type = st.selectbox("نوع المشكلة:", 
+                                   ["مشكلة تقنية", "اقتراح تحسين", "طلب ميزة جديدة", "مشكلة في البيانات", "أخرى"])
+        
+        problem_description = st.text_area("وصف المشكلة:", height=150,
+                                          placeholder="يرجى وصف المشكلة بالتفصيل...")
+        
+        urgency = st.selectbox("درجة الأهمية:", ["منخفضة", "متوسطة", "عالية", "عاجلة"])
+        
+        contact_email = st.text_input("البريد الإلكتروني للتواصل (اختياري):")
+        
+        submitted = st.form_submit_button("📤 إرسال التقرير")
+        
+        if submitted:
+            if not problem_description.strip():
+                st.warning("⚠ الرجاء إدخال وصف للمشكلة.")
+            else:
+                # حفظ التقرير (يمكن حفظه في ملف أو قاعدة بيانات)
+                report_data = {
+                    "user": st.session_state.get("username", "غير معروف"),
+                    "type": problem_type,
+                    "description": problem_description,
+                    "urgency": urgency,
+                    "contact": contact_email,
+                    "timestamp": datetime.now().isoformat(),
+                    "status": "جديد"
+                }
+                
+                # يمكن حفظ التقرير في ملف
+                reports_file = "tech_reports.json"
+                reports = []
+                
+                if os.path.exists(reports_file):
+                    try:
+                        with open(reports_file, "r", encoding="utf-8") as f:
+                            reports = json.load(f)
+                    except:
+                        pass
+                
+                reports.append(report_data)
+                
+                try:
+                    with open(reports_file, "w", encoding="utf-8") as f:
+                        json.dump(reports, f, indent=4, ensure_ascii=False)
+                    
+                    st.success("✅ تم إرسال تقرير المشكلة بنجاح!")
+                    
+                    # عرض رمز المتابعة
+                    report_id = len(reports)
+                    st.info(f"**رقم المتابعة:** {report_id}")
+                    
+                except Exception as e:
+                    st.error(f"❌ حدث خطأ أثناء حفظ التقرير: {e}")
+    
+    # الإرشادات
+    st.markdown("---")
+    st.subheader("📚 الإرشادات الشائعة")
+    
+    with st.expander("🔧 كيفية تحديث الملف من GitHub"):
+        st.write("""
+        1. انتقل إلى الشريط الجانبي
+        2. اضغط على زر "🔄 تحديث الملف من GitHub"
+        3. انتظر حتى تظهر رسالة النجاح
+        4. اضغط على زر "🔄 تحديث الصفحة" إذا لزم الأمر
+        """)
+    
+    with st.expander("🔐 مشاكل تسجيل الدخول"):
+        st.write("""
+        1. تأكد من اختيار المستخدم الصحيح
+        2. تأكد من إدخال كلمة المرور بشكل صحيح
+        3. إذا نسيت كلمة المرور، اتصل بالمسؤول
+        4. تأكد من عدم تجاوز الحد الأقصى للمستخدمين النشطين
+        """)
+    
+    with st.expander("📊 مشاكل في عرض البيانات"):
+        st.write("""
+        1. اضغط على زر تحديث الملف من GitHub
+        2. تأكد من أن الملف موجود في المسار الصحيح
+        3. تأكد من تنسيق الملف (يجب أن يكون .xlsx)
+        4. إذا استمرت المشكلة، اتصل بالدعم الفني
+        """)
 
 # ===============================
 # 🖥 الواجهة الرئيسية المدمجة
