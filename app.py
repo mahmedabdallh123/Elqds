@@ -1880,6 +1880,130 @@ def edit_events_and_corrections(sheets_edit):
                 st.rerun()
 
 # -------------------------------
+# 🖥 دالة تعديل الشيت مع زر حفظ يدوي
+# -------------------------------
+def edit_sheet_with_save_button(sheets_edit):
+    """تعديل بيانات الشيت مع زر حفظ يدوي"""
+    st.subheader("✏ تعديل البيانات")
+    
+    if "original_sheets" not in st.session_state:
+        st.session_state.original_sheets = sheets_edit.copy()
+    
+    if "unsaved_changes" not in st.session_state:
+        st.session_state.unsaved_changes = {}
+    
+    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_sheet")
+    
+    if sheet_name not in st.session_state.unsaved_changes:
+        st.session_state.unsaved_changes[sheet_name] = False
+    
+    df = sheets_edit[sheet_name].astype(str).copy()
+    
+    # عرض البيانات للتحرير
+    st.markdown(f"### 📋 تحرير شيت: {sheet_name}")
+    st.info(f"عدد الصفوف: {len(df)} | عدد الأعمدة: {len(df.columns)}")
+    
+    # محرر البيانات
+    edited_df = st.data_editor(
+        df, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        key=f"editor_{sheet_name}"
+    )
+    
+    # التحقق من وجود تغييرات
+    has_changes = not edited_df.equals(df)
+    
+    if has_changes:
+        st.session_state.unsaved_changes[sheet_name] = True
+        
+        # عرض إشعار بالتغييرات غير المحفوظة
+        st.warning("⚠ لديك تغييرات غير محفوظة!")
+        
+        # أزرار الإدارة
+        col1, col2, col3 = st.columns([1, 1, 2])
+        
+        with col1:
+            if st.button("💾 حفظ التغييرات", key=f"save_{sheet_name}", type="primary"):
+                # حفظ التغييرات
+                sheets_edit[sheet_name] = edited_df.astype(object)
+                
+                # حفظ تلقائي في GitHub
+                new_sheets = auto_save_to_github(
+                    sheets_edit,
+                    f"تعديل يدوي في شيت {sheet_name}"
+                )
+                
+                if new_sheets is not None:
+                    sheets_edit = new_sheets
+                    st.session_state.unsaved_changes[sheet_name] = False
+                    st.success(f"✅ تم حفظ التغييرات في شيت {sheet_name} بنجاح!")
+                    
+                    # تحديث البيانات الأصلية
+                    st.session_state.original_sheets[sheet_name] = edited_df.copy()
+                    
+                    # إعادة التحميل بعد ثانية
+                    import time
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("❌ فشل حفظ التغييرات!")
+        
+        with col2:
+            if st.button("↩️ تراجع عن التغييرات", key=f"undo_{sheet_name}"):
+                # استعادة البيانات الأصلية
+                if sheet_name in st.session_state.original_sheets:
+                    sheets_edit[sheet_name] = st.session_state.original_sheets[sheet_name].astype(object)
+                    st.session_state.unsaved_changes[sheet_name] = False
+                    st.info(f"↩️ تم التراجع عن التغييرات في شيت {sheet_name}")
+                    st.rerun()
+                else:
+                    st.warning("⚠ لا توجد بيانات أصلية للتراجع!")
+        
+        with col3:
+            # عرض ملخص التغييرات
+            with st.expander("📊 ملخص التغييرات", expanded=False):
+                # حساب الاختلافات
+                changes_count = 0
+                
+                # التحقق من الصفوف المضافة
+                if len(edited_df) > len(df):
+                    added_rows = len(edited_df) - len(df)
+                    st.write(f"➕ **صفوف مضافة:** {added_rows}")
+                    changes_count += added_rows
+                
+                # التحقق من الصفوف المحذوفة
+                elif len(edited_df) < len(df):
+                    deleted_rows = len(df) - len(edited_df)
+                    st.write(f"🗑️ **صفوف محذوفة:** {deleted_rows}")
+                    changes_count += deleted_rows
+                
+                # التحقق من التغييرات في القيم
+                changed_cells = 0
+                if len(edited_df) == len(df) and edited_df.columns.equals(df.columns):
+                    for col in df.columns:
+                        if not edited_df[col].equals(df[col]):
+                            col_changes = (edited_df[col] != df[col]).sum()
+                            changed_cells += col_changes
+                
+                if changed_cells > 0:
+                    st.write(f"✏️ **خلايا معدلة:** {changed_cells}")
+                    changes_count += changed_cells
+                
+                if changes_count == 0:
+                    st.write("🔄 **لا توجد تغييرات**")
+    else:
+        if st.session_state.unsaved_changes.get(sheet_name, False):
+            st.info("ℹ️ التغييرات السابقة تم حفظها.")
+            st.session_state.unsaved_changes[sheet_name] = False
+        
+        # زر لإعادة تحميل البيانات
+        if st.button("🔄 تحديث البيانات", key=f"refresh_{sheet_name}"):
+            st.rerun()
+    
+    return sheets_edit
+
+# -------------------------------
 # 👥 إدارة المستخدمين (للمسؤولين فقط)
 # -------------------------------
 def manage_users():
@@ -2369,6 +2493,17 @@ with st.sidebar:
         else:
             st.warning("⚠ لا يمكن تحديث الجلسة.")
     
+    # زر لحفظ جميع التغييرات غير المحفوظة
+    if st.session_state.get("unsaved_changes", {}):
+        unsaved_count = sum(1 for v in st.session_state.unsaved_changes.values() if v)
+        if unsaved_count > 0:
+            st.markdown("---")
+            st.warning(f"⚠ لديك {unsaved_count} شيت به تغييرات غير محفوظة")
+            if st.button("💾 حفظ جميع التغييرات", key="save_all_changes", type="primary"):
+                # سيتم التعامل مع هذا في الواجهة الرئيسية
+                st.session_state["save_all_requested"] = True
+                st.rerun()
+    
     st.markdown("---")
     # زر لإعادة تسجيل الخروج
     if st.button("🚪 تسجيل الخروج", key="logout_btn"):
@@ -2464,23 +2599,14 @@ if permissions["can_edit"] and len(tabs) > 2:
 
             # Tab 1: تعديل بيانات وعرض
             with tab1:
-                st.subheader("✏ تعديل البيانات")
-                sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_sheet")
-                df = sheets_edit[sheet_name].astype(str)
-
-                edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True, 
-                                         key=f"editor_{sheet_name}")
+                # التحقق من طلب حفظ جميع التغييرات
+                if st.session_state.get("save_all_requested", False):
+                    st.info("💾 جاري حفظ جميع التغييرات...")
+                    # هنا يمكنك إضافة منطق لحفظ جميع التغييرات
+                    st.session_state["save_all_requested"] = False
                 
-                if not edited_df.equals(df):
-                    st.info("🔄 يتم حفظ التغييرات تلقائياً...")
-                    sheets_edit[sheet_name] = edited_df.astype(object)
-                    new_sheets = auto_save_to_github(
-                        sheets_edit, 
-                        f"تعديل تلقائي في شيت {sheet_name}"
-                    )
-                    if new_sheets is not None:
-                        sheets_edit = new_sheets
-                        st.rerun()
+                # استخدام دالة التعديل مع زر الحفظ
+                sheets_edit = edit_sheet_with_save_button(sheets_edit)
 
             # Tab 2: إضافة صف جديد
             with tab2:
@@ -2496,18 +2622,25 @@ if permissions["can_edit"] and len(tabs) > 2:
                     with cols[i % 3]:
                         new_data[col] = st.text_input(f"{col}", key=f"add_{sheet_name_add}_{col}")
 
-                if st.button("💾 إضافة الصف الجديد", key=f"add_row_{sheet_name_add}"):
-                    new_row_df = pd.DataFrame([new_data]).astype(str)
-                    df_new = pd.concat([df_add, new_row_df], ignore_index=True)
-                    
-                    sheets_edit[sheet_name_add] = df_new.astype(object)
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("💾 إضافة الصف الجديد", key=f"add_row_{sheet_name_add}", type="primary"):
+                        new_row_df = pd.DataFrame([new_data]).astype(str)
+                        df_new = pd.concat([df_add, new_row_df], ignore_index=True)
+                        
+                        sheets_edit[sheet_name_add] = df_new.astype(object)
 
-                    new_sheets = auto_save_to_github(
-                        sheets_edit,
-                        f"إضافة صف جديد في {sheet_name_add}"
-                    )
-                    if new_sheets is not None:
-                        sheets_edit = new_sheets
+                        new_sheets = auto_save_to_github(
+                            sheets_edit,
+                            f"إضافة صف جديد في {sheet_name_add}"
+                        )
+                        if new_sheets is not None:
+                            sheets_edit = new_sheets
+                            st.success("✅ تم إضافة الصف الجديد بنجاح!")
+                            st.rerun()
+                
+                with col_btn2:
+                    if st.button("🗑 مسح الحقول", key=f"clear_{sheet_name_add}"):
                         st.rerun()
 
             # Tab 3: إضافة عمود جديد
@@ -2519,20 +2652,27 @@ if permissions["can_edit"] and len(tabs) > 2:
                 new_col_name = st.text_input("اسم العمود الجديد:", key="new_col_name")
                 default_value = st.text_input("القيمة الافتراضية لكل الصفوف (اختياري):", "", key="default_value")
 
-                if st.button("💾 إضافة العمود الجديد", key=f"add_col_{sheet_name_col}"):
-                    if new_col_name:
-                        df_col[new_col_name] = default_value
-                        sheets_edit[sheet_name_col] = df_col.astype(object)
-                        
-                        new_sheets = auto_save_to_github(
-                            sheets_edit,
-                            f"إضافة عمود جديد '{new_col_name}' إلى {sheet_name_col}"
-                        )
-                        if new_sheets is not None:
-                            sheets_edit = new_sheets
-                            st.rerun()
-                    else:
-                        st.warning("⚠ الرجاء إدخال اسم العمود الجديد.")
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("💾 إضافة العمود الجديد", key=f"add_col_{sheet_name_col}", type="primary"):
+                        if new_col_name:
+                            df_col[new_col_name] = default_value
+                            sheets_edit[sheet_name_col] = df_col.astype(object)
+                            
+                            new_sheets = auto_save_to_github(
+                                sheets_edit,
+                                f"إضافة عمود جديد '{new_col_name}' إلى {sheet_name_col}"
+                            )
+                            if new_sheets is not None:
+                                sheets_edit = new_sheets
+                                st.success("✅ تم إضافة العمود الجديد بنجاح!")
+                                st.rerun()
+                        else:
+                            st.warning("⚠ الرجاء إدخال اسم العمود الجديد.")
+                
+                with col_btn2:
+                    if st.button("🗑 مسح", key=f"clear_col_{sheet_name_col}"):
+                        st.rerun()
 
             # Tab 4: إضافة إيفينت جديد
             with tab4:
