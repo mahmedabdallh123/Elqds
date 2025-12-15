@@ -1695,10 +1695,10 @@ def display_search_results(results, search_params):
             st.info("⚠ لا توجد بيانات للتصدير")
 
 # -------------------------------
-# 🖥 دالة فحص الإيفينت والكوريكشن - مع مدة زمنية بين الأحداث
+# 🖥 دالة فحص الإيفينت والكوريكشن - مع مدة زمنية بين الكوريكشن من نفس النوع فقط
 # -------------------------------
 def check_events_and_corrections_with_time(all_sheets):
-    """فحص الإيفينت والكوريكشن مع إضافة مدة زمنية بين الأحداث"""
+    """فحص الإيفينت والكوريكشن مع حساب الفرق الزمني بين الكوريكشن من نفس النوع"""
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
@@ -1714,9 +1714,8 @@ def check_events_and_corrections_with_time(all_sheets):
             "include_empty": True,
             "sort_by": "رقم الماكينة",
             "time_filter_enabled": False,
-            "min_days": 0,
-            "max_days": 365,
-            "show_time_diff": True
+            "show_time_diff": True,
+            "calculate_average": True
         }
     
     if "search_triggered_time" not in st.session_state:
@@ -1725,7 +1724,7 @@ def check_events_and_corrections_with_time(all_sheets):
     # قسم البحث - واجهة محسنة مع إضافة المدة الزمنية
     with st.container():
         st.markdown("### 🔍 بحث متعدد المعايير مع المدة الزمنية")
-        st.markdown("استخدم الحقول التالية للبحث المحدد. يمكنك تفعيل فلترة المدة الزمنية بين الأحداث.")
+        st.markdown("استخدم الحقول التالية للبحث المحدد. يمكنك تفعيل حساب الفروق الزمنية بين الكوريكشن من نفس النوع.")
         
         # تقسيم الشاشة إلى أعمدة
         col1, col2 = st.columns([1, 1])
@@ -1790,51 +1789,26 @@ def check_events_and_corrections_with_time(all_sheets):
                     placeholder="اتركه فارغاً للبحث في كل النصوص"
                 )
         
-        # قسم فلترة المدة الزمنية
-        with st.expander("⏰ **فلترة المدة الزمنية بين الأحداث**", expanded=False):
-            col_time1, col_time2, col_time3 = st.columns(3)
+        # قسم خيارات الوقت
+        with st.expander("⏰ **خيارات الفروق الزمنية**", expanded=False):
+            col_time1, col_time2 = st.columns(2)
             
             with col_time1:
-                time_filter_enabled = st.checkbox(
-                    "تفعيل فلترة المدة الزمنية",
-                    value=st.session_state.search_params_time.get("time_filter_enabled", False),
-                    key="time_filter_checkbox",
-                    help="تفعيل البحث عن الأحداث حسب المدة الزمنية بينها"
+                show_time_diff = st.checkbox(
+                    "إظهار الفروق الزمنية بين الكوريكشن من نفس النوع",
+                    value=st.session_state.search_params_time.get("show_time_diff", True),
+                    key="show_time_diff_checkbox",
+                    help="حساب وإظهار الفرق الزمني بالايام بين الكوريكشن من نفس النوع"
                 )
             
             with col_time2:
-                if time_filter_enabled:
-                    min_days = st.number_input(
-                        "الحد الأدنى للأيام بين الأحداث",
-                        min_value=0,
-                        max_value=3650,
-                        value=st.session_state.search_params_time.get("min_days", 0),
-                        key="min_days_input",
-                        help="الحد الأدنى للأيام بين حدثين متتاليين"
+                if show_time_diff:
+                    calculate_average = st.checkbox(
+                        "حساب متوسط الفروق الزمنية",
+                        value=st.session_state.search_params_time.get("calculate_average", True),
+                        key="calculate_average_checkbox",
+                        help="حساب متوسط الفروق الزمنية لكل نوع من الكوريكشن"
                     )
-                else:
-                    min_days = st.session_state.search_params_time.get("min_days", 0)
-            
-            with col_time3:
-                if time_filter_enabled:
-                    max_days = st.number_input(
-                        "الحد الأقصى للأيام بين الأحداث",
-                        min_value=0,
-                        max_value=3650,
-                        value=st.session_state.search_params_time.get("max_days", 365),
-                        key="max_days_input",
-                        help="الحد الأقصى للأيام بين حدثين متتاليين"
-                    )
-                else:
-                    max_days = st.session_state.search_params_time.get("max_days", 365)
-            
-            # خيار إظهار الفروق الزمنية
-            show_time_diff = st.checkbox(
-                "إظهار الفروق الزمنية بين الأحداث",
-                value=st.session_state.search_params_time.get("show_time_diff", True),
-                key="show_time_diff_checkbox",
-                help="إظهار عدد الأيام بين كل حدث والحدث الذي يسبقه"
-            )
         
         # قسم خيارات البحث المتقدمة
         with st.expander("⚙ **خيارات متقدمة**", expanded=False):
@@ -1885,9 +1859,8 @@ def check_events_and_corrections_with_time(all_sheets):
                     "include_empty": True,
                     "sort_by": "رقم الماكينة",
                     "time_filter_enabled": False,
-                    "min_days": 0,
-                    "max_days": 365,
-                    "show_time_diff": True
+                    "show_time_diff": True,
+                    "calculate_average": True
                 }
                 st.session_state.search_triggered_time = False
                 st.rerun()
@@ -1902,9 +1875,8 @@ def check_events_and_corrections_with_time(all_sheets):
                     "include_empty": True,
                     "sort_by": "رقم الماكينة",
                     "time_filter_enabled": False,
-                    "min_days": 0,
-                    "max_days": 365,
-                    "show_time_diff": True
+                    "show_time_diff": True,
+                    "calculate_average": True
                 }
                 st.session_state.search_triggered_time = True
                 st.rerun()
@@ -1925,10 +1897,8 @@ def check_events_and_corrections_with_time(all_sheets):
     st.session_state.search_params_time["exact_match"] = (search_mode == "مطابقة كاملة")
     st.session_state.search_params_time["include_empty"] = include_empty
     st.session_state.search_params_time["sort_by"] = sort_by
-    st.session_state.search_params_time["time_filter_enabled"] = time_filter_enabled
-    st.session_state.search_params_time["min_days"] = min_days
-    st.session_state.search_params_time["max_days"] = max_days
     st.session_state.search_params_time["show_time_diff"] = show_time_diff
+    st.session_state.search_params_time["calculate_average"] = calculate_average
     
     # معالجة البحث
     if search_clicked or st.session_state.search_triggered_time:
@@ -1958,8 +1928,8 @@ def show_search_params_with_time(search_params):
         if search_params["search_text"]:
             params_display.append(f"**📝 نص البحث:** {search_params['search_text']}")
         
-        if search_params["time_filter_enabled"]:
-            params_display.append(f"**⏰ المدة الزمنية:** {search_params['min_days']} - {search_params['max_days']} يوم")
+        if search_params["show_time_diff"]:
+            params_display.append("**⏰ إظهار الفروق الزمنية**")
         
         if params_display:
             st.info(" | ".join(params_display))
@@ -2044,16 +2014,247 @@ def show_advanced_search_results_with_time(search_params, all_sheets):
     progress_bar.empty()
     status_text.empty()
     
-    # تطبيق فلترة المدة الزمنية إذا كانت مفعلة
-    if search_params["time_filter_enabled"] and all_results:
-        all_results = filter_events_by_time(all_results, search_params)
-    
     # عرض النتائج
     if all_results:
-        display_search_results_with_time(all_results, search_params)
+        # تحليل الفروق الزمنية إذا كان الخيار مفعلاً
+        if search_params["show_time_diff"]:
+            # تحليل الفروق الزمنية بين الكوريكشن من نفس النوع
+            time_analysis_results = analyze_time_differences(all_results, search_params)
+            
+            # دمج النتائج مع تحليل الوقت
+            display_search_results_with_time_analysis(all_results, search_params, time_analysis_results)
+        else:
+            # عرض النتائج بدون تحليل الوقت
+            display_search_results_with_time(all_results, search_params)
     else:
         st.warning("⚠ لم يتم العثور على نتائج تطابق معايير البحث")
         st.info("💡 حاول تعديل معايير البحث أو استخدام مصطلحات أوسع")
+
+def analyze_time_differences(results, search_params):
+    """تحليل الفروق الزمنية بين الكوريكشن من نفس النوع"""
+    if not results:
+        return {}
+    
+    # تحويل النتائج إلى DataFrame
+    results_df = pd.DataFrame(results)
+    
+    # فلترة النتائج التي تحتوي على كوريكشن فقط
+    correction_df = results_df[results_df["Correction"] != "-"].copy()
+    
+    if correction_df.empty:
+        return {"message": "⚠ لا توجد بيانات كوريكشن للتحليل"}
+    
+    # تنظيف نص الكوريكشن
+    correction_df["Correction_Clean"] = correction_df["Correction"].apply(lambda x: str(x).strip().lower())
+    
+    # تجميع الكوريكشن حسب النوع
+    correction_types = correction_df["Correction_Clean"].unique()
+    
+    analysis_results = {
+        "correction_types": [],
+        "time_differences": {},
+        "averages": {},
+        "statistics": {}
+    }
+    
+    for corr_type in correction_types:
+        if not corr_type or corr_type == "-":
+            continue
+        
+        # الحصول على جميع السجلات من هذا النوع
+        type_records = correction_df[correction_df["Correction_Clean"] == corr_type].copy()
+        
+        if len(type_records) < 2:
+            # إذا كان هناك أقل من سجلين، لا يمكن حساب الفرق
+            continue
+        
+        # تحويل التواريخ
+        type_records["Date_Parsed"] = type_records["Date"].apply(parse_date_string)
+        
+        # ترتيب حسب التاريخ
+        type_records = type_records.sort_values("Date_Parsed")
+        
+        # حساب الفروق الزمنية بين السجلات المتتالية
+        time_diffs = []
+        dates_list = type_records["Date_Parsed"].tolist()
+        
+        for i in range(1, len(dates_list)):
+            if dates_list[i] is not None and dates_list[i-1] is not None:
+                time_diff = (dates_list[i] - dates_list[i-1]).days
+                if time_diff >= 0:
+                    time_diffs.append(time_diff)
+        
+        if time_diffs:
+            analysis_results["correction_types"].append(corr_type)
+            analysis_results["time_differences"][corr_type] = time_diffs
+            
+            # حساب الإحصائيات
+            if time_diffs:
+                analysis_results["averages"][corr_type] = sum(time_diffs) / len(time_diffs)
+                analysis_results["statistics"][corr_type] = {
+                    "count": len(time_diffs),
+                    "min": min(time_diffs),
+                    "max": max(time_diffs),
+                    "average": sum(time_diffs) / len(time_diffs),
+                    "total_records": len(type_records)
+                }
+    
+    return analysis_results
+
+def display_search_results_with_time_analysis(results, search_params, time_analysis):
+    """عرض نتائج البحث مع تحليل الوقت"""
+    # تحويل النتائج إلى DataFrame
+    if not results:
+        st.warning("⚠ لا توجد نتائج لعرضها")
+        return
+    
+    result_df = pd.DataFrame(results)
+    
+    # التأكد من وجود البيانات
+    if result_df.empty:
+        st.warning("⚠ لا توجد بيانات لعرضها")
+        return
+    
+    # إنشاء تبويبات للعرض
+    time_tabs = st.tabs(["📋 النتائج التفصيلية", "📊 تحليل الفروق الزمنية"])
+    
+    with time_tabs[0]:
+        # عرض النتائج التفصيلية (مشابه للبحث العادي)
+        display_search_results_with_time(results, search_params)
+    
+    with time_tabs[1]:
+        # عرض تحليل الفروق الزمنية
+        st.markdown("### 📊 تحليل الفروق الزمنية بين الكوريكشن من نفس النوع")
+        
+        if "message" in time_analysis:
+            st.info(time_analysis["message"])
+            return
+        
+        if not time_analysis.get("correction_types"):
+            st.info("ℹ️ لا توجد أنواع كوريكشن متكررة لتحليل الفروق الزمنية")
+            return
+        
+        # عرض ملخص عام
+        st.markdown("#### 📈 ملخص عام")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            total_correction_types = len(time_analysis["correction_types"])
+            st.metric("📝 أنواع الكوريكشن", total_correction_types)
+        
+        with col2:
+            total_time_diffs = sum(len(diffs) for diffs in time_analysis["time_differences"].values())
+            st.metric("🔢 عدد الفروق المحسوبة", total_time_diffs)
+        
+        with col3:
+            if time_analysis["averages"]:
+                overall_avg = sum(time_analysis["averages"].values()) / len(time_analysis["averages"])
+                st.metric("⏰ متوسط الفروق العام", f"{overall_avg:.1f} يوم")
+            else:
+                st.metric("⏰ متوسط الفروق العام", "غير متاح")
+        
+        # عرض تفاصيل كل نوع
+        st.markdown("#### 📋 تفاصيل الفروق الزمنية حسب النوع")
+        
+        for corr_type in time_analysis["correction_types"]:
+            with st.expander(f"📝 **{corr_type}**", expanded=True):
+                stats = time_analysis["statistics"][corr_type]
+                diffs = time_analysis["time_differences"][corr_type]
+                
+                # عرض الإحصائيات
+                col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+                
+                with col_stat1:
+                    st.metric("🔢 عدد الفروق", stats["count"])
+                
+                with col_stat2:
+                    st.metric("⏰ متوسط الفرق", f"{stats['average']:.1f} يوم")
+                
+                with col_stat3:
+                    st.metric("📅 أقل فرق", f"{stats['min']} يوم")
+                
+                with col_stat4:
+                    st.metric("📅 أكبر فرق", f"{stats['max']} يوم")
+                
+                # عرض الفروق التفصيلية
+                st.markdown("##### 📊 الفروق التفصيلية (بالأيام)")
+                
+                # إنشاء DataFrame للفروق
+                diffs_df = pd.DataFrame({
+                    "رقم الفرق": range(1, len(diffs) + 1),
+                    "الفرق الزمني (يوم)": diffs
+                })
+                
+                st.dataframe(diffs_df, use_container_width=True, height=200)
+                
+                # محاولة عرض مخطط إذا كان متاحاً
+                try:
+                    import plotly.express as px
+                    
+                    fig = px.line(
+                        diffs_df,
+                        x="رقم الفرق",
+                        y="الفرق الزمني (يوم)",
+                        title=f"تطور الفروق الزمنية لنوع: {corr_type}",
+                        markers=True
+                    )
+                    fig.update_layout(
+                        xaxis_title="رقم الفرق",
+                        yaxis_title="الفرق بالايام",
+                        height=300
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                except ImportError:
+                    # استخدام streamlit chart بديل
+                    st.line_chart(diffs_df.set_index("رقم الفرق"), height=300)
+        
+        # عرض جدول ملخص لجميع الأنواع
+        st.markdown("#### 📊 جدول ملخص لجميع الأنواع")
+        
+        summary_data = []
+        for corr_type in time_analysis["correction_types"]:
+            stats = time_analysis["statistics"][corr_type]
+            summary_data.append({
+                "نوع الكوريكشن": corr_type,
+                "عدد السجلات": stats["total_records"],
+                "عدد الفروق": stats["count"],
+                "متوسط الفرق (يوم)": f"{stats['average']:.1f}",
+                "أقل فرق (يوم)": stats["min"],
+                "أكبر فرق (يوم)": stats["max"],
+                "نطاق الفروق (يوم)": f"{stats['max'] - stats['min']}"
+            })
+        
+        if summary_data:
+            summary_df = pd.DataFrame(summary_data)
+            st.dataframe(summary_df, use_container_width=True, height=400)
+            
+            # تصدير نتائج التحليل
+            st.markdown("#### 💾 تصدير نتائج التحليل")
+            
+            col_exp1, col_exp2 = st.columns(2)
+            
+            with col_exp1:
+                buffer_excel = io.BytesIO()
+                summary_df.to_excel(buffer_excel, index=False, engine="openpyxl")
+                st.download_button(
+                    label="📊 حفظ كملف Excel",
+                    data=buffer_excel.getvalue(),
+                    file_name=f"تحليل_الفروق_الزمنية_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            
+            with col_exp2:
+                buffer_csv = io.BytesIO()
+                summary_df.to_csv(buffer_csv, index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="📄 حفظ كملف CSV",
+                    data=buffer_csv.getvalue(),
+                    file_name=f"تحليل_الفروق_الزمنية_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
 
 def parse_date_string(date_str):
     """محاولة تحويل نص التاريخ إلى كائن datetime"""
@@ -2093,103 +2294,8 @@ def parse_date_string(date_str):
     
     return None
 
-def calculate_time_difference(date1_str, date2_str):
-    """حساب الفرق الزمني بالايام بين تاريخين"""
-    date1 = parse_date_string(date1_str)
-    date2 = parse_date_string(date2_str)
-    
-    if date1 is None or date2 is None:
-        return None
-    
-    # حساب الفرق بالأيام (قيمة مطلقة)
-    return abs((date2 - date1).days)
-
-def filter_events_by_time(events, search_params):
-    """تصفية الأحداث بناءً على المدة الزمنية بينها"""
-    if not events:
-        return []
-    
-    # تجميع الأحداث حسب الماكينة
-    events_by_machine = {}
-    for event in events:
-        machine = event.get("Card Number")
-        if machine not in events_by_machine:
-            events_by_machine[machine] = []
-        events_by_machine[machine].append(event)
-    
-    # تصفية الأحداث لكل ماكينة
-    filtered_events = []
-    min_days = search_params.get("min_days", 0)
-    max_days = search_params.get("max_days", 365)
-    
-    for machine, machine_events in events_by_machine.items():
-        # ترتيب الأحداث حسب التاريخ (من الأقدم للأحدث)
-        sorted_events = sorted(machine_events, 
-                             key=lambda x: parse_date_string(x.get("Date")) or datetime.min)
-        
-        if len(sorted_events) >= 2:
-            for i in range(len(sorted_events)):
-                current_event = sorted_events[i]
-                current_date = current_event.get("Date")
-                
-                if i == 0:
-                    # الحدث الأول - حساب الفرق مع الحدث الثاني
-                    next_event = sorted_events[i + 1]
-                    next_date = next_event.get("Date")
-                    
-                    time_diff = calculate_time_difference(current_date, next_date)
-                    
-                    if time_diff is not None and min_days <= time_diff <= max_days:
-                        current_event["Time_Diff_Next"] = time_diff
-                        current_event["Time_Diff_Prev"] = None
-                        filtered_events.append(current_event)
-                
-                elif i == len(sorted_events) - 1:
-                    # الحدث الأخير - حساب الفرق مع الحدث السابق
-                    prev_event = sorted_events[i - 1]
-                    prev_date = prev_event.get("Date")
-                    
-                    time_diff = calculate_time_difference(current_date, prev_date)
-                    
-                    if time_diff is not None and min_days <= time_diff <= max_days:
-                        current_event["Time_Diff_Next"] = None
-                        current_event["Time_Diff_Prev"] = time_diff
-                        filtered_events.append(current_event)
-                
-                else:
-                    # حدث في المنتصف - حساب الفرق مع الحدثين السابق والتالي
-                    prev_event = sorted_events[i - 1]
-                    next_event = sorted_events[i + 1]
-                    
-                    prev_date = prev_event.get("Date")
-                    next_date = next_event.get("Date")
-                    
-                    time_diff_prev = calculate_time_difference(current_date, prev_date)
-                    time_diff_next = calculate_time_difference(current_date, next_date)
-                    
-                    # التحقق إذا كان أي من الفروق ضمن النطاق المحدد
-                    within_range = False
-                    if time_diff_prev is not None and min_days <= time_diff_prev <= max_days:
-                        within_range = True
-                    if time_diff_next is not None and min_days <= time_diff_next <= max_days:
-                        within_range = True
-                    
-                    if within_range:
-                        current_event["Time_Diff_Prev"] = time_diff_prev
-                        current_event["Time_Diff_Next"] = time_diff_next
-                        filtered_events.append(current_event)
-        else:
-            # إذا كان هناك حدث واحد فقط، نضيفه إذا كانت الفلترة تسمح بذلك
-            if len(sorted_events) == 1:
-                single_event = sorted_events[0]
-                single_event["Time_Diff_Prev"] = None
-                single_event["Time_Diff_Next"] = None
-                filtered_events.append(single_event)
-    
-    return filtered_events
-
 def display_search_results_with_time(results, search_params):
-    """عرض نتائج البحث بشكل احترافي مع المدة الزمنية"""
+    """عرض نتائج البحث بشكل احترافي (مشابه للبحث العادي)"""
     # تحويل النتائج إلى DataFrame
     if not results:
         st.warning("⚠ لا توجد نتائج لعرضها")
@@ -2227,7 +2333,7 @@ def display_search_results_with_time(results, search_params):
     display_df['Total_Events'] = display_df.groupby('Card Number')['Card Number'].transform('count')
     
     # عرض الإحصائيات
-    st.markdown("### 📈 إحصائيات النتائج مع المدة الزمنية")
+    st.markdown("### 📈 إحصائيات النتائج")
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -2239,91 +2345,27 @@ def display_search_results_with_time(results, search_params):
         st.metric("🔢 عدد الماكينات", unique_machines)
     
     with col3:
-        # حساب متوسط الفروق الزمنية إذا كانت موجودة
-        if 'Time_Diff_Prev' in display_df.columns or 'Time_Diff_Next' in display_df.columns:
-            # جمع الفروق الزمنية
-            time_diffs = []
-            if 'Time_Diff_Prev' in display_df.columns:
-                time_diffs.extend(display_df['Time_Diff_Prev'].dropna().tolist())
-            if 'Time_Diff_Next' in display_df.columns:
-                time_diffs.extend(display_df['Time_Diff_Next'].dropna().tolist())
-            
-            if time_diffs:
-                avg_diff = sum(time_diffs) / len(time_diffs)
-                st.metric("⏰ متوسط الفرق الزمني (يوم)", f"{avg_diff:.1f}")
-            else:
-                st.metric("⏰ متوسط الفرق الزمني", "غير متاح")
+        # عدد الماكينات التي لديها كوريكشن
+        if 'Correction' in display_df.columns:
+            machines_with_correction = display_df[display_df["Correction"] != "-"]["Card Number"].nunique()
+            st.metric("🔧 مكن مع كوريكشن", machines_with_correction)
         else:
-            st.metric("⏰ متوسط الفرق الزمني", "غير مفعل")
+            st.metric("🔧 مكن مع كوريكشن", 0)
     
     with col4:
-        # حساب الماكينات ذات الفروق الزمنية العالية/المنخفضة
-        if 'Time_Diff_Prev' in display_df.columns or 'Time_Diff_Next' in display_df.columns:
-            # حساب عدد الماكينات التي لديها فروق زمنية ضمن نطاق معين
-            machines_with_data = set()
-            for _, row in display_df.iterrows():
-                if (pd.notna(row.get('Time_Diff_Prev')) or 
-                    pd.notna(row.get('Time_Diff_Next'))):
-                    machines_with_data.add(row['Card Number'])
-            
-            st.metric("🔢 مكن مع فروق زمنية", len(machines_with_data))
+        # عدد الكوريكشن الفريدة
+        if 'Correction' in display_df.columns:
+            unique_corrections = display_df[display_df["Correction"] != "-"]["Correction"].nunique()
+            st.metric("📝 أنواع كوريكشن فريدة", unique_corrections)
         else:
-            st.metric("🔢 مكن مع فروق زمنية", 0)
+            st.metric("📝 أنواع كوريكشن فريدة", 0)
     
-    st.markdown("---")
-    
-    # عرض الفروق الزمنية إذا كان الخيار مفعلاً
-    if search_params.get("show_time_diff", False):
-        st.markdown("### ⏰ الفروق الزمنية بين الأحداث")
-        
-        # إضافة عمود يوضح الفروق الزمنية
-        if 'Time_Diff_Prev' in display_df.columns or 'Time_Diff_Next' in display_df.columns:
-            # إنشاء عمود مدمج للفروق الزمنية
-            time_diff_display = []
-            for _, row in display_df.iterrows():
-                prev_diff = row.get('Time_Diff_Prev')
-                next_diff = row.get('Time_Diff_Next')
-                
-                if pd.notna(prev_diff) and pd.notna(next_diff):
-                    time_diff_display.append(f"← {int(prev_diff)} يوم → {int(next_diff)} يوم")
-                elif pd.notna(prev_diff):
-                    time_diff_display.append(f"← {int(prev_diff)} يوم")
-                elif pd.notna(next_diff):
-                    time_diff_display.append(f"→ {int(next_diff)} يوم")
-                else:
-                    time_diff_display.append("-")
-            
-            display_df['الفرق الزمني (يوم)'] = time_diff_display
-            
-            # إضافة تصنيف للفروق الزمنية
-            def classify_time_diff(row):
-                prev_diff = row.get('Time_Diff_Prev')
-                next_diff = row.get('Time_Diff_Next')
-                
-                if pd.notna(prev_diff):
-                    diff_to_check = prev_diff
-                elif pd.notna(next_diff):
-                    diff_to_check = next_diff
-                else:
-                    return "غير محدد"
-                
-                if diff_to_check < 7:
-                    return "قريب جداً"
-                elif diff_to_check < 30:
-                    return "قريب"
-                elif diff_to_check < 90:
-                    return "متوسط"
-                elif diff_to_check < 180:
-                    return "بعيد"
-                else:
-                    return "بعيد جداً"
-            
-            if 'Time_Diff_Prev' in display_df.columns or 'Time_Diff_Next' in display_df.columns:
-                display_df['تصنيف الفرق الزمني'] = display_df.apply(classify_time_diff, axis=1)
+    # عرض النتائج بشكل متسلسل
+    st.markdown("### 📋 النتائج التفصيلية (مرتبة)")
     
     # فلترة النتائج
     st.markdown("#### 🔍 فلترة النتائج")
-    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+    filter_col1, filter_col2, filter_col3 = st.columns(3)
     
     with filter_col1:
         show_with_event = st.checkbox("📝 مع حدث", True, key="filter_event_time")
@@ -2331,15 +2373,6 @@ def display_search_results_with_time(results, search_params):
         show_with_correction = st.checkbox("✏ مع تصحيح", True, key="filter_correction_time")
     with filter_col3:
         show_with_tech = st.checkbox("👨‍🔧 مع فني خدمة", True, key="filter_tech_time")
-    with filter_col4:
-        if search_params.get("show_time_diff", False) and 'تصنيف الفرق الزمني' in display_df.columns:
-            time_categories = sorted(display_df['تصنيف الفرق الزمني'].unique())
-            selected_time_cat = st.multiselect(
-                "⏰ تصنيف الفرق الزمني",
-                options=time_categories,
-                default=time_categories,
-                key="filter_time_cat"
-            )
     
     # تطبيق الفلاتر
     filtered_df = display_df.copy()
@@ -2351,21 +2384,11 @@ def display_search_results_with_time(results, search_params):
     if not show_with_tech and 'Servised by' in filtered_df.columns:
         filtered_df = filtered_df[filtered_df["Servised by"] != "-"]
     
-    if search_params.get("show_time_diff", False) and 'تصنيف الفرق الزمني' in filtered_df.columns and selected_time_cat:
-        filtered_df = filtered_df[filtered_df['تصنيف الفرق الزمني'].isin(selected_time_cat)]
-    
     # عرض النتائج
     if not filtered_df.empty:
         # تحديد الأعمدة المراد عرضها
         columns_to_show = ['Card Number', 'Event', 'Correction', 'Servised by', 
                           'Tones', 'Date', 'Event_Order', 'Total_Events']
-        
-        # إضافة أعمدة المدة الزمنية إذا كانت موجودة
-        if search_params.get("show_time_diff", False):
-            if 'الفرق الزمني (يوم)' in filtered_df.columns:
-                columns_to_show.append('الفرق الزمني (يوم)')
-            if 'تصنيف الفرق الزمني' in filtered_df.columns:
-                columns_to_show.append('تصنيف الفرق الزمني')
         
         # عرض البيانات في جدول
         st.dataframe(
@@ -2373,10 +2396,6 @@ def display_search_results_with_time(results, search_params):
             use_container_width=True,
             height=500
         )
-        
-        # عرض تحليل الفروق الزمنية
-        if search_params.get("show_time_diff", False) and ('Time_Diff_Prev' in filtered_df.columns or 'Time_Diff_Next' in filtered_df.columns):
-            show_time_difference_analysis(filtered_df, search_params)
     else:
         st.warning("⚠ لم يتم العثور على نتائج تطابق معايير الفلترة")
     
@@ -2449,225 +2468,6 @@ def display_search_results_with_time(results, search_params):
             )
         else:
             st.info("⚠ لا توجد بيانات للتصدير")
-
-def show_time_difference_analysis(df, search_params):
-    """عرض تحليل الفروق الزمنية بين الأحداث"""
-    if not search_params.get("show_time_diff", False):
-        return
-    
-    st.markdown("### 📊 تحليل الفروق الزمنية بين الأحداث")
-    
-    # إنشاء تبويبات للتحليل
-    time_tabs = st.tabs(["📈 إحصائيات الفروق", "📊 توزيع الفروق", "🔍 الأكثر تكراراً"])
-    
-    with time_tabs[0]:
-        st.markdown("#### 📈 إحصائيات الفروق الزمنية")
-        
-        # جمع جميع الفروق الزمنية
-        all_diffs = []
-        if 'Time_Diff_Prev' in df.columns:
-            all_diffs.extend(df['Time_Diff_Prev'].dropna().tolist())
-        if 'Time_Diff_Next' in df.columns:
-            all_diffs.extend(df['Time_Diff_Next'].dropna().tolist())
-        
-        if all_diffs:
-            # حساب الإحصائيات
-            stats_data = {
-                "إجمالي الفروق": len(all_diffs),
-                "متوسط الفرق (يوم)": f"{sum(all_diffs) / len(all_diffs):.1f}",
-                "أقل فرق (يوم)": min(all_diffs),
-                "أعلى فرق (يوم)": max(all_diffs),
-                "الفرق المتوسط (يوم)": f"{pd.Series(all_diffs).median():.1f}",
-                "الانحراف المعياري (يوم)": f"{pd.Series(all_diffs).std():.1f}"
-            }
-            
-            # عرض الإحصائيات
-            for key, value in stats_data.items():
-                st.info(f"**{key}:** {value}")
-            
-            # عرض الماكينات ذات الفروق المتطرفة
-            st.markdown("##### 📋 الماكينات ذات الفروق المتطرفة")
-            
-            # البحث عن الماكينات ذات أعلى وأقل فروق
-            machine_diffs = {}
-            for _, row in df.iterrows():
-                machine = row['Card Number']
-                prev_diff = row.get('Time_Diff_Prev')
-                next_diff = row.get('Time_Diff_Next')
-                
-                if pd.notna(prev_diff):
-                    if machine not in machine_diffs:
-                        machine_diffs[machine] = []
-                    machine_diffs[machine].append(prev_diff)
-                
-                if pd.notna(next_diff):
-                    if machine not in machine_diffs:
-                        machine_diffs[machine] = []
-                    machine_diffs[machine].append(next_diff)
-            
-            # حساب المتوسط لكل ماكينة
-            machine_avg = {}
-            for machine, diffs in machine_diffs.items():
-                if diffs:
-                    machine_avg[machine] = sum(diffs) / len(diffs)
-            
-            # عرض أعلى 5 وأقل 5
-            if machine_avg:
-                sorted_machines = sorted(machine_avg.items(), key=lambda x: x[1])
-                
-                col_ext1, col_ext2 = st.columns(2)
-                
-                with col_ext1:
-                    st.markdown("**أقل 5 فروق (أكثر تكراراً):**")
-                    for machine, avg in sorted_machines[:5]:
-                        st.write(f"- الماكينة {machine}: {avg:.1f} يوم")
-                
-                with col_ext2:
-                    st.markdown("**أعلى 5 فروق (أقل تكراراً):**")
-                    for machine, avg in sorted_machines[-5:]:
-                        st.write(f"- الماكينة {machine}: {avg:.1f} يوم")
-        else:
-            st.info("ℹ️ لا توجد بيانات كافية لعرض الإحصائيات")
-    
-    with time_tabs[1]:
-        st.markdown("#### 📊 توزيع الفروق الزمنية")
-        
-        # جمع جميع الفروق الزمنية
-        all_diffs = []
-        if 'Time_Diff_Prev' in df.columns:
-            all_diffs.extend(df['Time_Diff_Prev'].dropna().tolist())
-        if 'Time_Diff_Next' in df.columns:
-            all_diffs.extend(df['Time_Diff_Next'].dropna().tolist())
-        
-        if all_diffs:
-            # إنشاء DataFrame للفروق
-            diffs_df = pd.DataFrame({'الفرق_بالأيام': all_diffs})
-            
-            # محاولة عرض مخطط باستخدام plotly
-            try:
-                import plotly.express as px
-                import plotly.graph_objects as go
-                
-                # مخطط توزيع الفروق
-                fig1 = px.histogram(
-                    diffs_df, 
-                    x='الفرق_بالأيام',
-                    nbins=20,
-                    title='توزيع الفروق الزمنية بين الأحداث',
-                    labels={'الفرق_بالأيام': 'الفرق بالأيام'},
-                    color_discrete_sequence=['#4ECDC4']
-                )
-                fig1.update_layout(
-                    xaxis_title="الفرق بالأيام",
-                    yaxis_title="التكرار",
-                    height=400
-                )
-                st.plotly_chart(fig1, use_container_width=True)
-                
-                # مخطط المدرج التكراري مع متوسط الفرق
-                avg_diff = diffs_df['الفرق_بالأيام'].mean()
-                fig2 = go.Figure()
-                fig2.add_trace(go.Histogram(
-                    x=diffs_df['الفرق_بالأيام'],
-                    name='الفروق',
-                    marker_color='#FF6B6B'
-                ))
-                fig2.add_vline(
-                    x=avg_diff,
-                    line_dash="dash",
-                    line_color="green",
-                    annotation_text=f"المتوسط: {avg_diff:.1f} يوم"
-                )
-                fig2.update_layout(
-                    title='توزيع الفروق مع خط المتوسط',
-                    xaxis_title="الفرق بالأيام",
-                    yaxis_title="التكرار",
-                    height=400
-                )
-                st.plotly_chart(fig2, use_container_width=True)
-                
-            except ImportError:
-                # استخدام streamlit charts بدلاً من plotly
-                st.markdown("**📊 توزيع الفروق الزمنية:**")
-                
-                # إنشاء فئات للفروق
-                bins = [0, 7, 30, 90, 180, 365, float('inf')]
-                labels = ['أقل من أسبوع', 'أسبوع - شهر', 'شهر - 3 شهور', 
-                         '3 - 6 شهور', '6 - 12 شهر', 'أكثر من سنة']
-                
-                diffs_series = pd.Series(all_diffs)
-                binned_diffs = pd.cut(diffs_series, bins=bins, labels=labels, right=False)
-                binned_counts = binned_diffs.value_counts().sort_index()
-                
-                # عرض البيانات في جدول
-                dist_table = pd.DataFrame({
-                    'الفئة الزمنية': binned_counts.index,
-                    'عدد الأحداث': binned_counts.values,
-                    'النسبة': (binned_counts.values / len(all_diffs) * 100).round(1)
-                })
-                st.dataframe(dist_table, use_container_width=True)
-                
-                # مخطط شريطي بسيط
-                st.bar_chart(binned_counts, height=400)
-        else:
-            st.info("ℹ️ لا توجد بيانات كافية لعرض المخططات")
-    
-    with time_tabs[2]:
-        st.markdown("#### 🔍 الأحداث الأكثر تكراراً والأقل تكراراً")
-        
-        # تحليل تكرار الأحداث
-        if 'Time_Diff_Prev' in df.columns or 'Time_Diff_Next' in df.columns:
-            # حساب تكرار الأحداث لكل ماكينة
-            event_counts = df.groupby('Card Number').size().reset_index(name='عدد الأحداث')
-            
-            if not event_counts.empty:
-                # ترتيب حسب عدد الأحداث
-                event_counts_sorted = event_counts.sort_values('عدد الأحداث', ascending=False)
-                
-                col_freq1, col_freq2 = st.columns(2)
-                
-                with col_freq1:
-                    st.markdown("**🔝 أعلى 5 ماكينات في عدد الأحداث:**")
-                    top_machines = event_counts_sorted.head()
-                    for _, row in top_machines.iterrows():
-                        st.write(f"- الماكينة {row['Card Number']}: {row['عدد الأحداث']} حدث")
-                
-                with col_freq2:
-                    st.markdown("**📉 أقل 5 ماكينات في عدد الأحداث:**")
-                    bottom_machines = event_counts_sorted.tail()
-                    for _, row in bottom_machines.iterrows():
-                        st.write(f"- الماكينة {row['Card Number']}: {row['عدد الأحداث']} حدث")
-                
-                # تحليل الفروق الزمنية لكل ماكينة
-                st.markdown("##### 📊 متوسط الفروق الزمنية لكل ماكينة")
-                
-                machine_stats = []
-                for machine in event_counts['Card Number'].unique():
-                    machine_data = df[df['Card Number'] == machine]
-                    
-                    # جمع الفروق الزمنية
-                    machine_diffs = []
-                    if 'Time_Diff_Prev' in machine_data.columns:
-                        machine_diffs.extend(machine_data['Time_Diff_Prev'].dropna().tolist())
-                    if 'Time_Diff_Next' in machine_data.columns:
-                        machine_diffs.extend(machine_data['Time_Diff_Next'].dropna().tolist())
-                    
-                    if machine_diffs:
-                        avg_diff = sum(machine_diffs) / len(machine_diffs)
-                        machine_stats.append({
-                            'الماكينة': machine,
-                            'عدد الأحداث': len(machine_data),
-                            'متوسط الفرق الزمني': f"{avg_diff:.1f} يوم",
-                            'تصنيف التكرار': 'عالية' if len(machine_data) > event_counts['عدد الأحداث'].mean() else 'منخفضة'
-                        })
-                
-                if machine_stats:
-                    stats_df = pd.DataFrame(machine_stats)
-                    st.dataframe(stats_df, use_container_width=True, height=300)
-            else:
-                st.info("ℹ️ لا توجد بيانات كافية لعرض تحليل التكرار")
-        else:
-            st.info("ℹ️ لم يتم تفعيل خيار عرض الفروق الزمنية")
 
 # -------------------------------
 # 🖥 دالة إضافة إيفينت جديد - في الشيت المنفصل
