@@ -1012,10 +1012,10 @@ def show_service_statistics(service_stats, result_df):
             st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
 
 # -------------------------------
-# 🖥 دالة فحص الإيفينت والكوريكشن - مع خاصية حساب المدة
+# 🖥 دالة فحص الإيفينت والكوريكشن - مع خاصية حساب المدة بين التصحيحات
 # -------------------------------
 def check_events_and_corrections(all_sheets):
-    """فحص الإيفينت والكوريكشن مع خاصية حساب المدة بين الأحداث"""
+    """فحص الإيفينت والكوريكشن مع خاصية حساب المدة بين التصحيحات"""
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
@@ -1034,19 +1034,22 @@ def check_events_and_corrections(all_sheets):
             "duration_type": "أيام",
             "duration_filter_min": 0,
             "duration_filter_max": 365,
-            "group_by_type": False
+            "group_by_type": False,
+            "analyze_corrections": False,
+            "correction_type": "",
+            "include_events": True
         }
     
     if "search_triggered" not in st.session_state:
         st.session_state.search_triggered = False
     
-    # قسم البحث - مع إضافة خيارات حساب المدة
+    # قسم البحث - مع إضافة خيارات حساب المدة بين التصحيحات
     with st.container():
         st.markdown("### 🔍 بحث متعدد المعايير")
         st.markdown("استخدم الحقول التالية للبحث المحدد. يمكنك ملء واحد أو أكثر من الحقول.")
         
         # تبويبات للبحث وخيارات المدة
-        main_tabs = st.tabs(["🔍 معايير البحث", "⏱️ خيارات المدة", "📊 تحليل زمني"])
+        main_tabs = st.tabs(["🔍 معايير البحث", "⏱️ خيارات المدة", "🔧 تحليل التصحيحات", "📊 تحليل زمني"])
         
         with main_tabs[0]:
             col1, col2 = st.columns([1, 1])
@@ -1082,7 +1085,7 @@ def check_events_and_corrections(all_sheets):
                 
                 # قسم التواريخ
                 with st.expander("📅 **التواريخ**", expanded=True):
-                    st.caption("ابحث بالتاريخ (سنة، شهر/سنة)")
+                    st.caption("ابحق بالتاريخ (سنة، شهر/سنة)")
                     date_input = st.text_input(
                         "مثال: 2024 أو 1/2024 أو 2024,2025",
                         value=st.session_state.search_params.get("date_range", ""),
@@ -1192,26 +1195,66 @@ def check_events_and_corrections(all_sheets):
                     st.caption(f"سيتم عرض الأحداث التي تتراوح مدتها بين {duration_filter_min} و {duration_filter_max} {duration_type}")
         
         with main_tabs[2]:
+            st.markdown("#### 🔧 تحليل التصحيحات المتخصص")
+            
+            analyze_corrections = st.checkbox(
+                "🔍 تحليل التصحيحات فقط",
+                value=st.session_state.search_params.get("analyze_corrections", False),
+                key="checkbox_analyze_corrections",
+                help="التركيز على تحليل التصحيحات مثل تركيب سير، تشحيم، إصلاح، إلخ."
+            )
+            
+            if analyze_corrections:
+                col_corr1, col_corr2 = st.columns(2)
+                
+                with col_corr1:
+                    # أنواع التصحيحات الشائعة للاختيار السريع
+                    common_corrections = st.multiselect(
+                        "🔧 اختر أنواع التصحيحات:",
+                        ["تركيب سير", "تشحيم", "إصلاح", "صيانة", "تغيير", "تنظيف", "ضبط", "تبديل", "تعديل"],
+                        default=[],
+                        key="select_common_corrections",
+                        help="اختر أنواع التصحيحات المراد تحليلها"
+                    )
+                
+                with col_corr2:
+                    correction_type = st.text_input(
+                        "🔍 أو اكتب نوع تصحيح محدد:",
+                        value=st.session_state.search_params.get("correction_type", ""),
+                        key="input_correction_type",
+                        placeholder="مثال: تركيب سير, تشحيم محور, إصلاح مكبس"
+                    )
+                
+                include_events = st.checkbox(
+                    "📝 تضمين الأحداث المرتبطة",
+                    value=st.session_state.search_params.get("include_events", True),
+                    key="checkbox_include_events",
+                    help="تضمين الأحداث التي سبقت التصحيح أو تبعته"
+                )
+                
+                # زر البحث في التصحيحات الشائعة
+                if common_corrections and st.button("🔍 بحث في التصحيحات المحددة", key="search_corrections_btn"):
+                    st.session_state.search_params["search_text"] = ",".join(common_corrections)
+                    st.session_state.search_params["exact_match"] = False
+                    st.session_state.search_triggered = True
+                    st.rerun()
+        
+        with main_tabs[3]:
             st.markdown("#### 📊 تحليل زمني متقدم")
             
             analysis_options = st.multiselect(
                 "اختر نوع التحليل:",
-                ["معدل تكرار الأحداث", "مقارنة المدة حسب الفني", "توزيع الأحداث زمنياً", "مقارنة بين الحدث والتصحيح"],
+                ["معدل تكرار الأحداث", "مقارنة المدة حسب الفني", "توزيع الأحداث زمنياً", 
+                 "مقارنة بين الحدث والتصحيح", "تحليل تكرار التصحيحات", "مخطط زمني للأحداث"],
                 default=[],
                 key="select_analysis_options"
             )
             
-            if "معدل تكرار الأحداث" in analysis_options:
-                st.info("📈 سيتم حساب متوسط المدة بين الأحداث لكل ماكينة")
+            if "تحليل تكرار التصحيحات" in analysis_options:
+                st.info("🔄 سيتم تحليل التصحيحات المتكررة ونسبة تكرارها")
             
-            if "مقارنة المدة حسب الفني" in analysis_options:
-                st.info("👨‍🔧 سيتم مقارنة متوسط المدة التي يستغرقها كل فني")
-            
-            if "توزيع الأحداث زمنياً" in analysis_options:
-                st.info("📅 سيتم تحليل توزيع الأحداث على مدار السنة")
-            
-            if "مقارنة بين الحدث والتصحيح" in analysis_options:
-                st.info("⚖️ سيتم مقارنة المدة بين الأحداث العادية والتصحيحات")
+            if "مخطط زمني للأحداث" in analysis_options:
+                st.info("📈 سيتم عرض مخطط زمني يوضح توزيع الأحداث والتصحيحات على المحور الزمني")
         
         # تحديث معايير البحث
         st.session_state.search_params.update({
@@ -1227,7 +1270,11 @@ def check_events_and_corrections(all_sheets):
             "duration_filter_min": duration_filter_min if calculate_duration else 0,
             "duration_filter_max": duration_filter_max if calculate_duration else 365,
             "group_by_type": group_by_type if calculate_duration else False,
-            "analysis_options": analysis_options
+            "analyze_corrections": analyze_corrections,
+            "correction_type": correction_type if analyze_corrections else "",
+            "include_events": include_events if analyze_corrections else True,
+            "analysis_options": analysis_options,
+            "common_corrections": common_corrections if analyze_corrections else []
         })
         
         # زر البحث الرئيسي
@@ -1255,6 +1302,9 @@ def check_events_and_corrections(all_sheets):
                     "duration_filter_min": 0,
                     "duration_filter_max": 365,
                     "group_by_type": False,
+                    "analyze_corrections": False,
+                    "correction_type": "",
+                    "include_events": True,
                     "analysis_options": []
                 }
                 st.session_state.search_triggered = False
@@ -1274,7 +1324,10 @@ def check_events_and_corrections(all_sheets):
                     "duration_filter_min": 0,
                     "duration_filter_max": 365,
                     "group_by_type": True,
-                    "analysis_options": ["معدل تكرار الأحداث", "توزيع الأحداث زمنياً"]
+                    "analyze_corrections": True,
+                    "correction_type": "",
+                    "include_events": True,
+                    "analysis_options": ["معدل تكرار الأحداث", "توزيع الأحداث زمنياً", "تحليل تكرار التصحيحات"]
                 }
                 st.session_state.search_triggered = True
                 st.rerun()
@@ -1292,8 +1345,9 @@ def check_events_and_corrections(all_sheets):
         # تنفيذ البحث
         show_advanced_search_results_with_duration(search_params, all_sheets)
 
-def calculate_durations_between_events(events_data, duration_type="أيام", group_by_type=False):
-    """حساب المدة بين الأحداث لنفس الماكينة"""
+# دالة محسنة لحساب المدة بين التصحيحات
+def calculate_correction_durations(events_data, duration_type="أيام", include_events=True):
+    """حساب المدة بين التصحيحات مع إمكانية تضمين الأحداث المرتبطة"""
     if not events_data:
         return events_data
     
@@ -1303,7 +1357,6 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
     # تحويل التواريخ إلى تنسيق datetime
     def parse_date(date_str):
         try:
-            # محاولة تحليل تنسيقات مختلفة
             date_str = str(date_str).strip()
             if not date_str or date_str.lower() in ["nan", "none", "-", ""]:
                 return None
@@ -1321,7 +1374,6 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
                 except:
                     continue
             
-            # إذا فشلت جميع المحاولات
             return None
         except:
             return None
@@ -1331,202 +1383,209 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
     # فرز البيانات حسب الماكينة ثم التاريخ
     df = df.sort_values(['Card Number', 'Date_Parsed'])
     
-    # إضافة أعمدة المدة
-    df['Previous_Date'] = None
-    df['Duration'] = None
-    df['Duration_Unit'] = None
-    df['Event_Type'] = None
-    
-    # تحديد نوع الحدث (حدث أو تصحيح)
-    def determine_event_type(event, correction):
+    # تحديد نوع كل سجل (حدث أو تصحيح)
+    def get_record_type(event, correction):
         event_str = str(event).strip().lower()
         correction_str = str(correction).strip().lower()
         
-        if event_str not in ['-', 'nan', 'none', ''] and correction_str not in ['-', 'nan', 'none', '']:
+        if correction_str not in ['-', 'nan', 'none', '', 'null', '0']:
             return "تصحيح"
-        elif event_str not in ['-', 'nan', 'none', '']:
+        elif event_str not in ['-', 'nan', 'none', '', 'null', '0']:
             return "حدث"
-        elif correction_str not in ['-', 'nan', 'none', '']:
-            return "تصحيح"
         else:
             return "غير محدد"
     
-    df['Event_Type'] = df.apply(lambda row: determine_event_type(row.get('Event', '-'), row.get('Correction', '-')), axis=1)
+    df['Record_Type'] = df.apply(lambda row: get_record_type(row.get('Event', '-'), row.get('Correction', '-')), axis=1)
     
-    # حساب المدة بين الأحداث لكل ماكينة
+    # تحديد نوع التصحيح المحدد
+    def get_correction_category(correction_text):
+        correction_text = str(correction_text).lower()
+        
+        # تصنيف التصحيحات الشائعة
+        categories = {
+            "تركيب سير": ["تركيب سير", "تغيير سير", "سير", "حزام", "belt"],
+            "تشحيم": ["تشحيم", "تزييت", "لوبريكانت", "grease", "oil", "lubricant"],
+            "إصلاح": ["إصلاح", "تصليح", "اصلاح", "repair", "fix"],
+            "صيانة": ["صيانة", "maintenance", "service"],
+            "تغيير": ["تغيير", "استبدال", "تبديل", "change", "replace"],
+            "تنظيف": ["تنظيف", "clean", "cleaning"],
+            "ضبط": ["ضبط", "معايره", "calibration", "adjust"],
+            "تبديل": ["تبديل", "swap", "exchange"],
+            "تعديل": ["تعديل", "modify", "modification"]
+        }
+        
+        for category, keywords in categories.items():
+            for keyword in keywords:
+                if keyword in correction_text:
+                    return category
+        
+        return "أخرى"
+    
+    df['Correction_Category'] = df.apply(lambda row: get_correction_category(row.get('Correction', '')), axis=1)
+    
+    # حساب المدة بين التصحيحات
     durations_data = []
     
     for card_num in df['Card Number'].unique():
-        card_events = df[df['Card Number'] == card_num].copy()
+        card_records = df[df['Card Number'] == card_num].copy()
         
-        if len(card_events) > 1:
-            for i in range(1, len(card_events)):
-                current_event = card_events.iloc[i]
-                previous_event = card_events.iloc[i-1]
+        # الحصول على التصحيحات فقط إذا لم يتم تضمين الأحداث
+        if not include_events:
+            card_records = card_records[card_records['Record_Type'] == "تصحيح"].copy()
+        
+        if len(card_records) > 1:
+            for i in range(1, len(card_records)):
+                current_record = card_records.iloc[i]
+                previous_record = card_records.iloc[i-1]
                 
-                current_date = current_event['Date_Parsed']
-                previous_date = previous_event['Date_Parsed']
+                current_date = current_record['Date_Parsed']
+                previous_date = previous_record['Date_Parsed']
                 
                 if current_date and previous_date:
                     # حساب المدة بالأيام
                     duration_days = (current_date - previous_date).days
+                    
+                    if duration_days < 0:
+                        continue
                     
                     # تحويل إلى الوحدة المطلوبة
                     if duration_type == "أسابيع":
                         duration_value = duration_days / 7
                         duration_unit = "أسبوع"
                     elif duration_type == "أشهر":
-                        duration_value = duration_days / 30.44  # متوسط أيام الشهر
+                        duration_value = duration_days / 30.44
                         duration_unit = "شهر"
                     else:  # أيام
                         duration_value = duration_days
                         duration_unit = "يوم"
                     
-                    # التحقق من تجميع حسب النوع
-                    if group_by_type:
-                        current_type = current_event['Event_Type']
-                        previous_type = previous_event['Event_Type']
-                        
-                        if current_type == previous_type:
-                            duration_info = {
-                                'Card Number': card_num,
-                                'Current_Event_Date': current_event['Date'],
-                                'Previous_Event_Date': previous_event['Date'],
-                                'Duration': round(duration_value, 1),
-                                'Duration_Unit': duration_unit,
-                                'Event_Type': current_type,
-                                'Current_Event': current_event.get('Event', '-'),
-                                'Previous_Event': previous_event.get('Event', '-'),
-                                'Current_Correction': current_event.get('Correction', '-'),
-                                'Previous_Correction': previous_event.get('Correction', '-'),
-                                'Technician': current_event.get('Servised by', '-')
-                            }
-                            durations_data.append(duration_info)
-                    else:
-                        duration_info = {
-                            'Card Number': card_num,
-                            'Current_Event_Date': current_event['Date'],
-                            'Previous_Event_Date': previous_event['Date'],
-                            'Duration': round(duration_value, 1),
-                            'Duration_Unit': duration_unit,
-                            'Event_Type': f"{previous_event['Event_Type']} → {current_event['Event_Type']}",
-                            'Current_Event': current_event.get('Event', '-'),
-                            'Previous_Event': previous_event.get('Event', '-'),
-                            'Current_Correction': current_event.get('Correction', '-'),
-                            'Previous_Correction': previous_event.get('Correction', '-'),
-                            'Technician': current_event.get('Servised by', '-')
-                        }
-                        durations_data.append(duration_info)
+                    # معلومات السجلات
+                    current_type = current_record['Record_Type']
+                    previous_type = previous_record['Record_Type']
+                    
+                    # تجميع معلومات التصحيح
+                    current_correction = current_record.get('Correction', '-')
+                    previous_correction = previous_record.get('Correction', '-')
+                    
+                    current_category = current_record.get('Correction_Category', '-')
+                    previous_category = previous_record.get('Correction_Category', '-')
+                    
+                    # تحديد إذا كان هناك تصحيح في السجل الحالي
+                    has_correction = current_type == "تصحيح" or previous_type == "تصحيح"
+                    
+                    duration_info = {
+                        'Card Number': card_num,
+                        'Current_Date': current_record['Date'],
+                        'Previous_Date': previous_record['Date'],
+                        'Duration': round(duration_value, 1),
+                        'Duration_Unit': duration_unit,
+                        'Current_Record_Type': current_type,
+                        'Previous_Record_Type': previous_type,
+                        'Current_Event': current_record.get('Event', '-'),
+                        'Previous_Event': previous_record.get('Event', '-'),
+                        'Current_Correction': current_correction,
+                        'Previous_Correction': previous_correction,
+                        'Current_Category': current_category,
+                        'Previous_Category': previous_category,
+                        'Technician': current_record.get('Servised by', '-'),
+                        'Has_Correction': has_correction,
+                        'Sequence': f"{previous_type} → {current_type}"
+                    }
+                    
+                    durations_data.append(duration_info)
     
     return durations_data
 
-def show_search_params(search_params):
-    """عرض معايير البحث المستخدمة"""
-    with st.container():
-        st.markdown("### ⚙ معايير البحث المستخدمة")
+# إضافة دالة لعرض تحليل التصحيحات
+def show_correction_analysis(durations_df, search_params):
+    """عرض تحليل تفصيلي للتصحيحات"""
+    if durations_df.empty:
+        return
+    
+    st.markdown("#### 🔧 تحليل التصحيحات التفصيلي")
+    
+    # فلترة البيانات لتشمل فقط التصحيحات
+    corrections_df = durations_df[durations_df['Has_Correction'] == True].copy()
+    
+    if corrections_df.empty:
+        st.info("ℹ️ لا توجد تصحيحات للتحليل")
+        return
+    
+    # تحليل حسب نوع التصحيح
+    st.markdown("##### 📊 توزيع أنواع التصحيحات")
+    
+    # تحليل الفئات
+    categories_analysis = corrections_df.groupby('Current_Category').agg({
+        'Duration': ['count', 'mean', 'min', 'max'],
+        'Card Number': 'nunique'
+    }).round(2)
+    
+    if not categories_analysis.empty:
+        categories_analysis.columns = ['عدد_التكرار', 'متوسط_المدة', 'أقل_مدة', 'أعلى_مدة', 'عدد_الماكينات']
+        categories_analysis = categories_analysis.sort_values('عدد_التكرار', ascending=False)
         
-        params_display = []
-        if search_params["card_numbers"]:
-            params_display.append(f"**🔢 أرقام الماكينات:** {search_params['card_numbers']}")
-        if search_params["date_range"]:
-            params_display.append(f"**📅 التواريخ:** {search_params['date_range']}")
-        if search_params["tech_names"]:
-            params_display.append(f"**👨‍🔧 فنيو الخدمة:** {search_params['tech_names']}")
-        if search_params["search_text"]:
-            params_display.append(f"**📝 نص البحث:** {search_params['search_text']}")
+        st.dataframe(categories_analysis, use_container_width=True)
         
-        if params_display:
-            st.info(" | ".join(params_display))
-        else:
-            st.info("🔍 **بحث في كل البيانات**")
-
-def show_advanced_search_results_with_duration(search_params, all_sheets):
-    """عرض نتائج البحث مع حساب المدة"""
-    st.markdown("### 📊 نتائج البحث")
-    
-    # شريط التقدم
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    # البحث في البيانات
-    all_results = []
-    total_machines = 0
-    processed_machines = 0
-    
-    # حساب إجمالي عدد الماكينات
-    for sheet_name in all_sheets.keys():
-        if sheet_name != "ServicePlan" and sheet_name.startswith("Card"):
-            total_machines += 1
-    
-    # معالجة أرقام الماكينات المطلوبة
-    target_card_numbers = parse_card_numbers(search_params["card_numbers"])
-    
-    # معالجة أسماء الفنيين
-    target_techs = []
-    if search_params["tech_names"]:
-        techs = search_params["tech_names"].split(',')
-        target_techs = [tech.strip().lower() for tech in techs if tech.strip()]
-    
-    # معالجة التواريخ
-    target_dates = []
-    if search_params["date_range"]:
-        dates = search_params["date_range"].split(',')
-        target_dates = [date.strip().lower() for date in dates if date.strip()]
-    
-    # معالجة نص البحث
-    search_terms = []
-    if search_params["search_text"]:
-        terms = search_params["search_text"].split(',')
-        search_terms = [term.strip().lower() for term in terms if term.strip()]
-    
-    # البحث في جميع الشيتات
-    for sheet_name in all_sheets.keys():
-        if sheet_name == "ServicePlan":
-            continue
-        
-        # استخراج رقم الماكينة
-        card_num_match = re.search(r'Card(\d+)', sheet_name)
-        if not card_num_match:
-            continue
+        # مخطط لفئات التصحيحات
+        try:
+            import plotly.express as px
             
-        card_num = int(card_num_match.group(1))
-        
-        # التحقق من رقم الماكينة إذا كان هناك تحديد
-        if target_card_numbers and card_num not in target_card_numbers:
-            continue
-        
-        processed_machines += 1
-        if total_machines > 0:
-            progress_bar.progress(processed_machines / total_machines)
-        status_text.text(f"🔍 جاري معالجة الماكينة {card_num}...")
-        
-        df = all_sheets[sheet_name].copy()
-        
-        # البحث في الصفوف
-        for _, row in df.iterrows():
-            # تطبيق معايير البحث
-            if not check_row_criteria(row, df, card_num, target_techs, target_dates, 
-                                     search_terms, search_params):
-                continue
+            fig1 = px.pie(
+                categories_analysis.reset_index(),
+                values='عدد_التكرار',
+                names='Current_Category',
+                title='توزيع أنواع التصحيحات',
+                hover_data=['متوسط_المدة', 'عدد_الماكينات']
+            )
+            st.plotly_chart(fig1, use_container_width=True)
             
-            # استخراج البيانات
-            result = extract_row_data(row, df, card_num)
-            if result:
-                all_results.append(result)
+        except ImportError:
+            st.info("📊 لرؤية المخططات التفاعلية، قم بتثبيت مكتبة plotly")
     
-    # إخفاء شريط التقدم
-    progress_bar.empty()
-    status_text.empty()
+    # تحليل تكرار التصحيحات لكل ماكينة
+    st.markdown("##### 🔄 تحليل تكرار التصحيحات")
     
-    # عرض النتائج مع حساب المدة
-    if all_results:
-        display_search_results_with_duration(all_results, search_params)
-    else:
-        st.warning("⚠ لم يتم العثور على نتائج تطابق معايير البحث")
-        st.info("💡 حاول تعديل معايير البحث أو استخدام مصطلحات أوسع")
+    machine_corrections = corrections_df.groupby('Card Number').agg({
+        'Current_Correction': 'count',
+        'Duration': ['mean', 'std'],
+        'Current_Category': lambda x: x.mode().iloc[0] if not x.mode().empty else '-'
+    }).round(2)
+    
+    if not machine_corrections.empty:
+        machine_corrections.columns = ['عدد_التصحيحات', 'متوسط_المدة', 'انحراف_المدة', 'أكثر_تصحيح_تكراراً']
+        machine_corrections = machine_corrections.sort_values('عدد_التصحيحات', ascending=False)
+        
+        st.dataframe(machine_corrections, use_container_width=True, height=400)
+    
+    # تحليل التصحيحات المتكررة
+    st.markdown("##### 🔁 التصحيحات المتكررة")
+    
+    repeated_corrections = corrections_df.groupby(['Current_Correction', 'Current_Category']).agg({
+        'Card Number': 'nunique',
+        'Duration': ['count', 'mean']
+    }).round(2)
+    
+    if not repeated_corrections.empty:
+        repeated_corrections.columns = ['عدد_الماكينات', 'عدد_التكرار', 'متوسط_المدة']
+        repeated_corrections = repeated_corrections.sort_values('عدد_التكرار', ascending=False)
+        
+        # عرض أفضل 10 تصحيحات متكررة
+        top_repeated = repeated_corrections.head(10)
+        st.dataframe(top_repeated, use_container_width=True)
+        
+        # عرض الماكينات التي تحتاج إلى اهتمام خاص
+        high_frequency = machine_corrections[machine_corrections['عدد_التصحيحات'] > 
+                                            machine_corrections['عدد_التصحيحات'].mean() + 
+                                            machine_corrections['عدد_التصحيحات'].std()]
+        
+        if not high_frequency.empty:
+            st.markdown("##### ⚠️ الماكينات ذات تكرار تصحيحات عالي")
+            st.dataframe(high_frequency, use_container_width=True)
+            st.warning("هذه الماكينات تحتاج إلى مراجعة وفحص دقيق بسبب ارتفاع تكرار التصحيحات.")
 
+# تعديل دالة العرض الرئيسية
 def display_search_results_with_duration(results, search_params):
-    """عرض نتائج البحث مع خاصية حساب المدة"""
+    """عرض نتائج البحث مع خاصية حساب المدة بين التصحيحات"""
     # تحويل النتائج إلى DataFrame
     if not results:
         st.warning("⚠ لا توجد نتائج لعرضها")
@@ -1579,31 +1638,31 @@ def display_search_results_with_duration(results, search_params):
         st.metric("🔢 عدد الماكينات", unique_machines)
     
     with col3:
-        # عدد الماكينات التي لديها أكثر من حدث
+        # عدد الماكينات التي لديها تصحيحات
         if not display_df.empty:
-            machine_counts = display_df.groupby('Card Number').size()
-            multi_event_machines = (machine_counts > 1).sum()
-            st.metric("🔢 مكن متعددة الأحداث", multi_event_machines)
+            corrections_df = display_df[display_df["Correction"] != "-"]
+            machines_with_corrections = corrections_df["Card Number"].nunique()
+            st.metric("🔧 ماكينات بها تصحيحات", machines_with_corrections)
         else:
-            st.metric("🔢 مكن متعددة الأحداث", 0)
+            st.metric("🔧 ماكينات بها تصحيحات", 0)
     
     with col4:
         if 'Correction' in display_df.columns:
-            with_correction = display_df[display_df["Correction"] != "-"].shape[0]
-            st.metric("✏ تحتوي على تصحيح", with_correction)
+            correction_count = display_df[display_df["Correction"] != "-"].shape[0]
+            st.metric("✏ عدد التصحيحات", correction_count)
         else:
-            st.metric("✏ تحتوي على تصحيح", 0)
+            st.metric("✏ عدد التصحيحات", 0)
     
     # حساب المدة بين الأحداث إذا كان مطلوباً
     if search_params.get("calculate_duration", False):
         st.markdown("---")
         st.markdown("### ⏱️ تحليل المدة بين الأحداث")
         
-        # حساب المدة
-        durations_data = calculate_durations_between_events(
+        # حساب المدة - مع تحسين للتركيز على التصحيحات
+        durations_data = calculate_correction_durations(
             results,
             search_params.get("duration_type", "أيام"),
-            search_params.get("group_by_type", False)
+            search_params.get("include_events", True)
         )
         
         if durations_data:
@@ -1640,14 +1699,27 @@ def display_search_results_with_duration(results, search_params):
                 total_durations = len(filtered_durations)
                 st.metric("🔢 عدد الفترات", total_durations)
             
+            # تحليل التصحيحات إذا كان مطلوباً
+            if search_params.get("analyze_corrections", False):
+                show_correction_analysis(filtered_durations, search_params)
+            
             # عرض جدول المدة
             st.markdown("#### 📋 جدول المدة بين الأحداث")
             
-            # تنسيق الأعمدة للعرض
-            display_columns = [
-                'Card Number', 'Previous_Event_Date', 'Current_Event_Date',
-                'Duration', 'Duration_Unit', 'Event_Type', 'Technician'
-            ]
+            # أعمدة العرض حسب التركيز
+            if search_params.get("analyze_corrections", False):
+                display_columns = [
+                    'Card Number', 'Previous_Date', 'Current_Date',
+                    'Duration', 'Duration_Unit', 'Previous_Correction', 
+                    'Current_Correction', 'Previous_Category', 'Current_Category',
+                    'Technician'
+                ]
+            else:
+                display_columns = [
+                    'Card Number', 'Previous_Date', 'Current_Date',
+                    'Duration', 'Duration_Unit', 'Sequence',
+                    'Previous_Correction', 'Current_Correction', 'Technician'
+                ]
             
             available_columns = [col for col in display_columns if col in filtered_durations.columns]
             
@@ -1671,10 +1743,17 @@ def display_search_results_with_duration(results, search_params):
                         show_technician_comparison_analysis(filtered_durations)
                     
                     elif analysis == "توزيع الأحداث زمنياً":
-                        show_temporal_distribution_analysis(durations_df)
+                        show_temporal_distribution_analysis(filtered_durations)
                     
                     elif analysis == "مقارنة بين الحدث والتصحيح":
                         show_event_correction_comparison(filtered_durations)
+                    
+                    elif analysis == "تحليل تكرار التصحيحات":
+                        # استدعاء الدالة المحسنة
+                        show_correction_frequency_analysis(filtered_durations)
+                    
+                    elif analysis == "مخطط زمني للأحداث":
+                        show_timeline_chart(filtered_durations)
         else:
             st.info("ℹ️ لا توجد بيانات كافية لحساب المدة بين الأحداث (تحتاج إلى حدثين على الأقل لكل ماكينة)")
     
@@ -1829,10 +1908,10 @@ def display_search_results_with_duration(results, search_params):
                     
                     # إضافة ملخص إحصائي
                     summary_data = []
-                    for event_type in duration_export_df['Event_Type'].unique():
-                        type_data = duration_export_df[duration_export_df['Event_Type'] == event_type]
+                    for event_type in duration_export_df['Sequence'].unique():
+                        type_data = duration_export_df[duration_export_df['Sequence'] == event_type]
                         summary_data.append({
-                            'نوع الحدث': event_type,
+                            'نوع التسلسل': event_type,
                             'عدد الفترات': len(type_data),
                             f'متوسط المدة ({search_params.get("duration_type", "أيام")})': type_data['Duration'].mean(),
                             'أقل مدة': type_data['Duration'].min(),
@@ -1851,6 +1930,111 @@ def display_search_results_with_duration(results, search_params):
                 )
             else:
                 st.info("⚠ لا توجد بيانات مدة للتصدير")
+
+def show_search_params(search_params):
+    """عرض معايير البحث المستخدمة"""
+    with st.container():
+        st.markdown("### ⚙ معايير البحث المستخدمة")
+        
+        params_display = []
+        if search_params["card_numbers"]:
+            params_display.append(f"**🔢 أرقام الماكينات:** {search_params['card_numbers']}")
+        if search_params["date_range"]:
+            params_display.append(f"**📅 التواريخ:** {search_params['date_range']}")
+        if search_params["tech_names"]:
+            params_display.append(f"**👨‍🔧 فنيو الخدمة:** {search_params['tech_names']}")
+        if search_params["search_text"]:
+            params_display.append(f"**📝 نص البحث:** {search_params['search_text']}")
+        
+        if params_display:
+            st.info(" | ".join(params_display))
+        else:
+            st.info("🔍 **بحث في كل البيانات**")
+
+def show_advanced_search_results_with_duration(search_params, all_sheets):
+    """عرض نتائج البحث مع حساب المدة"""
+    st.markdown("### 📊 نتائج البحث")
+    
+    # شريط التقدم
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # البحث في البيانات
+    all_results = []
+    total_machines = 0
+    processed_machines = 0
+    
+    # حساب إجمالي عدد الماكينات
+    for sheet_name in all_sheets.keys():
+        if sheet_name != "ServicePlan" and sheet_name.startswith("Card"):
+            total_machines += 1
+    
+    # معالجة أرقام الماكينات المطلوبة
+    target_card_numbers = parse_card_numbers(search_params["card_numbers"])
+    
+    # معالجة أسماء الفنيين
+    target_techs = []
+    if search_params["tech_names"]:
+        techs = search_params["tech_names"].split(',')
+        target_techs = [tech.strip().lower() for tech in techs if tech.strip()]
+    
+    # معالجة التواريخ
+    target_dates = []
+    if search_params["date_range"]:
+        dates = search_params["date_range"].split(',')
+        target_dates = [date.strip().lower() for date in dates if date.strip()]
+    
+    # معالجة نص البحث
+    search_terms = []
+    if search_params["search_text"]:
+        terms = search_params["search_text"].split(',')
+        search_terms = [term.strip().lower() for term in terms if term.strip()]
+    
+    # البحث في جميع الشيتات
+    for sheet_name in all_sheets.keys():
+        if sheet_name == "ServicePlan":
+            continue
+        
+        # استخراج رقم الماكينة
+        card_num_match = re.search(r'Card(\d+)', sheet_name)
+        if not card_num_match:
+            continue
+            
+        card_num = int(card_num_match.group(1))
+        
+        # التحقق من رقم الماكينة إذا كان هناك تحديد
+        if target_card_numbers and card_num not in target_card_numbers:
+            continue
+        
+        processed_machines += 1
+        if total_machines > 0:
+            progress_bar.progress(processed_machines / total_machines)
+        status_text.text(f"🔍 جاري معالجة الماكينة {card_num}...")
+        
+        df = all_sheets[sheet_name].copy()
+        
+        # البحث في الصفوف
+        for _, row in df.iterrows():
+            # تطبيق معايير البحث
+            if not check_row_criteria(row, df, card_num, target_techs, target_dates, 
+                                     search_terms, search_params):
+                continue
+            
+            # استخراج البيانات
+            result = extract_row_data(row, df, card_num)
+            if result:
+                all_results.append(result)
+    
+    # إخفاء شريط التقدم
+    progress_bar.empty()
+    status_text.empty()
+    
+    # عرض النتائج مع حساب المدة
+    if all_results:
+        display_search_results_with_duration(all_results, search_params)
+    else:
+        st.warning("⚠ لم يتم العثور على نتائج تطابق معايير البحث")
+        st.info("💡 حاول تعديل معايير البحث أو استخدام مصطلحات أوسع")
 
 def show_event_frequency_analysis(durations_df, duration_unit):
     """تحليل معدل تكرار الأحداث"""
@@ -1958,7 +2142,7 @@ def show_temporal_distribution_analysis(durations_df):
         except:
             return "غير معروف"
     
-    durations_df['Month_Year'] = durations_df['Current_Event_Date'].apply(extract_month_year)
+    durations_df['Month_Year'] = durations_df['Current_Date'].apply(extract_month_year)
     
     # تجميع حسب الشهر
     monthly_stats = durations_df[durations_df['Month_Year'] != 'غير معروف'].groupby('Month_Year').agg({
@@ -2004,7 +2188,7 @@ def show_event_correction_comparison(durations_df):
         return
     
     # تحليل حسب نوع الحدث
-    event_type_stats = durations_df.groupby('Event_Type').agg({
+    event_type_stats = durations_df.groupby('Current_Record_Type').agg({
         'Duration': ['count', 'mean', 'std', 'min', 'max'],
         'Card Number': 'nunique'
     }).round(2)
@@ -2018,12 +2202,12 @@ def show_event_correction_comparison(durations_df):
         import plotly.express as px
         
         # مخطط دائري لتوزيع أنواع الأحداث
-        fig1 = px.pie(event_type_stats, values='عدد_الفترات', names='Event_Type',
+        fig1 = px.pie(event_type_stats, values='عدد_الفترات', names='Current_Record_Type',
                      title='توزيع أنواع الأحداث')
         st.plotly_chart(fig1, use_container_width=True)
         
         # مخطط شريطي لمتوسط المدة حسب النوع
-        fig2 = px.bar(event_type_stats, x='Event_Type', y='متوسط_المدة',
+        fig2 = px.bar(event_type_stats, x='Current_Record_Type', y='متوسط_المدة',
                      title='متوسط المدة حسب نوع الحدث',
                      color='عدد_الماكينات',
                      hover_data=['عدد_الفترات', 'أقل_مدة', 'أعلى_مدة'])
@@ -2131,6 +2315,13 @@ def extract_row_data(row, df, card_num):
     
     event_value, correction_value = extract_event_correction(row, df)
     
+    # تحسين استخراج التصحيحات
+    if correction_value != "-":
+        # تنظيف نص التصحيح
+        correction_value = correction_value.strip()
+        # إزالة المسافات الزائدة
+        correction_value = ' '.join(correction_value.split())
+    
     # إذا كانت كل الحقول فارغة، نتجاهل الصف
     if (event_value == "-" and correction_value == "-" and 
         date == "-" and tones == "-"):
@@ -2176,6 +2367,182 @@ def parse_card_numbers(card_numbers_str):
         return set()
     
     return numbers
+
+def show_correction_frequency_analysis(durations_df):
+    """تحليل تكرار التصحيحات"""
+    st.markdown("#### 🔄 تحليل تكرار التصحيحات")
+    
+    if durations_df.empty:
+        st.info("ℹ️ لا توجد بيانات لتحليل التكرار")
+        return
+    
+    # تحليل تكرار التصحيحات لكل ماكينة
+    corrections_df = durations_df[durations_df['Has_Correction'] == True].copy()
+    
+    if corrections_df.empty:
+        st.info("ℹ️ لا توجد تصحيحات لتحليل التكرار")
+        return
+    
+    # تجميع حسب الماكينة
+    machine_stats = corrections_df.groupby('Card Number').agg({
+        'Current_Correction': 'count',
+        'Duration': ['mean', 'std'],
+        'Current_Category': lambda x: x.mode().iloc[0] if not x.mode().empty else '-'
+    }).round(2)
+    
+    if not machine_stats.empty:
+        machine_stats.columns = ['عدد_التصحيحات', 'متوسط_المدة', 'انحراف_المدة', 'أكثر_تصحيح_تكراراً']
+        machine_stats = machine_stats.reset_index()
+        
+        # عرض أفضل 10 ماكينات من حيث تكرار التصحيحات
+        st.markdown("##### 🥇 أفضل 10 ماكينات من حيث تكرار التصحيحات")
+        top_10_corrections = machine_stats.sort_values('عدد_التصحيحات', ascending=False).head(10)
+        st.dataframe(top_10_corrections, use_container_width=True)
+        
+        # حساب معدل التكرار
+        avg_corrections = machine_stats['عدد_التصحيحات'].mean()
+        st.info(f"**متوسط عدد التصحيحات لكل ماكينة:** {avg_corrections:.2f}")
+        
+        # تحليل فئات التصحيحات الأكثر تكراراً
+        st.markdown("##### 📊 فئات التصحيحات الأكثر تكراراً")
+        
+        category_stats = corrections_df.groupby('Current_Category').agg({
+            'Current_Correction': 'count',
+            'Card Number': 'nunique',
+            'Duration': 'mean'
+        }).round(2)
+        
+        if not category_stats.empty:
+            category_stats.columns = ['عدد_التكرار', 'عدد_الماكينات', 'متوسط_المدة']
+            category_stats = category_stats.sort_values('عدد_التكرار', ascending=False)
+            
+            st.dataframe(category_stats, use_container_width=True)
+            
+            try:
+                import plotly.express as px
+                
+                # مخطط لفئات التصحيحات
+                fig = px.bar(
+                    category_stats.reset_index(),
+                    x='Current_Category',
+                    y='عدد_التكرار',
+                    title='فئات التصحيحات الأكثر تكراراً',
+                    color='عدد_الماكينات',
+                    hover_data=['متوسط_المدة']
+                )
+                fig.update_layout(xaxis_title="فئة التصحيح", yaxis_title="عدد التكرارات")
+                st.plotly_chart(fig, use_container_width=True)
+                
+            except ImportError:
+                st.info("📊 لرؤية المخططات التفاعلية، قم بتثبيت مكتبة plotly")
+
+def show_timeline_chart(durations_df):
+    """عرض مخطط زمني للأحداث والتصحيحات"""
+    st.markdown("#### 📈 مخطط زمني للأحداث والتصحيحات")
+    
+    if durations_df.empty:
+        st.info("ℹ️ لا توجد بيانات لعرض المخطط الزمني")
+        return
+    
+    try:
+        import plotly.express as px
+        from plotly.subplots import make_subplots
+        import plotly.graph_objects as go
+        
+        # تحضير البيانات للمخطط الزمني
+        timeline_data = []
+        
+        for _, row in durations_df.iterrows():
+            # إضافة الحدث السابق
+            if row.get('Previous_Correction', '-') != '-':
+                timeline_data.append({
+                    'Card Number': row['Card Number'],
+                    'Date': row['Previous_Date'],
+                    'Type': 'تصحيح',
+                    'Description': row['Previous_Correction'],
+                    'Category': row.get('Previous_Category', '-'),
+                    'Technician': row['Technician']
+                })
+            elif row.get('Previous_Event', '-') != '-':
+                timeline_data.append({
+                    'Card Number': row['Card Number'],
+                    'Date': row['Previous_Date'],
+                    'Type': 'حدث',
+                    'Description': row['Previous_Event'],
+                    'Category': 'حدث',
+                    'Technician': row['Technician']
+                })
+            
+            # إضافة الحدث الحالي
+            if row.get('Current_Correction', '-') != '-':
+                timeline_data.append({
+                    'Card Number': row['Card Number'],
+                    'Date': row['Current_Date'],
+                    'Type': 'تصحيح',
+                    'Description': row['Current_Correction'],
+                    'Category': row.get('Current_Category', '-'),
+                    'Technician': row['Technician']
+                })
+            elif row.get('Current_Event', '-') != '-':
+                timeline_data.append({
+                    'Card Number': row['Card Number'],
+                    'Date': row['Current_Date'],
+                    'Type': 'حدث',
+                    'Description': row['Current_Event'],
+                    'Category': 'حدث',
+                    'Technician': row['Technician']
+                })
+        
+        if not timeline_data:
+            st.info("ℹ️ لا توجد بيانات زمنية كافية")
+            return
+        
+        timeline_df = pd.DataFrame(timeline_data)
+        
+        # تحويل التواريخ
+        timeline_df['Date_Parsed'] = pd.to_datetime(timeline_df['Date'], errors='coerce', dayfirst=True)
+        timeline_df = timeline_df.dropna(subset=['Date_Parsed'])
+        
+        if timeline_df.empty:
+            st.info("ℹ️ لا توجد تواريخ صالحة للعرض")
+            return
+        
+        # تحديد عدد الماكينات لعرضها (أول 10 ماكينات)
+        unique_machines = timeline_df['Card Number'].unique()[:10]
+        filtered_timeline = timeline_df[timeline_df['Card Number'].isin(unique_machines)]
+        
+        # إنشاء مخطط زمني تفاعلي
+        fig = px.scatter(
+            filtered_timeline,
+            x='Date_Parsed',
+            y='Card Number',
+            color='Type',
+            symbol='Category',
+            title='المخطط الزمني للأحداث والتصحيحات',
+            hover_data=['Description', 'Technician', 'Category'],
+            size_max=15,
+            color_discrete_map={'تصحيح': 'red', 'حدث': 'blue'}
+        )
+        
+        fig.update_layout(
+            xaxis_title="التاريخ",
+            yaxis_title="رقم الماكينة",
+            height=600,
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # عرض بيانات المخطط الزمني
+        with st.expander("📋 بيانات المخطط الزمني", expanded=False):
+            display_timeline_df = filtered_timeline[['Card Number', 'Date', 'Type', 'Description', 'Technician']].copy()
+            display_timeline_df = display_timeline_df.sort_values(['Card Number', 'Date'])
+            st.dataframe(display_timeline_df, use_container_width=True, height=300)
+        
+    except ImportError:
+        st.info("📊 لرؤية المخططات التفاعلية، قم بتثبيت مكتبة plotly")
+    except Exception as e:
+        st.error(f"❌ خطأ في إنشاء المخطط الزمني: {e}")
 
 # -------------------------------
 # 🖥 دالة إضافة إيفينت جديد - في الشيت المنفصل
