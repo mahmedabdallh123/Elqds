@@ -1153,7 +1153,7 @@ def show_service_statistics(service_stats, result_df):
             st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
 
 # -------------------------------
-# 🖥 دالة فحص الإيفينت والكوريكشن - مع خاصية حساب المدة وعرض الصور
+# 🖥 دالة فحص الإيفينت والكوريكشن - مع خاصية حساب المدة وعرض الصور (مصححة)
 # -------------------------------
 def check_events_and_corrections(all_sheets):
     """فحص الإيفينت والكوريكشن مع خاصية حساب المدة بين الأحداث"""
@@ -1733,8 +1733,10 @@ def display_search_results_with_duration(results, search_params):
             st.metric("🔢 مكن متعددة الأحداث", 0)
     
     with col4:
-        if 'Images' in display_df.columns:
-            with_images = display_df[display_df["Images"] != "-"].shape[0]
+        # التحقق من وجود عمود الصور في display_df
+        has_images_column = 'Images' in display_df.columns
+        if has_images_column:
+            with_images = display_df[display_df["Images"].notna() & (display_df["Images"] != "-")].shape[0]
             st.metric("📷 تحتوي على صور", with_images)
         else:
             st.metric("📷 تحتوي على صور", 0)
@@ -1833,7 +1835,10 @@ def display_search_results_with_duration(results, search_params):
     with display_tabs[0]:
         # العرض الجدولي التقليدي
         columns_to_show = ['Card Number', 'Event', 'Correction', 'Servised by', 'Tones', 'Date', 'Event_Order', 'Total_Events']
-        if 'Images' in display_df.columns:
+        
+        # إضافة عمود الصور إذا كان موجوداً في النتائج
+        has_images_in_results = any('Images' in result for result in results)
+        if has_images_in_results and 'Images' not in columns_to_show:
             columns_to_show.append('Images')
         
         columns_to_show = [col for col in columns_to_show if col in display_df.columns]
@@ -1859,12 +1864,14 @@ def display_search_results_with_duration(results, search_params):
                 col_stats1, col_stats2, col_stats3 = st.columns(3)
                 with col_stats1:
                     if not machine_data.empty and 'Date' in machine_data.columns:
-                        st.metric("📅 أول حدث", machine_data['Date'].iloc[0] if machine_data['Date'].iloc[0] != "-" else "غير محدد")
+                        first_date = machine_data['Date'].iloc[0]
+                        st.metric("📅 أول حدث", first_date if first_date != "-" else "غير محدد")
                     else:
                         st.metric("📅 أول حدث", "-")
                 with col_stats2:
                     if not machine_data.empty and 'Date' in machine_data.columns:
-                        st.metric("📅 آخر حدث", machine_data['Date'].iloc[-1] if machine_data['Date'].iloc[-1] != "-" else "غير محدد")
+                        last_date = machine_data['Date'].iloc[-1]
+                        st.metric("📅 آخر حدث", last_date if last_date != "-" else "غير محدد")
                     else:
                         st.metric("📅 آخر حدث", "-")
                 with col_stats3:
@@ -1897,27 +1904,45 @@ def display_search_results_with_duration(results, search_params):
                             st.markdown(f"**⚖️ الأطنان:** {row['Tones']}")
                         
                         # عرض معلومات الصور إذا كانت موجودة
-                        if 'Images' in row and row['Images'] not in ['-', '', None]:
-                            images_count = len(row['Images'].split(',')) if row['Images'] else 0
-                            st.markdown(f"**📷 عدد الصور:** {images_count}")
+                        if 'Images' in row and row['Images'] not in ['-', '', None, 'nan']:
+                            images_str = str(row['Images'])
+                            if images_str.strip():
+                                images_count = len(images_str.split(',')) if images_str else 0
+                                st.markdown(f"**📷 عدد الصور:** {images_count}")
     
     with display_tabs[2]:
         # عرض الصور للأحداث التي تحتوي على صور
-        events_with_images = display_df[display_df.get('Images', '') != ''].copy()
+        # جمع الصور من النتائج
+        events_with_images = []
         
-        if not events_with_images.empty:
+        for result in results:
+            # التحقق من وجود الصور في كل نتيجة
+            if 'Images' in result and result['Images'] and result['Images'] != "-":
+                # نسخ النتيجة وإضافة المعلومات اللازمة
+                event_with_images = result.copy()
+                event_with_images['has_images'] = True
+                events_with_images.append(event_with_images)
+        
+        if events_with_images:
             st.markdown("### 📷 الصور المرفقة بالأحداث")
             
-            for idx, row in events_with_images.iterrows():
-                with st.expander(f"📸 صور للحدث #{idx+1} - الماكينة {row['Card Number']} - {row['Date']}", expanded=False):
+            # تحويل إلى DataFrame للعرض المنظم
+            images_df = pd.DataFrame(events_with_images)
+            
+            for idx, row in images_df.iterrows():
+                card_num = row.get('Card Number', 'غير معروف')
+                event_date = row.get('Date', 'غير معروف')
+                event_text = row.get('Event', 'لا يوجد')
+                
+                with st.expander(f"📸 صور للحدث - الماكينة {card_num} - {event_date}", expanded=False):
                     # عرض تفاصيل الحدث
                     col_img1, col_img2 = st.columns([2, 3])
                     
                     with col_img1:
                         st.markdown("**تفاصيل الحدث:**")
-                        st.markdown(f"**رقم الماكينة:** {row.get('Card Number', '-')}")
-                        st.markdown(f"**التاريخ:** {row.get('Date', '-')}")
-                        st.markdown(f"**الحدث:** {row.get('Event', '-')}")
+                        st.markdown(f"**رقم الماكينة:** {card_num}")
+                        st.markdown(f"**التاريخ:** {event_date}")
+                        st.markdown(f"**الحدث:** {event_text[:50]}{'...' if len(event_text) > 50 else ''}")
                         st.markdown(f"**التصحيح:** {row.get('Correction', '-')}")
                         st.markdown(f"**فني الخدمة:** {row.get('Servised by', '-')}")
                     
@@ -2124,7 +2149,7 @@ def show_technician_comparison_analysis(durations_df):
         st.info("📊 لرؤية المخططات التفاعلية، قم بتثبيت مكتبة plotly")
 
 def show_temporal_distribution_analysis(durations_df):
-    """تحليل توزيع الأحداث زمنياً"""
+    """تحليل التوزيع الزمني"""
     st.markdown("#### 📅 تحليل التوزيع الزمني")
     
     if durations_df.empty:
@@ -2332,8 +2357,8 @@ def extract_row_data(row, df, card_num):
     }
     
     # إضافة الصور إذا كانت موجودة
-    if images_value:
-        result["Images"] = images_value
+    if images_value and images_value.strip():
+        result["Images"] = images_value.strip()
     
     return result
 
@@ -2368,7 +2393,7 @@ def parse_card_numbers(card_numbers_str):
     return numbers
 
 # -------------------------------
-# 🖥 دالة إضافة إيفينت جديد - مع خاصية رفع الصور
+# 🖥 دالة إضافة إيفينت جديد - مع خاصية رفع الصور (مصححة)
 # -------------------------------
 def add_new_event(sheets_edit):
     """إضافة إيفينت جديد في شيت منفصل مع خاصية رفع الصور"""
