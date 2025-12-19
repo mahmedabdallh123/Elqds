@@ -156,83 +156,171 @@ def display_images(image_filenames, caption="الصور المرفقة"):
 # 🧩 دوال مساعدة للملفات والحالة
 # -------------------------------
 def load_users():
-    """تحميل بيانات المستخدمين من ملف JSON - نسخة محسنة"""
-    if not os.path.exists(USERS_FILE):
-        # إنشاء مستخدمين افتراضيين مع الصلاحيات المطلوبة
+    """تحميل بيانات المستخدمين من ملف JSON - نسخة محسنة مع معالجة الأخطاء"""
+    try:
+        # التحقق من وجود الملف
+        if not os.path.exists(USERS_FILE):
+            st.warning(f"⚠ ملف {USERS_FILE} غير موجود. سيتم إنشاؤه تلقائياً.")
+            # إنشاء ملف المستخدمين الأساسي
+            default_users = {
+                "admin": {
+                    "password": "admin123", 
+                    "role": "admin", 
+                    "created_at": datetime.now().isoformat(),
+                    "permissions": ["all"],
+                    "email": "admin@example.com",
+                    "last_modified": datetime.now().isoformat()
+                }
+            }
+            with open(USERS_FILE, "w", encoding="utf-8") as f:
+                json.dump(default_users, f, indent=4, ensure_ascii=False)
+            return default_users
+        
+        # قراءة الملف
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            users = json.load(f)
+        
+        # التحقق من صحة البيانات الأساسية
+        users_validated = {}
+        
+        for username, user_data in users.items():
+            # التحقق من أن username هو نص
+            if not isinstance(username, str):
+                continue
+            
+            # إنشاء مستخدم مصحح
+            validated_user = {
+                "password": user_data.get("password", ""),
+                "role": user_data.get("role", "viewer"),
+                "permissions": user_data.get("permissions", []),
+                "created_at": user_data.get("created_at", datetime.now().isoformat()),
+                "last_modified": user_data.get("last_modified", datetime.now().isoformat()),
+                "email": user_data.get("email", ""),
+                "full_name": user_data.get("full_name", ""),
+                "is_active": user_data.get("is_active", True)
+            }
+            
+            # التأكد من أن كلمة المرور موجودة
+            if not validated_user["password"]:
+                if username == "admin":
+                    validated_user["password"] = "admin123"
+                else:
+                    validated_user["password"] = "user123"
+            
+            # تحديد الصلاحيات الافتراضية بناءً على الدور
+            if not validated_user["permissions"]:
+                if validated_user["role"] == "admin":
+                    validated_user["permissions"] = ["all"]
+                elif validated_user["role"] == "editor":
+                    validated_user["permissions"] = ["view", "edit", "export"]
+                else:
+                    validated_user["permissions"] = ["view"]
+            
+            users_validated[username] = validated_user
+        
+        # التأكد من وجود المستخدم admin
+        if "admin" not in users_validated:
+            users_validated["admin"] = {
+                "password": "admin123", 
+                "role": "admin", 
+                "created_at": datetime.now().isoformat(),
+                "last_modified": datetime.now().isoformat(),
+                "permissions": ["all"],
+                "email": "admin@example.com",
+                "full_name": "المسؤول الرئيسي",
+                "is_active": True
+            }
+        
+        # حفظ النسخة المصححة
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(users_validated, f, indent=4, ensure_ascii=False)
+        
+        return users_validated
+        
+    except json.JSONDecodeError as e:
+        st.error(f"❌ ملف {USERS_FILE} تالف. سيتم إنشاء ملف جديد.")
+        # إنشاء نسخة احتياطية للملف التالف
+        try:
+            backup_name = f"{USERS_FILE}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            shutil.copy2(USERS_FILE, backup_name)
+        except:
+            pass
+        
+        # إنشاء ملف جديد
         default_users = {
             "admin": {
                 "password": "admin123", 
                 "role": "admin", 
                 "created_at": datetime.now().isoformat(),
-                "permissions": ["all"]
+                "last_modified": datetime.now().isoformat(),
+                "permissions": ["all"],
+                "email": "admin@example.com",
+                "full_name": "المسؤول الرئيسي",
+                "is_active": True
             }
         }
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(default_users, f, indent=4, ensure_ascii=False)
+        
         return default_users
-    
-    try:
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            users = json.load(f)
         
-        # التأكد من أن الملف يحتوي على المستخدم admin الأساسي
-        if "admin" not in users:
-            users["admin"] = {
-                "password": "admin123", 
-                "role": "admin", 
-                "created_at": datetime.now().isoformat(),
-                "permissions": ["all"]
-            }
-            # حفظ الإضافة مباشرة
-            with open(USERS_FILE, "w", encoding="utf-8") as f:
-                json.dump(users, f, indent=4, ensure_ascii=False)
-        
-        # التأكد من وجود جميع الحقول المطلوبة لكل مستخدم
-        for username, user_data in users.items():
-            if "role" not in user_data:
-                if username == "admin":
-                    user_data["role"] = "admin"
-                    user_data["permissions"] = ["all"]
-                else:
-                    user_data["role"] = "viewer"
-                    user_data["permissions"] = ["view"]
-            
-            if "permissions" not in user_data:
-                if user_data.get("role") == "admin":
-                    user_data["permissions"] = ["all"]
-                elif user_data.get("role") == "editor":
-                    user_data["permissions"] = ["view", "edit"]
-                else:
-                    user_data["permissions"] = ["view"]
-                    
-            if "created_at" not in user_data:
-                user_data["created_at"] = datetime.now().isoformat()
-        
-        # حفظ أي تحديثات
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(users, f, indent=4, ensure_ascii=False)
-        
-        return users
     except Exception as e:
-        st.error(f"❌ خطأ في ملف users.json: {e}")
-        # إرجاع المستخدمين الافتراضيين في حالة الخطأ
+        st.error(f"❌ خطأ غير متوقع في تحميل المستخدمين: {e}")
         return {
             "admin": {
                 "password": "admin123", 
                 "role": "admin", 
                 "created_at": datetime.now().isoformat(),
+                "last_modified": datetime.now().isoformat(),
                 "permissions": ["all"]
             }
         }
 
-def save_users(users):
-    """حفظ بيانات المستخدمين إلى ملف JSON"""
+def save_users(users_data, operation_description="تحديث المستخدمين"):
+    """حفظ بيانات المستخدمين إلى ملف JSON مع نسخ احتياطي"""
     try:
+        # التحقق من صحة البيانات قبل الحفظ
+        if not isinstance(users_data, dict):
+            st.error("❌ بيانات المستخدمين غير صالحة")
+            return False
+        
+        # التأكد من وجود المستخدم admin
+        if "admin" not in users_data:
+            users_data["admin"] = {
+                "password": "admin123", 
+                "role": "admin", 
+                "created_at": datetime.now().isoformat(),
+                "last_modified": datetime.now().isoformat(),
+                "permissions": ["all"],
+                "email": "admin@example.com",
+                "full_name": "المسؤول الرئيسي",
+                "is_active": True
+            }
+        
+        # تحديث تاريخ التعديل
+        for username, user_data in users_data.items():
+            if isinstance(user_data, dict):
+                user_data["last_modified"] = datetime.now().isoformat()
+        
+        # إنشاء نسخة احتياطية قبل الحفظ
+        if os.path.exists(USERS_FILE):
+            backup_file = f"{USERS_FILE}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            shutil.copy2(USERS_FILE, backup_file)
+        
+        # حفظ البيانات
         with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(users, f, indent=4, ensure_ascii=False)
-        return True
+            json.dump(users_data, f, indent=4, ensure_ascii=False, default=str)
+        
+        # تأكيد الحفظ
+        file_stats = os.stat(USERS_FILE)
+        if file_stats.st_size > 0:
+            return True
+        else:
+            st.error("❌ فشل حفظ البيانات - الملف فارغ")
+            return False
+            
     except Exception as e:
-        st.error(f"❌ خطأ في حفظ ملف users.json: {e}")
+        st.error(f"❌ خطأ في حفظ بيانات المستخدمين: {e}")
         return False
 
 def load_state():
@@ -1191,7 +1279,7 @@ def check_events_and_corrections(all_sheets):
         main_tabs = st.tabs(["🔍 معايير البحث", "⏱️ خيارات المدة", "📊 تحليل زمني"])
         
         with main_tabs[0]:
-            col1, col2 = st.columns([1, 1])
+            col1, col2 = st.columns(2)
             
             with col1:
                 # قسم أرقام الماكينات
@@ -2826,134 +2914,263 @@ def edit_sheet_with_save_button(sheets_edit):
     return sheets_edit
 
 # -------------------------------
-# 👥 إدارة المستخدمين (للمسؤولين فقط)
+# 👥 إدارة المستخدمين (للمسؤولين فقط) - النسخة المحسنة
 # -------------------------------
 def manage_users():
     """إدارة المستخدمين والصلاحيات مع حفظ دائم في ملف JSON"""
     st.header("👥 إدارة المستخدمين")
     
+    # التحقق من أن المستخدم الحالي هو admin
+    current_user = st.session_state.get("username")
+    current_role = st.session_state.get("user_role", "")
+    
+    if current_role != "admin" and current_user != "admin":
+        st.error("❌ الصلاحية مقتصرة على المسؤول (admin) فقط.")
+        st.info("💡 الرجاء تسجيل الدخول كمشرف للوصول إلى هذه الصفحة.")
+        return
+    
     # تحميل أحدث بيانات المستخدمين من الملف
     users = load_users()
     
-    # التحقق من أن المستخدم الحالي هو admin
-    current_user = st.session_state.get("username")
-    if current_user != "admin":
-        st.error("❌ الصلاحية مقتصرة على المسؤول (admin) فقط.")
-        return
-    
-    # عرض المستخدمين الحاليين
-    st.markdown("### 📋 المستخدمون الحاليون")
-    
-    if users:
-        # إنشاء DataFrame للمستخدمين
-        users_data = []
-        for username, user_info in users.items():
-            users_data.append({
-                "اسم المستخدم": username,
-                "الدور": user_info.get("role", "viewer"),
-                "الصلاحيات": ", ".join(user_info.get("permissions", ["view"])),
-                "تاريخ الإنشاء": user_info.get("created_at", "غير معروف")
-            })
-        
-        users_df = pd.DataFrame(users_data)
-        st.dataframe(users_df, use_container_width=True)
-    else:
-        st.info("ℹ️ لا توجد مستخدمين مسجلين بعد.")
-    
-    st.markdown("---")
-    
     # تبويبات لإدارة المستخدمين
-    user_tabs = st.tabs(["➕ إضافة مستخدم جديد", "✏ تعديل مستخدم", "🗑 حذف مستخدم", "🔄 تحديث الملف"])
+    user_tabs = st.tabs([
+        "📊 نظرة عامة", 
+        "➕ إضافة مستخدم جديد", 
+        "✏ تعديل مستخدم", 
+        "🗑 حذف مستخدم", 
+        "⚙ إعدادات متقدمة"
+    ])
     
     with user_tabs[0]:
-        st.markdown("#### ➕ إضافة مستخدم جديد")
+        st.markdown("### 📊 نظرة عامة على المستخدمين")
         
-        col1, col2 = st.columns(2)
+        # عرض إحصائيات سريعة
+        col1, col2, col3, col4 = st.columns(4)
+        
         with col1:
-            new_username = st.text_input("اسم المستخدم الجديد:", key="new_username")
-            new_password = st.text_input("كلمة المرور:", type="password", key="new_password")
-            confirm_password = st.text_input("تأكيد كلمة المرور:", type="password", key="confirm_password")
+            total_users = len(users)
+            st.metric("👥 إجمالي المستخدمين", total_users)
         
         with col2:
-            user_role = st.selectbox(
-                "دور المستخدم:",
-                ["admin", "editor", "viewer"],
-                index=2,
-                key="new_user_role"
-            )
-            
-            # اختيار الصلاحيات بناءً على الدور
-            if user_role == "admin":
-                default_permissions = ["all"]
-                available_permissions = ["all", "view", "edit", "manage_users", "tech_support"]
-            elif user_role == "editor":
-                default_permissions = ["view", "edit"]
-                available_permissions = ["view", "edit", "export"]
-            else:
-                default_permissions = ["view"]
-                available_permissions = ["view", "export"]
-            
-            selected_permissions = st.multiselect(
-                "الصلاحيات:",
-                options=available_permissions,
-                default=default_permissions,
-                key="new_user_permissions"
-            )
+            admin_count = sum(1 for u in users.values() if u.get("role") == "admin")
+            st.metric("👑 المسؤولين", admin_count)
         
-        if st.button("💾 إضافة المستخدم", key="add_user_btn"):
-            if not new_username:
-                st.warning("⚠ الرجاء إدخال اسم المستخدم.")
-                return
+        with col3:
+            editor_count = sum(1 for u in users.values() if u.get("role") == "editor")
+            st.metric("✏ المحررين", editor_count)
+        
+        with col4:
+            viewer_count = sum(1 for u in users.values() if u.get("role") == "viewer")
+            st.metric("👁 العارضين", viewer_count)
+        
+        st.markdown("---")
+        
+        # عرض جدول المستخدمين
+        if users:
+            users_data = []
+            for username, user_info in users.items():
+                users_data.append({
+                    "اسم المستخدم": username,
+                    "الدور": user_info.get("role", "viewer"),
+                    "الحالة": "✅ نشط" if user_info.get("is_active", True) else "⏸ غير نشط",
+                    "الصلاحيات": ", ".join(user_info.get("permissions", ["view"])),
+                    "تاريخ الإنشاء": user_info.get("created_at", "غير معروف")[:10],
+                    "آخر تعديل": user_info.get("last_modified", "غير معروف")[:10]
+                })
             
-            # تحميل أحدث بيانات قبل الإضافة
-            current_users = load_users()
+            users_df = pd.DataFrame(users_data)
             
-            if new_username in current_users:
-                st.error("❌ اسم المستخدم موجود بالفعل.")
-                return
+            # إضافة فلترة
+            col_filter1, col_filter2, col_filter3 = st.columns(3)
             
-            if not new_password:
-                st.warning("⚠ الرجاء إدخال كلمة المرور.")
-                return
+            with col_filter1:
+                filter_role = st.selectbox(
+                    "فلترة حسب الدور:",
+                    ["الكل", "admin", "editor", "viewer"],
+                    key="filter_role"
+                )
             
-            if new_password != confirm_password:
-                st.error("❌ كلمة المرور غير مطابقة.")
-                return
+            with col_filter2:
+                filter_status = st.selectbox(
+                    "فلترة حسب الحالة:",
+                    ["الكل", "نشط", "غير نشط"],
+                    key="filter_status"
+                )
             
-            if len(new_password) < 6:
-                st.warning("⚠ كلمة المرور يجب أن تكون 6 أحرف على الأقل.")
-                return
+            # تطبيق الفلتر
+            if filter_role != "الكل":
+                users_df = users_df[users_df["الدور"] == filter_role]
             
-            # إضافة المستخدم الجديد
-            current_users[new_username] = {
-                "password": new_password,
-                "role": user_role,
-                "permissions": selected_permissions if selected_permissions else default_permissions,
-                "created_at": datetime.now().isoformat()
-            }
+            if filter_status == "نشط":
+                users_df = users_df[users_df["الحالة"] == "✅ نشط"]
+            elif filter_status == "غير نشط":
+                users_df = users_df[users_df["الحالة"] == "⏸ غير نشط"]
             
-            # حفظ في الملف JSON
-            if save_users(current_users):
-                st.success(f"✅ تم إضافة المستخدم '{new_username}' بنجاح!")
-                st.rerun()
-            else:
-                st.error("❌ حدث خطأ أثناء حفظ المستخدم.")
+            st.dataframe(
+                users_df,
+                use_container_width=True,
+                height=400,
+                hide_index=True
+            )
+            
+            # زر تصدير البيانات
+            if st.button("📥 تصدير جدول المستخدمين", key="export_users_table"):
+                csv = users_df.to_csv(index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="💾 تحميل كملف CSV",
+                    data=csv,
+                    file_name=f"users_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+        else:
+            st.info("ℹ️ لا توجد مستخدمين مسجلين بعد.")
     
     with user_tabs[1]:
+        st.markdown("#### ➕ إضافة مستخدم جديد")
+        
+        with st.form("add_user_form"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                new_username = st.text_input(
+                    "اسم المستخدم الجديد: *",
+                    help="يجب أن يكون اسم المستخدم فريداً",
+                    key="new_username"
+                )
+                
+                new_password = st.text_input(
+                    "كلمة المرور: *",
+                    type="password",
+                    help="6 أحرف على الأقل",
+                    key="new_password"
+                )
+                
+                confirm_password = st.text_input(
+                    "تأكيد كلمة المرور: *",
+                    type="password",
+                    key="confirm_password"
+                )
+            
+            with col2:
+                user_role = st.selectbox(
+                    "دور المستخدم: *",
+                    ["admin", "editor", "viewer"],
+                    index=2,
+                    key="new_user_role",
+                    help="admin: صلاحيات كاملة, editor: صلاحيات التعديل, viewer: صلاحيات المشاهدة فقط"
+                )
+                
+                # إضافة معلومات إضافية
+                full_name = st.text_input(
+                    "الاسم الكامل (اختياري):",
+                    key="new_full_name"
+                )
+                
+                email = st.text_input(
+                    "البريد الإلكتروني (اختياري):",
+                    key="new_email"
+                )
+            
+            # الصلاحيات
+            st.markdown("##### 🔐 الصلاحيات")
+            
+            if user_role == "admin":
+                permissions_options = {
+                    "all": "جميع الصلاحيات",
+                    "view": "عرض البيانات",
+                    "edit": "تعديل البيانات",
+                    "manage_users": "إدارة المستخدمين",
+                    "tech_support": "الدعم الفني",
+                    "export": "تصدير البيانات"
+                }
+                default_permissions = ["all"]
+            elif user_role == "editor":
+                permissions_options = {
+                    "view": "عرض البيانات",
+                    "edit": "تعديل البيانات",
+                    "export": "تصدير البيانات"
+                }
+                default_permissions = ["view", "edit"]
+            else:
+                permissions_options = {
+                    "view": "عرض البيانات",
+                    "export": "تصدير البيانات"
+                }
+                default_permissions = ["view"]
+            
+            selected_permissions = st.multiselect(
+                "اختر الصلاحيات:",
+                options=list(permissions_options.keys()),
+                default=default_permissions,
+                format_func=lambda x: permissions_options[x],
+                key="new_user_permissions"
+            )
+            
+            # زر الإرسال
+            submitted = st.form_submit_button("💾 إضافة المستخدم", type="primary")
+            
+            if submitted:
+                # التحقق من صحة البيانات
+                errors = []
+                
+                if not new_username.strip():
+                    errors.append("⚠ الرجاء إدخال اسم المستخدم")
+                
+                if not new_password:
+                    errors.append("⚠ الرجاء إدخال كلمة المرور")
+                elif len(new_password) < 6:
+                    errors.append("⚠ كلمة المرور يجب أن تكون 6 أحرف على الأقل")
+                
+                if new_password != confirm_password:
+                    errors.append("⚠ كلمة المرور غير مطابقة")
+                
+                if new_username in users:
+                    errors.append("⚠ اسم المستخدم موجود بالفعل")
+                
+                if errors:
+                    for error in errors:
+                        st.error(error)
+                else:
+                    # تحميل أحدث بيانات قبل الإضافة
+                    current_users = load_users()
+                    
+                    # إضافة المستخدم الجديد
+                    current_users[new_username] = {
+                        "password": new_password,
+                        "role": user_role,
+                        "permissions": selected_permissions if selected_permissions else default_permissions,
+                        "created_at": datetime.now().isoformat(),
+                        "last_modified": datetime.now().isoformat(),
+                        "email": email.strip() if email else "",
+                        "full_name": full_name.strip() if full_name else "",
+                        "is_active": True
+                    }
+                    
+                    # حفظ في الملف JSON
+                    if save_users(current_users, f"إضافة مستخدم جديد: {new_username}"):
+                        # تحديث بيانات الجلسة إذا تمت إضافة المستخدم الحالي
+                        if st.session_state.get("username") == new_username:
+                            st.session_state.user_role = user_role
+                            st.session_state.user_permissions = selected_permissions if selected_permissions else default_permissions
+                        
+                        st.success(f"✅ تم إضافة المستخدم '{new_username}' بنجاح!")
+                        st.balloons()
+                        st.rerun()
+    
+    with user_tabs[2]:
         st.markdown("#### ✏ تعديل مستخدم")
         
         if not users:
             st.info("ℹ️ لا توجد مستخدمين لتعديلهم.")
         else:
-            # استثناء المستخدم admin من القائمة إذا كان المستخدم الحالي ليس admin
-            user_list = list(users.keys())
-            if current_user != "admin":
-                user_list = [u for u in user_list if u != "admin"]
+            # قائمة المستخدمين القابلة للتعديل
+            editable_users = list(users.keys())
             
             user_to_edit = st.selectbox(
                 "اختر المستخدم للتعديل:",
-                user_list,
-                key="select_user_to_edit"
+                editable_users,
+                key="select_user_to_edit",
+                index=0 if editable_users else None
             )
             
             if user_to_edit:
@@ -2961,62 +3178,138 @@ def manage_users():
                 current_users = load_users()
                 user_info = current_users.get(user_to_edit, {})
                 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.info(f"**المستخدم:** {user_to_edit}")
-                    st.info(f"**الدور الحالي:** {user_info.get('role', 'viewer')}")
+                with st.form("edit_user_form"):
+                    st.markdown(f"##### ✏ تعديل المستخدم: **{user_to_edit}**")
                     
-                    # تغيير كلمة المرور
-                    st.markdown("##### 🔐 تغيير كلمة المرور")
-                    new_password_edit = st.text_input("كلمة المرور الجديدة:", type="password", 
-                                                      key="edit_password")
-                    confirm_password_edit = st.text_input("تأكيد كلمة المرور:", type="password", 
-                                                         key="edit_confirm_password")
-                
-                with col2:
-                    # تغيير الدور
-                    new_role = st.selectbox(
-                        "تغيير الدور:",
-                        ["admin", "editor", "viewer"],
-                        index=["admin", "editor", "viewer"].index(user_info.get("role", "viewer")),
-                        key="edit_user_role"
-                    )
+                    col1, col2 = st.columns(2)
                     
-                    # تغيير الصلاحيات بناءً على الدور الجديد
-                    if new_role == "admin":
-                        default_permissions = ["all"]
-                        available_permissions = ["all", "view", "edit", "manage_users", "tech_support"]
-                    elif new_role == "editor":
-                        default_permissions = ["view", "edit"]
-                        available_permissions = ["view", "edit", "export"]
-                    else:
-                        default_permissions = ["view"]
-                        available_permissions = ["view", "export"]
-                    
-                    current_permissions = user_info.get("permissions", default_permissions)
-                    new_permissions = st.multiselect(
-                        "تغيير الصلاحيات:",
-                        options=available_permissions,
-                        default=current_permissions,
-                        key="edit_user_permissions"
-                    )
-                
-                # أزرار التعديل
-                col_btn1, col_btn2, col_btn3 = st.columns(3)
-                with col_btn1:
-                    if st.button("💾 حفظ التعديلات", key="save_user_edit"):
-                        updated = False
+                    with col1:
+                        # معلومات أساسية
+                        st.markdown("###### المعلومات الأساسية")
                         
+                        new_full_name = st.text_input(
+                            "الاسم الكامل:",
+                            value=user_info.get("full_name", ""),
+                            key="edit_full_name"
+                        )
+                        
+                        new_email = st.text_input(
+                            "البريد الإلكتروني:",
+                            value=user_info.get("email", ""),
+                            key="edit_email"
+                        )
+                        
+                        # حالة المستخدم
+                        is_active = st.checkbox(
+                            "المستخدم نشط",
+                            value=user_info.get("is_active", True),
+                            key="edit_is_active"
+                        )
+                    
+                    with col2:
+                        # الصلاحيات والدور
+                        st.markdown("###### الصلاحيات والدور")
+                        
+                        new_role = st.selectbox(
+                            "دور المستخدم:",
+                            ["admin", "editor", "viewer"],
+                            index=["admin", "editor", "viewer"].index(user_info.get("role", "viewer")),
+                            key="edit_user_role"
+                        )
+                        
+                        # تحديد الصلاحيات بناءً على الدور
+                        if new_role == "admin":
+                            permissions_options = {
+                                "all": "جميع الصلاحيات",
+                                "view": "عرض البيانات",
+                                "edit": "تعديل البيانات",
+                                "manage_users": "إدارة المستخدمين",
+                                "tech_support": "الدعم الفني",
+                                "export": "تصدير البيانات"
+                            }
+                            default_permissions = ["all"]
+                        elif new_role == "editor":
+                            permissions_options = {
+                                "view": "عرض البيانات",
+                                "edit": "تعديل البيانات",
+                                "export": "تصدير البيانات"
+                            }
+                            default_permissions = ["view", "edit"]
+                        else:
+                            permissions_options = {
+                                "view": "عرض البيانات",
+                                "export": "تصدير البيانات"
+                            }
+                            default_permissions = ["view"]
+                        
+                        current_permissions = user_info.get("permissions", default_permissions)
+                        new_permissions = st.multiselect(
+                            "الصلاحيات:",
+                            options=list(permissions_options.keys()),
+                            default=current_permissions,
+                            format_func=lambda x: permissions_options[x],
+                            key="edit_user_permissions"
+                        )
+                    
+                    # قسم تغيير كلمة المرور
+                    st.markdown("---")
+                    st.markdown("##### 🔐 تغيير كلمة المرور (اختياري)")
+                    
+                    col_pass1, col_pass2 = st.columns(2)
+                    
+                    with col_pass1:
+                        new_password_edit = st.text_input(
+                            "كلمة المرور الجديدة:",
+                            type="password",
+                            key="edit_password",
+                            help="اتركه فارغاً للحفاظ على كلمة المرور الحالية"
+                        )
+                    
+                    with col_pass2:
+                        confirm_password_edit = st.text_input(
+                            "تأكيد كلمة المرور الجديدة:",
+                            type="password",
+                            key="edit_confirm_password"
+                        )
+                    
+                    # أزرار الحفظ والإلغاء
+                    col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 1])
+                    
+                    with col_btn1:
+                        save_changes = st.form_submit_button("💾 حفظ التعديلات", type="primary")
+                    
+                    with col_btn2:
+                        reset_password_btn = st.form_submit_button("🔄 إعادة تعيين كلمة المرور")
+                    
+                    with col_btn3:
+                        cancel_btn = st.form_submit_button("❌ إلغاء")
+                    
+                    if save_changes:
                         # تحميل أحدث البيانات قبل التعديل
                         latest_users = load_users()
                         
                         if user_to_edit not in latest_users:
                             st.error("❌ المستخدم غير موجود.")
-                            return
+                            st.stop()
+                        
+                        updated = False
+                        
+                        # تحديث البيانات الأساسية
+                        if latest_users[user_to_edit].get("full_name") != new_full_name:
+                            latest_users[user_to_edit]["full_name"] = new_full_name.strip()
+                            updated = True
+                        
+                        if latest_users[user_to_edit].get("email") != new_email:
+                            latest_users[user_to_edit]["email"] = new_email.strip()
+                            updated = True
+                        
+                        if latest_users[user_to_edit].get("is_active") != is_active:
+                            latest_users[user_to_edit]["is_active"] = is_active
+                            updated = True
                         
                         # تحديث الدور والصلاحيات
-                        if latest_users[user_to_edit].get("role") != new_role or \
-                           latest_users[user_to_edit].get("permissions") != new_permissions:
+                        if (latest_users[user_to_edit].get("role") != new_role or 
+                            latest_users[user_to_edit].get("permissions") != new_permissions):
                             latest_users[user_to_edit]["role"] = new_role
                             latest_users[user_to_edit]["permissions"] = new_permissions if new_permissions else default_permissions
                             updated = True
@@ -3025,33 +3318,29 @@ def manage_users():
                         if new_password_edit:
                             if new_password_edit != confirm_password_edit:
                                 st.error("❌ كلمة المرور غير مطابقة.")
-                                return
+                                st.stop()
+                            
                             if len(new_password_edit) < 6:
                                 st.warning("⚠ كلمة المرور يجب أن تكون 6 أحرف على الأقل.")
-                                return
+                                st.stop()
                             
                             latest_users[user_to_edit]["password"] = new_password_edit
                             updated = True
                         
                         if updated:
-                            if save_users(latest_users):
-                                st.success(f"✅ تم تحديث المستخدم '{user_to_edit}' بنجاح!")
-                                
+                            if save_users(latest_users, f"تعديل مستخدم: {user_to_edit}"):
                                 # إذا كان المستخدم الحالي هو الذي تم تعديله، قم بتحديث session state
                                 if st.session_state.get("username") == user_to_edit:
                                     st.session_state.user_role = new_role
                                     st.session_state.user_permissions = new_permissions if new_permissions else default_permissions
                                     st.info("🔁 تم تحديث بيانات جلسة العمل الحالية.")
                                 
+                                st.success(f"✅ تم تحديث المستخدم '{user_to_edit}' بنجاح!")
                                 st.rerun()
-                            else:
-                                st.error("❌ حدث خطأ أثناء حفظ التعديلات.")
                         else:
                             st.info("ℹ️ لم يتم إجراء أي تغييرات.")
-                
-                with col_btn2:
-                    # زر إعادة تعيين كلمة المرور
-                    if st.button("🔄 إعادة تعيين كلمة المرور", key="reset_password"):
+                    
+                    elif reset_password_btn:
                         # كلمة مرور افتراضية
                         default_password = "user123"
                         
@@ -3059,31 +3348,27 @@ def manage_users():
                         latest_users = load_users()
                         latest_users[user_to_edit]["password"] = default_password
                         
-                        if save_users(latest_users):
-                            st.warning(f"⚠ تم إعادة تعيين كلمة مرور '{user_to_edit}' إلى: {default_password}")
+                        if save_users(latest_users, f"إعادة تعيين كلمة مرور: {user_to_edit}"):
+                            st.warning(f"⚠ تم إعادة تعيين كلمة مرور '{user_to_edit}' إلى: **{default_password}**")
                             st.info("📋 يجب على المستخدم تغيير كلمة المرور عند أول تسجيل دخول.")
                             st.rerun()
-                
-                with col_btn3:
-                    # زر تحديث البيانات من الملف
-                    if st.button("🔄 تحديث البيانات", key="refresh_user_data"):
-                        # تحميل أحدث البيانات من الملف
-                        users = load_users()
-                        st.success("✅ تم تحديث البيانات من الملف.")
-                        st.rerun()
     
-    with user_tabs[2]:
+    with user_tabs[3]:
         st.markdown("#### 🗑 حذف مستخدم")
         
         if not users:
             st.info("ℹ️ لا توجد مستخدمين لحذفهم.")
         else:
-            # قائمة المستخدمين المتاحة للحذف (لا يمكن حذف المسؤول الرئيسي أو المستخدم الحالي)
-            deletable_users = [u for u in users.keys() 
-                             if u != "admin" and u != current_user]
+            # قائمة المستخدمين المتاحة للحذف
+            deletable_users = []
+            for username in users.keys():
+                # لا يمكن حذف المسؤول الرئيسي أو المستخدم الحالي
+                if username != "admin" and username != current_user:
+                    deletable_users.append(username)
             
             if not deletable_users:
                 st.warning("⚠ لا يمكن حذف أي مستخدمين.")
+                st.info("💡 لا يمكن حذف المستخدم 'admin' أو المستخدم الحالي.")
             else:
                 user_to_delete = st.selectbox(
                     "اختر المستخدم للحذف:",
@@ -3094,90 +3379,301 @@ def manage_users():
                 if user_to_delete:
                     user_info = users[user_to_delete]
                     
-                    st.warning(f"⚠ **تحذير:** أنت على وشك حذف المستخدم '{user_to_delete}'")
-                    st.info(f"**الدور:** {user_info.get('role', 'viewer')}")
-                    st.info(f"**تاريخ الإنشاء:** {user_info.get('created_at', 'غير معروف')}")
+                    st.markdown("---")
+                    st.warning(f"### ⚠️ تحذير: حذف المستخدم '{user_to_delete}'")
+                    
+                    # عرض معلومات المستخدم
+                    col_info1, col_info2 = st.columns(2)
+                    
+                    with col_info1:
+                        st.markdown(f"**اسم المستخدم:** {user_to_delete}")
+                        st.markdown(f"**الاسم الكامل:** {user_info.get('full_name', 'غير محدد')}")
+                        st.markdown(f"**الدور:** {user_info.get('role', 'viewer')}")
+                    
+                    with col_info2:
+                        st.markdown(f"**البريد الإلكتروني:** {user_info.get('email', 'غير محدد')}")
+                        st.markdown(f"**الحالة:** {'✅ نشط' if user_info.get('is_active', True) else '⏸ غير نشط'}")
+                        st.markdown(f"**تاريخ الإنشاء:** {user_info.get('created_at', 'غير معروف')[:10]}")
+                    
+                    st.markdown("---")
                     
                     # تأكيد الحذف
-                    confirm_delete = st.checkbox(f"أؤكد أنني أريد حذف المستخدم '{user_to_delete}'", 
-                                                key="confirm_delete")
-                    
-                    if confirm_delete:
-                        if st.button("🗑️ حذف المستخدم نهائياً", type="primary", 
-                                    key="delete_user_final"):
+                    with st.form("delete_user_form"):
+                        st.markdown("##### تأكيد الحذف")
+                        
+                        confirm_text = st.text_input(
+                            f"اكتب 'نعم' لتأكيد حذف المستخدم '{user_to_delete}':",
+                            key="confirm_delete_text"
+                        )
+                        
+                        col_del1, col_del2 = st.columns([1, 2])
+                        
+                        with col_del1:
+                            delete_submitted = st.form_submit_button(
+                                "🗑️ حذف المستخدم نهائياً", 
+                                type="primary",
+                                disabled=True
+                            )
+                        
+                        with col_del2:
+                            if confirm_text.strip().lower() == "نعم":
+                                st.success("✅ التأكيد صحيح. يمكنك الآن حذف المستخدم.")
+                                # إعادة تفعيل زر الحذف
+                                delete_submitted = st.form_submit_button(
+                                    "🗑️ حذف المستخدم نهائياً", 
+                                    type="primary",
+                                    disabled=False
+                                )
+                        
+                        if delete_submitted and confirm_text.strip().lower() == "نعم":
                             # التحقق من أن المستخدم ليس مسجلاً دخولاً حالياً
                             state = load_state()
-                            if user_to_delete in state and state[user_to_delete].get("active"):
+                            if user_to_delete in state and state.get(user_to_delete, {}).get("active"):
                                 st.error("❌ لا يمكن حذف المستخدم أثناء تسجيل دخوله.")
-                                return
+                                st.stop()
                             
                             # تحميل أحدث البيانات قبل الحذف
                             latest_users = load_users()
                             
                             # حذف المستخدم
                             if user_to_delete in latest_users:
+                                # حفظ نسخة من بيانات المستخدم المحذوف
+                                deleted_user_data = latest_users[user_to_delete]
+                                deleted_user_data["deleted_at"] = datetime.now().isoformat()
+                                deleted_user_data["deleted_by"] = current_user
+                                
+                                # حفظ نسخة احتياطية في ملف منفصل
+                                deleted_users_file = "deleted_users.json"
+                                deleted_users = {}
+                                
+                                try:
+                                    if os.path.exists(deleted_users_file):
+                                        with open(deleted_users_file, "r", encoding="utf-8") as f:
+                                            deleted_users = json.load(f)
+                                except:
+                                    pass
+                                
+                                deleted_users[f"{user_to_delete}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"] = deleted_user_data
+                                
+                                try:
+                                    with open(deleted_users_file, "w", encoding="utf-8") as f:
+                                        json.dump(deleted_users, f, indent=4, ensure_ascii=False)
+                                except:
+                                    pass
+                                
+                                # حذف المستخدم من القائمة الرئيسية
                                 del latest_users[user_to_delete]
                                 
-                                if save_users(latest_users):
+                                if save_users(latest_users, f"حذف مستخدم: {user_to_delete}"):
                                     st.success(f"✅ تم حذف المستخدم '{user_to_delete}' بنجاح!")
+                                    
+                                    # عرض رسالة تأكيد
+                                    st.info("📋 تم حفظ نسخة من بيانات المستخدم المحذوف في ملف 'deleted_users.json'")
+                                    
                                     st.rerun()
                                 else:
                                     st.error("❌ حدث خطأ أثناء حذف المستخدم.")
                             else:
                                 st.error("❌ المستخدم غير موجود.")
     
-    with user_tabs[3]:
-        st.markdown("#### 🔄 تحديث وإدارة ملف المستخدمين")
+    with user_tabs[4]:
+        st.markdown("#### ⚙ إعدادات متقدمة")
         
-        # عرض معلومات الملف
+        # معلومات الملف
+        st.markdown("##### 📄 معلومات ملف المستخدمين")
+        
         if os.path.exists(USERS_FILE):
             file_stats = os.stat(USERS_FILE)
             file_size_kb = file_stats.st_size / 1024
-            file_mod_time = datetime.fromtimestamp(file_stats.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+            file_mod_time = datetime.fromtimestamp(file_stats.st_mtime)
             
-            st.info(f"**اسم الملف:** {USERS_FILE}")
-            st.info(f"**حجم الملف:** {file_size_kb:.2f} كيلوبايت")
-            st.info(f"**آخر تعديل:** {file_mod_time}")
+            col_file1, col_file2, col_file3 = st.columns(3)
             
-            # عرض محتوى الملف الخام
-            with st.expander("📄 عرض محتوى ملف users.json"):
+            with col_file1:
+                st.metric("💾 حجم الملف", f"{file_size_kb:.2f} كيلوبايت")
+            
+            with col_file2:
+                st.metric("📅 آخر تعديل", file_mod_time.strftime("%Y-%m-%d"))
+            
+            with col_file3:
+                st.metric("🕒 آخر تعديل", file_mod_time.strftime("%H:%M:%S"))
+            
+            # عرض محتوى الملف
+            with st.expander("📋 عرض محتوى ملف users.json", expanded=False):
                 try:
                     with open(USERS_FILE, "r", encoding="utf-8") as f:
                         file_content = f.read()
-                    st.code(file_content, language="json")
+                    
+                    # تنسيق JSON
+                    parsed_json = json.loads(file_content)
+                    formatted_json = json.dumps(parsed_json, indent=4, ensure_ascii=False)
+                    
+                    st.code(formatted_json, language="json")
                 except Exception as e:
                     st.error(f"❌ خطأ في قراءة الملف: {e}")
-        
-        # زر تحديث البيانات من الملف
-        if st.button("🔄 تحديث جميع البيانات من الملف", key="refresh_all_data"):
-            # تحميل أحدث البيانات
-            users = load_users()
             
-            # تحديث حالة الجلسة للمستخدم الحالي
-            current_user = st.session_state.get("username")
-            if current_user and current_user in users:
-                st.session_state.user_role = users[current_user].get("role", "viewer")
-                st.session_state.user_permissions = users[current_user].get("permissions", ["view"])
-                st.success(f"✅ تم تحديث بيانات جلسة {current_user}")
+            # النسخ الاحتياطية
+            st.markdown("---")
+            st.markdown("##### 💾 النسخ الاحتياطية")
             
-            st.success("✅ تم تحديث جميع البيانات من الملف بنجاح!")
-            st.rerun()
-        
-        # زر تنزيل نسخة احتياطية
-        if st.button("💾 تنزيل نسخة احتياطية", key="download_backup"):
-            if os.path.exists(USERS_FILE):
-                with open(USERS_FILE, "rb") as f:
-                    file_data = f.read()
+            backup_files = [f for f in os.listdir(".") if f.startswith(f"{USERS_FILE}.backup_")]
+            
+            if backup_files:
+                st.info(f"📁 يوجد {len(backup_files)} نسخة احتياطية")
                 
-                st.download_button(
-                    label="📥 تحميل ملف users.json",
-                    data=file_data,
-                    file_name=f"users_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    mime="application/json",
-                    key="download_users_file"
-                )
+                # عرض آخر 5 نسخ احتياطية
+                backup_files.sort(reverse=True)
+                recent_backups = backup_files[:5]
+                
+                for backup in recent_backups:
+                    backup_time = backup.split("_")[-1]
+                    try:
+                        backup_dt = datetime.strptime(backup_time, "%Y%m%d%H%M%S")
+                        st.caption(f"📅 {backup_dt.strftime('%Y-%m-%d %H:%M:%S')} - {backup}")
+                    except:
+                        st.caption(f"📅 {backup}")
             else:
-                st.warning("⚠ ملف users.json غير موجود.")
+                st.info("ℹ️ لا توجد نسخ احتياطية")
+            
+            # أدوات متقدمة
+            st.markdown("---")
+            st.markdown("##### 🔧 أدوات النظام")
+            
+            col_tools1, col_tools2, col_tools3 = st.columns(3)
+            
+            with col_tools1:
+                if st.button("🔄 تحديث جميع البيانات", key="refresh_all_users"):
+                    users = load_users()
+                    st.success("✅ تم تحديث جميع بيانات المستخدمين من الملف!")
+                    st.rerun()
+            
+            with col_tools2:
+                if st.button("💾 تنزيل نسخة احتياطية", key="download_users_backup"):
+                    if os.path.exists(USERS_FILE):
+                        with open(USERS_FILE, "rb") as f:
+                            file_data = f.read()
+                        
+                        st.download_button(
+                            label="📥 تحميل ملف users.json",
+                            data=file_data,
+                            file_name=f"users_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                            mime="application/json",
+                            key="download_users_file_btn"
+                        )
+            
+            with col_tools3:
+                if st.button("🧹 تنظيف النسخ الاحتياطية القديمة", key="clean_old_backups"):
+                    if backup_files:
+                        # حذف النسخ الأقدم من 7 أيام
+                        cutoff_time = datetime.now() - timedelta(days=7)
+                        deleted_count = 0
+                        
+                        for backup_file in backup_files:
+                            try:
+                                backup_time_str = backup_file.split("_")[-1]
+                                backup_dt = datetime.strptime(backup_time_str, "%Y%m%d%H%M%S")
+                                
+                                if backup_dt < cutoff_time:
+                                    os.remove(backup_file)
+                                    deleted_count += 1
+                            except:
+                                continue
+                        
+                        if deleted_count > 0:
+                            st.success(f"✅ تم حذف {deleted_count} نسخة احتياطية قديمة")
+                        else:
+                            st.info("ℹ️ لا توجد نسخ احتياطية قديمة للحذف")
+                    else:
+                        st.info("ℹ️ لا توجد نسخ احتياطية")
+                    
+                    st.rerun()
+            
+            # إصلاح قاعدة البيانات
+            st.markdown("---")
+            st.markdown("##### 🛠 إصلاح قاعدة البيانات")
+            
+            if st.button("🔧 فحص وإصلاح ملف users.json", key="repair_users_db"):
+                try:
+                    # محاولة تحميل الملف للتحقق من صحته
+                    with open(USERS_FILE, "r", encoding="utf-8") as f:
+                        test_load = json.load(f)
+                    
+                    # إذا نجح التحليل، فالملف سليم
+                    st.success("✅ ملف users.json سليم ولا يحتاج للإصلاح")
+                    
+                    # ولكن يمكننا عمل تحسينات
+                    users = load_users()  # سيتم إصلاح أي مشاكل تلقائياً
+                    st.success("✅ تم تحسين وتنظيف بيانات المستخدمين")
+                    st.rerun()
+                    
+                except json.JSONDecodeError as e:
+                    st.error("❌ ملف users.json تالف!")
+                    
+                    # عرض خيارات الإصلاح
+                    repair_option = st.radio(
+                        "اختر طريقة الإصلاح:",
+                        ["إنشاء ملف جديد مع المستخدم الأساسي", "محاولة استعادة من النسخة الاحتياطية"]
+                    )
+                    
+                    if st.button("🔄 تنفيذ الإصلاح", key="execute_repair"):
+                        if repair_option == "إنشاء ملف جديد مع المستخدم الأساسي":
+                            # إنشاء ملف جديد
+                            default_users = {
+                                "admin": {
+                                    "password": "admin123", 
+                                    "role": "admin", 
+                                    "created_at": datetime.now().isoformat(),
+                                    "last_modified": datetime.now().isoformat(),
+                                    "permissions": ["all"],
+                                    "email": "admin@example.com",
+                                    "full_name": "المسؤول الرئيسي",
+                                    "is_active": True
+                                }
+                            }
+                            
+                            with open(USERS_FILE, "w", encoding="utf-8") as f:
+                                json.dump(default_users, f, indent=4, ensure_ascii=False)
+                            
+                            st.success("✅ تم إنشاء ملف users.json جديد")
+                            st.warning("⚠ تم فقد جميع بيانات المستخدمين السابقة")
+                            st.rerun()
+                        
+                        else:
+                            # البحث عن أحدث نسخة احتياطية
+                            if backup_files:
+                                backup_files.sort(reverse=True)
+                                latest_backup = backup_files[0]
+                                
+                                try:
+                                    shutil.copy2(latest_backup, USERS_FILE)
+                                    st.success(f"✅ تم استعادة الملف من النسخة الاحتياطية: {latest_backup}")
+                                    st.rerun()
+                                except:
+                                    st.error("❌ فشل استعادة النسخة الاحتياطية")
+                            else:
+                                st.error("❌ لا توجد نسخ احتياطية متاحة للاستعادة")
+        else:
+            st.error("❌ ملف users.json غير موجود!")
+            
+            if st.button("🔄 إنشاء ملف users.json جديد", key="create_users_file"):
+                default_users = {
+                    "admin": {
+                        "password": "admin123", 
+                        "role": "admin", 
+                        "created_at": datetime.now().isoformat(),
+                        "last_modified": datetime.now().isoformat(),
+                        "permissions": ["all"],
+                        "email": "admin@example.com",
+                        "full_name": "المسؤول الرئيسي",
+                        "is_active": True
+                    }
+                }
+                
+                with open(USERS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(default_users, f, indent=4, ensure_ascii=False)
+                
+                st.success("✅ تم إنشاء ملف users.json جديد")
+                st.rerun()
 
 # -------------------------------
 # 📞 الدعم الفني
