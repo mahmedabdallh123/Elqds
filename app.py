@@ -165,6 +165,18 @@ def load_users():
                 "role": "admin", 
                 "created_at": datetime.now().isoformat(),
                 "permissions": ["all"]
+            },
+            "editor": {
+                "password": "editor123", 
+                "role": "editor", 
+                "created_at": datetime.now().isoformat(),
+                "permissions": ["view", "edit"]
+            },
+            "viewer": {
+                "password": "viewer123", 
+                "role": "viewer", 
+                "created_at": datetime.now().isoformat(),
+                "permissions": ["view"]
             }
         }
         with open(USERS_FILE, "w", encoding="utf-8") as f:
@@ -175,17 +187,19 @@ def load_users():
         with open(USERS_FILE, "r", encoding="utf-8") as f:
             users = json.load(f)
         
-        # التأكد من أن الملف يحتوي على المستخدم admin الأساسي
-        if "admin" not in users:
-            users["admin"] = {
+        # التأكد من أن الملف يحتوي على المستخدمين الأساسيين
+        default_users = {
+            "admin": {
                 "password": "admin123", 
                 "role": "admin", 
                 "created_at": datetime.now().isoformat(),
                 "permissions": ["all"]
             }
-            # حفظ الإضافة مباشرة
-            with open(USERS_FILE, "w", encoding="utf-8") as f:
-                json.dump(users, f, indent=4, ensure_ascii=False)
+        }
+        
+        for username, user_data in default_users.items():
+            if username not in users:
+                users[username] = user_data
         
         # التأكد من وجود جميع الحقول المطلوبة لكل مستخدم
         for username, user_data in users.items():
@@ -466,7 +480,12 @@ def load_sheets_for_edit():
 # 🔁 حفظ محلي + رفع على GitHub + مسح الكاش + إعادة تحميل
 # -------------------------------
 def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit"):
-    """دالة محسنة للحفظ التلقائي المحلي والرفع إلى GitHub"""
+    """دالة محسنة للحفظ التلقائي المحلي والرفع إلى GitHub - للمسؤولين فقط"""
+    # التحقق من أن المستخدم مسؤول
+    if st.session_state.get("user_role") != "admin":
+        st.error("❌ صلاحية الحفظ مقتصرة على المسؤولين فقط!")
+        return None
+    
     # احفظ محلياً
     try:
         with pd.ExcelWriter(APP_CONFIG["LOCAL_FILE"], engine="openpyxl") as writer:
@@ -521,7 +540,12 @@ def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit
         return None
 
 def auto_save_to_github(sheets_dict, operation_description):
-    """دالة الحفظ التلقائي المحسنة"""
+    """دالة الحفظ التلقائي المحسنة - للمسؤولين فقط"""
+    # التحقق من أن المستخدم مسؤول
+    if st.session_state.get("user_role") != "admin":
+        st.error("❌ صلاحية الحفظ مقتصرة على المسؤولين فقط!")
+        return sheets_dict
+    
     username = st.session_state.get("username", "unknown")
     commit_message = f"{operation_description} by {username} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     
@@ -574,6 +598,8 @@ def get_user_permissions(user_role, user_permissions):
         return {
             "can_view": True,
             "can_edit": True,
+            "can_save": True,  # فقط المسؤول يستطيع الحفظ
+            "can_export": True,
             "can_manage_users": True,
             "can_see_tech_support": True
         }
@@ -583,6 +609,8 @@ def get_user_permissions(user_role, user_permissions):
         return {
             "can_view": True,
             "can_edit": True,
+            "can_save": False,  # المحرر لا يستطيع الحفظ
+            "can_export": True,  # يستطيع التصدير
             "can_manage_users": False,
             "can_see_tech_support": False
         }
@@ -593,6 +621,8 @@ def get_user_permissions(user_role, user_permissions):
         return {
             "can_view": "view" in user_permissions or "edit" in user_permissions or "all" in user_permissions,
             "can_edit": "edit" in user_permissions or "all" in user_permissions,
+            "can_save": False,  # العرض فقط لا يستطيع الحفظ
+            "can_export": "export" in user_permissions or "all" in user_permissions,
             "can_manage_users": "manage_users" in user_permissions or "all" in user_permissions,
             "can_see_tech_support": "tech_support" in user_permissions or "all" in user_permissions
         }
@@ -2399,6 +2429,16 @@ def add_new_event(sheets_edit):
     """إضافة إيفينت جديد في شيت منفصل مع خاصية رفع الصور"""
     st.subheader("➕ إضافة حدث جديد مع صور")
     
+    # التحقق من الصلاحيات
+    permissions = get_user_permissions(
+        st.session_state.get("user_role", "viewer"),
+        st.session_state.get("user_permissions", ["view"])
+    )
+    
+    if not permissions["can_edit"]:
+        st.error("❌ ليس لديك صلاحية لإضافة أحداث جديدة.")
+        return
+    
     sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="add_event_sheet")
     df = sheets_edit[sheet_name].astype(str)
     
@@ -2509,24 +2549,29 @@ def add_new_event(sheets_edit):
         
         sheets_edit[sheet_name] = df_new.astype(object)
         
-        # حفظ تلقائي في GitHub
-        new_sheets = auto_save_to_github(
-            sheets_edit,
-            f"إضافة حدث جديد في {sheet_name}" + (f" مع {len(saved_images)} صورة" if saved_images else "")
-        )
-        if new_sheets is not None:
-            sheets_edit = new_sheets
-            st.success("✅ تم إضافة الحدث الجديد بنجاح!")
-            
-            # عرض ملخص
-            with st.expander("📋 ملخص الحدث المضافة", expanded=True):
-                st.markdown(f"**رقم الماكينة:** {card_num}")
-                st.markdown(f"**الحدث:** {event_text[:100]}{'...' if len(event_text) > 100 else ''}")
-                if saved_images:
-                    st.markdown(f"**عدد الصور المرفقة:** {len(saved_images)}")
-                    display_images(saved_images, "الصور المحفوظة")
-            
-            st.rerun()
+        # حفظ تلقائي في GitHub (للمسؤولين فقط)
+        if permissions["can_save"]:
+            new_sheets = auto_save_to_github(
+                sheets_edit,
+                f"إضافة حدث جديد في {sheet_name}" + (f" مع {len(saved_images)} صورة" if saved_images else "")
+            )
+            if new_sheets is not None:
+                sheets_edit = new_sheets
+                st.success("✅ تم إضافة الحدث الجديد بنجاح!")
+            else:
+                st.warning("⚠ تمت الإضافة محلياً فقط. للحفظ في GitHub، يجب أن تكون مسؤولاً.")
+        else:
+            st.warning("⚠ تمت الإضافة محلياً فقط. للحفظ في GitHub، يجب أن تكون مسؤولاً.")
+        
+        # عرض ملخص
+        with st.expander("📋 ملخص الحدث المضافة", expanded=True):
+            st.markdown(f"**رقم الماكينة:** {card_num}")
+            st.markdown(f"**الحدث:** {event_text[:100]}{'...' if len(event_text) > 100 else ''}")
+            if saved_images:
+                st.markdown(f"**عدد الصور المرفقة:** {len(saved_images)}")
+                display_images(saved_images, "الصور المحفوظة")
+        
+        st.rerun()
 
 # -------------------------------
 # 🖥 دالة تعديل الإيفينت والكوريكشن - مع خاصية إدارة الصور
@@ -2534,6 +2579,16 @@ def add_new_event(sheets_edit):
 def edit_events_and_corrections(sheets_edit):
     """تعديل الإيفينت والكوريكشن مع إدارة الصور"""
     st.subheader("✏ تعديل الحدث والتصحيح والصور")
+    
+    # التحقق من الصلاحيات
+    permissions = get_user_permissions(
+        st.session_state.get("user_role", "viewer"),
+        st.session_state.get("user_permissions", ["view"])
+    )
+    
+    if not permissions["can_edit"]:
+        st.error("❌ ليس لديك صلاحية لتعديل الأحداث.")
+        return
     
     sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_events_sheet")
     df = sheets_edit[sheet_name].astype(str)
@@ -2680,26 +2735,31 @@ def edit_events_and_corrections(sheets_edit):
             
             sheets_edit[sheet_name] = df.astype(object)
             
-            # حفظ تلقائي في GitHub
-            new_sheets = auto_save_to_github(
-                sheets_edit,
-                f"تعديل حدث في {sheet_name} - الصف {row_index}" + (f" مع تحديث الصور" if all_images else "")
-            )
-            if new_sheets is not None:
-                sheets_edit = new_sheets
-                st.success("✅ تم حفظ التعديلات بنجاح!")
-                
-                # عرض ملخص
-                if all_images:
-                    st.info(f"📷 العدد النهائي للصور: {len(all_images)}")
-                    display_images(all_images, "الصور المحفوظة")
-                
-                # مسح بيانات الجلسة
-                if "editing_row" in st.session_state:
-                    del st.session_state["editing_row"]
-                if "editing_data" in st.session_state:
-                    del st.session_state["editing_data"]
-                st.rerun()
+            # حفظ تلقائي في GitHub (للمسؤولين فقط)
+            if permissions["can_save"]:
+                new_sheets = auto_save_to_github(
+                    sheets_edit,
+                    f"تعديل حدث في {sheet_name} - الصف {row_index}" + (f" مع تحديث الصور" if all_images else "")
+                )
+                if new_sheets is not None:
+                    sheets_edit = new_sheets
+                    st.success("✅ تم حفظ التعديلات بنجاح!")
+                else:
+                    st.warning("⚠ تم التعديل محلياً فقط. للحفظ في GitHub، يجب أن تكون مسؤولاً.")
+            else:
+                st.warning("⚠ تم التعديل محلياً فقط. للحفظ في GitHub، يجب أن تكون مسؤولاً.")
+            
+            # عرض ملخص
+            if all_images:
+                st.info(f"📷 العدد النهائي للصور: {len(all_images)}")
+                display_images(all_images, "الصور المحفوظة")
+            
+            # مسح بيانات الجلسة
+            if "editing_row" in st.session_state:
+                del st.session_state["editing_row"]
+            if "editing_data" in st.session_state:
+                del st.session_state["editing_data"]
+            st.rerun()
 
 # -------------------------------
 # 🖥 دالة تعديل الشيت مع زر حفظ يدوي
@@ -2707,6 +2767,16 @@ def edit_events_and_corrections(sheets_edit):
 def edit_sheet_with_save_button(sheets_edit):
     """تعديل بيانات الشيت مع زر حفظ يدوي"""
     st.subheader("✏ تعديل البيانات")
+    
+    # التحقق من الصلاحيات
+    permissions = get_user_permissions(
+        st.session_state.get("user_role", "viewer"),
+        st.session_state.get("user_permissions", ["view"])
+    )
+    
+    if not permissions["can_edit"]:
+        st.error("❌ ليس لديك صلاحية لتعديل البيانات.")
+        return
     
     if "original_sheets" not in st.session_state:
         st.session_state.original_sheets = sheets_edit.copy()
@@ -2746,30 +2816,34 @@ def edit_sheet_with_save_button(sheets_edit):
         col1, col2, col3 = st.columns([1, 1, 2])
         
         with col1:
-            if st.button("💾 حفظ التغييرات", key=f"save_{sheet_name}", type="primary"):
-                # حفظ التغييرات
-                sheets_edit[sheet_name] = edited_df.astype(object)
-                
-                # حفظ تلقائي في GitHub
-                new_sheets = auto_save_to_github(
-                    sheets_edit,
-                    f"تعديل يدوي في شيت {sheet_name}"
-                )
-                
-                if new_sheets is not None:
-                    sheets_edit = new_sheets
-                    st.session_state.unsaved_changes[sheet_name] = False
-                    st.success(f"✅ تم حفظ التغييرات في شيت {sheet_name} بنجاح!")
+            # التحقق من صلاحية الحفظ
+            if permissions["can_save"]:
+                if st.button("💾 حفظ التغييرات", key=f"save_{sheet_name}", type="primary"):
+                    # حفظ التغييرات
+                    sheets_edit[sheet_name] = edited_df.astype(object)
                     
-                    # تحديث البيانات الأصلية
-                    st.session_state.original_sheets[sheet_name] = edited_df.copy()
+                    # حفظ تلقائي في GitHub (للمسؤولين فقط)
+                    new_sheets = auto_save_to_github(
+                        sheets_edit,
+                        f"تعديل يدوي في شيت {sheet_name}"
+                    )
                     
-                    # إعادة التحميل بعد ثانية
-                    import time
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("❌ فشل حفظ التغييرات!")
+                    if new_sheets is not None:
+                        sheets_edit = new_sheets
+                        st.session_state.unsaved_changes[sheet_name] = False
+                        st.success(f"✅ تم حفظ التغييرات في شيت {sheet_name} بنجاح!")
+                        
+                        # تحديث البيانات الأصلية
+                        st.session_state.original_sheets[sheet_name] = edited_df.copy()
+                        
+                        # إعادة التحميل بعد ثانية
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ فشل حفظ التغييرات!")
+            else:
+                st.info("ℹ️ لا تملك صلاحية الحفظ")
         
         with col2:
             if st.button("↩️ تراجع عن التغييرات", key=f"undo_{sheet_name}"):
@@ -2832,14 +2906,14 @@ def manage_users():
     """إدارة المستخدمين والصلاحيات مع حفظ دائم في ملف JSON"""
     st.header("👥 إدارة المستخدمين")
     
-    # تحميل أحدث بيانات المستخدمين من الملف
-    users = load_users()
-    
     # التحقق من أن المستخدم الحالي هو admin
     current_user = st.session_state.get("username")
     if current_user != "admin":
         st.error("❌ الصلاحية مقتصرة على المسؤول (admin) فقط.")
         return
+    
+    # تحميل أحدث بيانات المستخدمين من الملف
+    users = load_users()
     
     # عرض المستخدمين الحاليين
     st.markdown("### 📋 المستخدمون الحاليون")
@@ -2885,7 +2959,7 @@ def manage_users():
             # اختيار الصلاحيات بناءً على الدور
             if user_role == "admin":
                 default_permissions = ["all"]
-                available_permissions = ["all", "view", "edit", "manage_users", "tech_support"]
+                available_permissions = ["all", "view", "edit", "save", "manage_users", "tech_support"]
             elif user_role == "editor":
                 default_permissions = ["view", "edit"]
                 available_permissions = ["view", "edit", "export"]
@@ -2985,7 +3059,7 @@ def manage_users():
                     # تغيير الصلاحيات بناءً على الدور الجديد
                     if new_role == "admin":
                         default_permissions = ["all"]
-                        available_permissions = ["all", "view", "edit", "manage_users", "tech_support"]
+                        available_permissions = ["all", "view", "edit", "save", "manage_users", "tech_support"]
                     elif new_role == "editor":
                         default_permissions = ["view", "edit"]
                         available_permissions = ["view", "edit", "export"]
@@ -3515,14 +3589,20 @@ if permissions["can_edit"] and len(tabs) > 2:
                         
                         sheets_edit[sheet_name_add] = df_new.astype(object)
 
-                        new_sheets = auto_save_to_github(
-                            sheets_edit,
-                            f"إضافة صف جديد في {sheet_name_add}"
-                        )
-                        if new_sheets is not None:
-                            sheets_edit = new_sheets
-                            st.success("✅ تم إضافة الصف الجديد بنجاح!")
-                            st.rerun()
+                        # حفظ تلقائي في GitHub (للمسؤولين فقط)
+                        if permissions["can_save"]:
+                            new_sheets = auto_save_to_github(
+                                sheets_edit,
+                                f"إضافة صف جديد في {sheet_name_add}"
+                            )
+                            if new_sheets is not None:
+                                sheets_edit = new_sheets
+                                st.success("✅ تم إضافة الصف الجديد بنجاح!")
+                            else:
+                                st.warning("⚠ تمت الإضافة محلياً فقط. للحفظ في GitHub، يجب أن تكون مسؤولاً.")
+                        else:
+                            st.warning("⚠ تمت الإضافة محلياً فقط. للحفظ في GitHub، يجب أن تكون مسؤولاً.")
+                        st.rerun()
                 
                 with col_btn2:
                     if st.button("🗑 مسح الحقول", key=f"clear_{sheet_name_add}"):
@@ -3544,14 +3624,20 @@ if permissions["can_edit"] and len(tabs) > 2:
                             df_col[new_col_name] = default_value
                             sheets_edit[sheet_name_col] = df_col.astype(object)
                             
-                            new_sheets = auto_save_to_github(
-                                sheets_edit,
-                                f"إضافة عمود جديد '{new_col_name}' إلى {sheet_name_col}"
-                            )
-                            if new_sheets is not None:
-                                sheets_edit = new_sheets
-                                st.success("✅ تم إضافة العمود الجديد بنجاح!")
-                                st.rerun()
+                            # حفظ تلقائي في GitHub (للمسؤولين فقط)
+                            if permissions["can_save"]:
+                                new_sheets = auto_save_to_github(
+                                    sheets_edit,
+                                    f"إضافة عمود جديد '{new_col_name}' إلى {sheet_name_col}"
+                                )
+                                if new_sheets is not None:
+                                    sheets_edit = new_sheets
+                                    st.success("✅ تم إضافة العمود الجديد بنجاح!")
+                                else:
+                                    st.warning("⚠ تمت الإضافة محلياً فقط. للحفظ في GitHub، يجب أن تكون مسؤولاً.")
+                            else:
+                                st.warning("⚠ تمت الإضافة محلياً فقط. للحفظ في GitHub، يجب أن تكون مسؤولاً.")
+                            st.rerun()
                         else:
                             st.warning("⚠ الرجاء إدخال اسم العمود الجديد.")
                 
