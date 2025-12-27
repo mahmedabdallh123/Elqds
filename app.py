@@ -1153,7 +1153,7 @@ def show_service_statistics(service_stats, result_df):
             st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
 
 # -------------------------------
-# 🖥 دالة فحص الإيفينت والكوريكشن - مع خاصية حساب المدة وعرض الصور (معدلة)
+# 🖥 دالة فحص الإيفينت والكوريكشن - مع خاصية حساب المدة وعرض الصور (مصححة)
 # -------------------------------
 def check_events_and_corrections(all_sheets):
     """فحص الإيفينت والكوريكشن مع خاصية حساب المدة بين الأحداث"""
@@ -1191,7 +1191,7 @@ def check_events_and_corrections(all_sheets):
         main_tabs = st.tabs(["🔍 معايير البحث", "⏱️ خيارات المدة", "📊 تحليل زمني"])
         
         with main_tabs[0]:
-            col1, col2 = st.columns(2)
+            col1, col2 = st.columns([1, 1])
             
             with col1:
                 # قسم أرقام الماكينات
@@ -1437,8 +1437,8 @@ def check_events_and_corrections(all_sheets):
         # تنفيذ البحث
         show_advanced_search_results_with_duration(search_params, all_sheets)
 
-def calculate_durations_between_events(events_data, duration_type="أيام", group_by_type=False, search_term=""):
-    """حساب المدة بين الأحداث لنفس الماكينة بناءً على نص البحث"""
+def calculate_durations_between_events(events_data, duration_type="أيام", group_by_type=False):
+    """حساب المدة بين الأحداث لنفس الماكينة"""
     if not events_data:
         return events_data
     
@@ -1476,15 +1476,27 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
     # فرز البيانات حسب الماكينة ثم التاريخ
     df = df.sort_values(['Card Number', 'Date_Parsed'])
     
-    # إضافة عمود للنص الكامل للبحث (الحدث + التصحيح)
-    df['Full_Text'] = df.apply(lambda row: f"{row.get('Event', '')} {row.get('Correction', '')}", axis=1)
+    # إضافة أعمدة المدة
+    df['Previous_Date'] = None
+    df['Duration'] = None
+    df['Duration_Unit'] = None
+    df['Event_Type'] = None
     
-    # فلترة الأحداث بناءً على نص البحث إذا كان موجوداً
-    if search_term and search_term.strip():
-        search_lower = search_term.strip().lower()
-        df['Contains_Search_Term'] = df['Full_Text'].str.lower().str.contains(search_lower, na=False)
-    else:
-        df['Contains_Search_Term'] = True
+    # تحديد نوع الحدث (حدث أو تصحيح)
+    def determine_event_type(event, correction):
+        event_str = str(event).strip().lower()
+        correction_str = str(correction).strip().lower()
+        
+        if event_str not in ['-', 'nan', 'none', ''] and correction_str not in ['-', 'nan', 'none', '']:
+            return "تصحيح"
+        elif event_str not in ['-', 'nan', 'none', '']:
+            return "حدث"
+        elif correction_str not in ['-', 'nan', 'none', '']:
+            return "تصحيح"
+        else:
+            return "غير محدد"
+    
+    df['Event_Type'] = df.apply(lambda row: determine_event_type(row.get('Event', '-'), row.get('Correction', '-')), axis=1)
     
     # حساب المدة بين الأحداث لكل ماكينة
     durations_data = []
@@ -1493,23 +1505,9 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
         card_events = df[df['Card Number'] == card_num].copy()
         
         if len(card_events) > 1:
-            # الحصول على الأحداث التي تحتوي على نص البحث فقط
-            if search_term:
-                search_events = card_events[card_events['Contains_Search_Term']]
-                if len(search_events) < 2:
-                    continue
-                
-                # استخدام أحداث البحث فقط
-                filtered_events = search_events
-            else:
-                filtered_events = card_events
-            
-            # ترتيب الأحداث حسب التاريخ
-            filtered_events = filtered_events.sort_values('Date_Parsed')
-            
-            for i in range(1, len(filtered_events)):
-                current_event = filtered_events.iloc[i]
-                previous_event = filtered_events.iloc[i-1]
+            for i in range(1, len(card_events)):
+                current_event = card_events.iloc[i]
+                previous_event = card_events.iloc[i-1]
                 
                 current_date = current_event['Date_Parsed']
                 previous_date = previous_event['Date_Parsed']
@@ -1529,45 +1527,41 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
                         duration_value = duration_days
                         duration_unit = "يوم"
                     
-                    # استخراج نص التصحيح من الحدث السابق
-                    previous_correction_text = ""
-                    if 'Correction' in previous_event and previous_event['Correction'] not in ['-', '', None]:
-                        previous_correction_text = str(previous_event['Correction'])
-                    
-                    # استخراج نص التصحيح من الحدث الحالي
-                    current_correction_text = ""
-                    if 'Correction' in current_event and current_event['Correction'] not in ['-', '', None]:
-                        current_correction_text = str(current_event['Correction'])
-                    
-                    # استخراج نص الحدث من الحدث السابق
-                    previous_event_text = ""
-                    if 'Event' in previous_event and previous_event['Event'] not in ['-', '', None]:
-                        previous_event_text = str(previous_event['Event'])
-                    
-                    # استخراج نص الحدث من الحدث الحالي
-                    current_event_text = ""
-                    if 'Event' in current_event and current_event['Event'] not in ['-', '', None]:
-                        current_event_text = str(current_event['Event'])
-                    
-                    # استخراج فني الخدمة
-                    technician = ""
-                    if 'Servised by' in current_event and current_event['Servised by'] not in ['-', '', None]:
-                        technician = str(current_event['Servised by'])
-                    
-                    # إضافة بيانات المدة (بدون Search_Term و Event_Type)
-                    duration_info = {
-                        'Card Number': card_num,
-                        'Current_Event_Date': current_event['Date'],
-                        'Previous_Event_Date': previous_event['Date'],
-                        'Duration': round(duration_value, 1),
-                        'Duration_Unit': duration_unit,
-                        'Previous_Correction_Text': previous_correction_text[:100] + ('...' if len(previous_correction_text) > 100 else ''),
-                        'Current_Correction_Text': current_correction_text[:100] + ('...' if len(current_correction_text) > 100 else ''),
-                        'Previous_Event_Text': previous_event_text[:100] + ('...' if len(previous_event_text) > 100 else ''),
-                        'Current_Event_Text': current_event_text[:100] + ('...' if len(current_event_text) > 100 else ''),
-                        'Technician': technician
-                    }
-                    durations_data.append(duration_info)
+                    # التحقق من تجميع حسب النوع
+                    if group_by_type:
+                        current_type = current_event['Event_Type']
+                        previous_type = previous_event['Event_Type']
+                        
+                        if current_type == previous_type:
+                            duration_info = {
+                                'Card Number': card_num,
+                                'Current_Event_Date': current_event['Date'],
+                                'Previous_Event_Date': previous_event['Date'],
+                                'Duration': round(duration_value, 1),
+                                'Duration_Unit': duration_unit,
+                                'Event_Type': current_type,
+                                'Current_Event': current_event.get('Event', '-'),
+                                'Previous_Event': previous_event.get('Event', '-'),
+                                'Current_Correction': current_event.get('Correction', '-'),
+                                'Previous_Correction': previous_event.get('Correction', '-'),
+                                'Technician': current_event.get('Servised by', '-')
+                            }
+                            durations_data.append(duration_info)
+                    else:
+                        duration_info = {
+                            'Card Number': card_num,
+                            'Current_Event_Date': current_event['Date'],
+                            'Previous_Event_Date': previous_event['Date'],
+                            'Duration': round(duration_value, 1),
+                            'Duration_Unit': duration_unit,
+                            'Event_Type': f"{previous_event['Event_Type']} → {current_event['Event_Type']}",
+                            'Current_Event': current_event.get('Event', '-'),
+                            'Previous_Event': previous_event.get('Event', '-'),
+                            'Current_Correction': current_event.get('Correction', '-'),
+                            'Previous_Correction': previous_event.get('Correction', '-'),
+                            'Technician': current_event.get('Servised by', '-')
+                        }
+                        durations_data.append(duration_info)
     
     return durations_data
 
@@ -1624,11 +1618,10 @@ def show_advanced_search_results_with_duration(search_params, all_sheets):
         dates = search_params["date_range"].split(',')
         target_dates = [date.strip().lower() for date in dates if date.strip()]
     
-    # معالجة نص البحث (لحساب المدة)
+    # معالجة نص البحث
     search_terms = []
-    search_text = search_params.get("search_text", "")
-    if search_text:
-        terms = search_text.split(',')
+    if search_params["search_text"]:
+        terms = search_params["search_text"].split(',')
         search_terms = [term.strip().lower() for term in terms if term.strip()]
     
     # البحث في جميع الشيتات
@@ -1753,17 +1746,11 @@ def display_search_results_with_duration(results, search_params):
         st.markdown("---")
         st.markdown("### ⏱️ تحليل المدة بين الأحداث")
         
-        # الحصول على نص البحث لحساب المدة
-        search_term_for_duration = ""
-        if search_params.get("search_text"):
-            search_term_for_duration = search_params["search_text"].split(',')[0].strip() if ',' in search_params["search_text"] else search_params["search_text"].strip()
-        
         # حساب المدة
         durations_data = calculate_durations_between_events(
             results,
             search_params.get("duration_type", "أيام"),
-            search_params.get("group_by_type", False),
-            search_term_for_duration
+            search_params.get("group_by_type", False)
         )
         
         if durations_data:
@@ -1800,24 +1787,17 @@ def display_search_results_with_duration(results, search_params):
                 total_durations = len(filtered_durations)
                 st.metric("🔢 عدد الفترات", total_durations)
             
-            # إذا كان هناك نص بحث، عرض ملخص عنه
-            if search_term_for_duration:
-                st.info(f"🔍 **نص البحث المستخدم:** '{search_term_for_duration}'")
-            
             # عرض جدول المدة
             st.markdown("#### 📋 جدول المدة بين الأحداث")
             
-            # تنسيق الأعمدة للعرض بدون Search_Term و Event_Type
+            # تنسيق الأعمدة للعرض
             display_columns = [
                 'Card Number', 'Previous_Event_Date', 'Current_Event_Date',
-                'Duration', 'Duration_Unit', 'Previous_Correction_Text',
-                'Current_Correction_Text', 'Previous_Event_Text',
-                'Current_Event_Text', 'Technician'
+                'Duration', 'Duration_Unit', 'Event_Type', 'Technician'
             ]
             
             available_columns = [col for col in display_columns if col in filtered_durations.columns]
             
-            # عرض الجدول مع تفاصيل التصحيح والحدث
             st.dataframe(
                 filtered_durations[available_columns],
                 use_container_width=True,
@@ -2053,22 +2033,20 @@ def display_search_results_with_duration(results, search_params):
                 with pd.ExcelWriter(buffer_duration, engine='openpyxl') as writer:
                     duration_export_df.to_excel(writer, sheet_name='المدة_بين_الأحداث', index=False)
                     
-                    # إضافة ملخص إحصائي (بدون Event_Type)
+                    # إضافة ملخص إحصائي
                     summary_data = []
-                    if 'Card Number' in duration_export_df.columns:
-                        for card_num in duration_export_df['Card Number'].unique():
-                            card_data = duration_export_df[duration_export_df['Card Number'] == card_num]
-                            summary_data.append({
-                                'رقم الماكينة': card_num,
-                                'عدد الفترات': len(card_data),
-                                f'متوسط المدة ({search_params.get("duration_type", "أيام")})': card_data['Duration'].mean(),
-                                'أقل مدة': card_data['Duration'].min(),
-                                'أعلى مدة': card_data['Duration'].max()
-                            })
+                    for event_type in duration_export_df['Event_Type'].unique():
+                        type_data = duration_export_df[duration_export_df['Event_Type'] == event_type]
+                        summary_data.append({
+                            'نوع الحدث': event_type,
+                            'عدد الفترات': len(type_data),
+                            f'متوسط المدة ({search_params.get("duration_type", "أيام")})': type_data['Duration'].mean(),
+                            'أقل مدة': type_data['Duration'].min(),
+                            'أعلى مدة': type_data['Duration'].max()
+                        })
                     
-                    if summary_data:
-                        summary_df = pd.DataFrame(summary_data)
-                        summary_df.to_excel(writer, sheet_name='ملخص_إحصائي', index=False)
+                    summary_df = pd.DataFrame(summary_data)
+                    summary_df.to_excel(writer, sheet_name='ملخص_إحصائي', index=False)
                 
                 st.download_button(
                     label="⏱️ حفظ تقرير المدة",
@@ -2230,24 +2208,6 @@ def show_event_correction_comparison(durations_df):
     if durations_df.empty:
         st.info("ℹ️ لا توجد بيانات للمقارنة")
         return
-    
-    # تحديد نوع الحدث بناءً على نص التصحيح والحدث
-    def determine_event_type(correction_text, event_text):
-        correction_str = str(correction_text).strip().lower()
-        event_str = str(event_text).strip().lower()
-        
-        if correction_str not in ['', '-', 'nan', 'none']:
-            return "تصحيح"
-        elif event_str not in ['', '-', 'nan', 'none']:
-            return "حدث"
-        else:
-            return "غير محدد"
-    
-    # إضافة عمود نوع الحدث
-    durations_df['Event_Type'] = durations_df.apply(
-        lambda row: determine_event_type(row.get('Current_Correction_Text', ''), row.get('Current_Event_Text', '')), 
-        axis=1
-    )
     
     # تحليل حسب نوع الحدث
     event_type_stats = durations_df.groupby('Event_Type').agg({
@@ -2433,7 +2393,7 @@ def parse_card_numbers(card_numbers_str):
     return numbers
 
 # -------------------------------
-# 🖥 دالة إضافة إيفينت جديد - مع خاصية رفع الصور (معدلة)
+# 🖥 دالة إضافة إيفينت جديد - مع خاصية رفع الصور (مصححة)
 # -------------------------------
 def add_new_event(sheets_edit):
     """إضافة إيفينت جديد في شيت منفصل مع خاصية رفع الصور"""
