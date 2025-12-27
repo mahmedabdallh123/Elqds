@@ -1224,7 +1224,7 @@ def check_events_and_corrections(all_sheets):
                 
                 # قسم التواريخ
                 with st.expander("📅 **التواريخ**", expanded=True):
-                    st.caption("ابحث بالتاريخ (سنة، شهر/سنة)")
+                    st.caption("ابحق بالتاريخ (سنة، شهر/سنة)")
                     date_input = st.text_input(
                         "مثال: 2024 أو 1/2024 أو 2024,2025",
                         value=st.session_state.search_params.get("date_range", ""),
@@ -2826,6 +2826,141 @@ def edit_sheet_with_save_button(sheets_edit):
     return sheets_edit
 
 # -------------------------------
+# 🖥 دالة إضافة شيت جديد
+# -------------------------------
+def add_new_sheet(sheets_edit):
+    """إضافة شيت جديد إلى ملف Excel"""
+    st.subheader("📄 إضافة شيت جديد")
+    
+    # إدخال اسم الشيت الجديد
+    new_sheet_name = st.text_input(
+        "اسم الشيت الجديد:",
+        placeholder="أدخل اسم الشيت الجديد (بدون مسافات، بالإنجليزية)",
+        key="new_sheet_name"
+    )
+    
+    # تحديد نوع الشيت
+    sheet_type = st.radio(
+        "نوع الشيت الجديد:",
+        ["شيت خدمات (CardX_Services)", "شيت أحداث (CardX)", "شيت بيانات عامة", "شيت مخصص"],
+        horizontal=True,
+        key="sheet_type"
+    )
+    
+    # تحديد عدد الأعمدة
+    num_columns = st.number_input(
+        "عدد الأعمدة الابتدائية:",
+        min_value=1,
+        max_value=20,
+        value=5,
+        step=1,
+        key="num_columns"
+    )
+    
+    # تحديد أسماء الأعمدة
+    st.markdown("### أسماء الأعمدة")
+    default_columns = []
+    
+    # أعمدة افتراضية حسب نوع الشيت
+    if sheet_type == "شيت خدمات (CardX_Services)":
+        default_columns = ["card", "Date", "Servised by", "Tones", "Min_Tones", "Max_Tones"]
+    elif sheet_type == "شيت أحداث (CardX)":
+        default_columns = ["card", "Date", "Event", "Correction", "Servised by", "Tones", "Images"]
+    elif sheet_type == "شيت بيانات عامة":
+        default_columns = ["ID", "Name", "Value", "Date", "Notes"]
+    else:
+        default_columns = [f"Column_{i+1}" for i in range(num_columns)]
+    
+    # إدخال أسماء الأعمدة
+    column_names = []
+    for i in range(num_columns):
+        default_name = default_columns[i] if i < len(default_columns) else f"Column_{i+1}"
+        col_name = st.text_input(
+            f"اسم العمود {i+1}:",
+            value=default_name,
+            key=f"col_name_{i}"
+        )
+        if col_name.strip():
+            column_names.append(col_name.strip())
+        else:
+            column_names.append(f"Column_{i+1}")
+    
+    # خيار نسخ بيانات من شيت موجود
+    copy_from_existing = st.checkbox(
+        "نسخ هيكل بيانات من شيت موجود",
+        value=False,
+        key="copy_from_existing"
+    )
+    
+    source_sheet_name = None
+    if copy_from_existing and len(sheets_edit) > 0:
+        source_sheet_name = st.selectbox(
+            "اختر الشيت المراد نسخ هيكله:",
+            list(sheets_edit.keys()),
+            key="source_sheet"
+        )
+    
+    # زر الإنشاء
+    if st.button("📝 إنشاء الشيت الجديد", type="primary", key="create_sheet_btn"):
+        if not new_sheet_name:
+            st.warning("⚠ الرجاء إدخال اسم للشيت الجديد.")
+            return
+        
+        # تحقق من أن الاسم لا يحتوي على مسافات
+        if " " in new_sheet_name:
+            st.warning("⚠ اسم الشيت يجب ألا يحتوي على مسافات. استخدم _ بدلاً من المسافات.")
+            return
+        
+        # تحقق من عدم وجود شيت بنفس الاسم
+        if new_sheet_name in sheets_edit:
+            st.error(f"❌ الشيت '{new_sheet_name}' موجود بالفعل.")
+            return
+        
+        # إنشاء DataFrame جديد
+        if copy_from_existing and source_sheet_name:
+            # نسخ هيكل الشيت الموجود
+            source_df = sheets_edit[source_sheet_name]
+            new_df = pd.DataFrame(columns=source_df.columns)
+            st.success(f"✅ تم نسخ هيكل الشيت '{source_sheet_name}'")
+        else:
+            # إنشاء DataFrame بالأعمدة المحددة
+            new_df = pd.DataFrame(columns=column_names)
+        
+        # إضافة شيت جديد
+        sheets_edit[new_sheet_name] = new_df
+        
+        # حفظ تلقائي في GitHub
+        new_sheets = auto_save_to_github(
+            sheets_edit,
+            f"إضافة شيت جديد: {new_sheet_name}"
+        )
+        
+        if new_sheets is not None:
+            sheets_edit = new_sheets
+            st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' بنجاح!")
+            
+            # عرض معاينة للشيت الجديد
+            with st.expander("📋 معاينة الشيت الجديد", expanded=True):
+                st.markdown(f"**اسم الشيت:** {new_sheet_name}")
+                st.markdown(f"**عدد الأعمدة:** {len(new_df.columns)}")
+                st.markdown(f"**عدد الصفوف:** {len(new_df)}")
+                
+                if len(new_df.columns) > 0:
+                    st.markdown("**الأعمدة:**")
+                    for i, col in enumerate(new_df.columns):
+                        st.write(f"{i+1}. {col}")
+                
+                # عرض البيانات الفارغة
+                st.markdown("**هيكل البيانات:**")
+                st.dataframe(new_df, use_container_width=True)
+            
+            st.rerun()
+        else:
+            st.error("❌ فشل إنشاء الشيت الجديد!")
+    
+    return sheets_edit
+
+# -------------------------------
 # 👥 إدارة المستخدمين (للمسؤولين فقط)
 # -------------------------------
 def manage_users():
@@ -3473,13 +3608,14 @@ if permissions["can_edit"] and len(tabs) > 2:
         if sheets_edit is None:
             st.warning("❗ الملف المحلي غير موجود. اضغط تحديث من GitHub في الشريط الجانبي أولًا.")
         else:
-            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
                 "عرض وتعديل شيت",
                 "إضافة صف جديد", 
                 "إضافة عمود جديد",
                 "➕ إضافة حدث جديد مع صور",
                 "✏ تعديل الحدث والصور",
-                "📷 إدارة الصور"
+                "📷 إدارة الصور",
+                "📄 إضافة شيت جديد"
             ])
 
             # Tab 1: تعديل بيانات وعرض
@@ -3638,3 +3774,7 @@ if permissions["can_edit"] and len(tabs) > 2:
                         st.info("ℹ️ لا توجد صور مخزنة بعد")
                 else:
                     st.warning(f"⚠ مجلد الصور {IMAGES_FOLDER} غير موجود")
+            
+            # Tab 7: إضافة شيت جديد
+            with tab7:
+                sheets_edit = add_new_sheet(sheets_edit)
