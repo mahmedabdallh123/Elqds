@@ -42,7 +42,10 @@ APP_CONFIG = {
     # إعدادات الصور
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp"],
-    "MAX_IMAGE_SIZE_MB": 5
+    "MAX_IMAGE_SIZE_MB": 5,
+    
+    # إعدادات الشيتات
+    "ALLOW_ANY_SHEET_NAME": True  # السماح بأي اسم للشيتات
 }
 
 # ===============================
@@ -649,41 +652,116 @@ def get_images_value(row):
     return ""
 
 # -------------------------------
-# 🖥 دالة فحص السيرفيس فقط - من الشيتات الجديدة
+# 🧠 دالة البحث في أي شيت بأي اسم
+# -------------------------------
+def find_sheet_by_name(all_sheets, sheet_name_pattern):
+    """البحث عن شيت بالاسم أو نمط من الأسماء"""
+    found_sheets = []
+    
+    for sheet_name in all_sheets.keys():
+        # البحث الحرفي
+        if sheet_name.lower() == sheet_name_pattern.lower():
+            return [sheet_name]
+        
+        # البحث بأي جزء من الاسم
+        if sheet_name_pattern.lower() in sheet_name.lower():
+            found_sheets.append(sheet_name)
+    
+    return found_sheets
+
+def find_sheets_by_card_number(all_sheets, card_num):
+    """البحث عن الشيتات التي تحتوي على رقم ماكينة معين بأي شكل"""
+    found_sheets = []
+    
+    # الأنماط المحتملة
+    patterns = [
+        f"Card{card_num}",
+        f"card{card_num}",
+        f"CARD{card_num}",
+        f"Machine{card_num}",
+        f"MACHINE{card_num}",
+        f"machine{card_num}",
+        f"ماكينة{card_num}",
+        f"ماكينه{card_num}",
+        f"الكارت{card_num}",
+        f"كارت{card_num}"
+    ]
+    
+    for sheet_name in all_sheets.keys():
+        for pattern in patterns:
+            if pattern.lower() in sheet_name.lower():
+                found_sheets.append(sheet_name)
+                break
+        
+        # أيضا البحث في محتوى الشيت نفسه
+        try:
+            df = all_sheets[sheet_name]
+            if not df.empty:
+                # البحث في الأعمدة
+                for col in df.columns:
+                    col_normalized = normalize_name(col)
+                    if "card" in col_normalized or "ماكينة" in col_normalized or "كارت" in col_normalized:
+                        # تحقق من وجود رقم الماكينة في العمود
+                        if any(str(card_num) in str(val) for val in df[col].astype(str).values):
+                            found_sheets.append(sheet_name)
+                            break
+        except:
+            continue
+    
+    # إزالة التكرارات
+    return list(set(found_sheets))
+
+# -------------------------------
+# 🖥 دالة فحص السيرفيس فقط - من الشيتات بأي اسم
 # -------------------------------
 def check_service_status(card_num, current_tons, all_sheets):
-    """فحص حالة السيرفيس فقط"""
+    """فحص حالة السيرفيس فقط من أي شيت بأي اسم"""
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
     
-    if "ServicePlan" not in all_sheets:
-        st.error("❌ الملف لا يحتوي على شيت ServicePlan.")
+    # البحث عن شيت ServicePlan بأي شكل
+    service_plan_sheets = find_sheet_by_name(all_sheets, "ServicePlan")
+    if not service_plan_sheets:
+        # محاولة البحث بأسماء أخرى
+        alternative_names = ["Service", "Services", "سيرفيس", "الخدمات", "خطط الخدمة"]
+        for name in alternative_names:
+            service_plan_sheets = find_sheet_by_name(all_sheets, name)
+            if service_plan_sheets:
+                break
+    
+    if not service_plan_sheets:
+        st.error("❌ لم يتم العثور على شيت الخدمات (ServicePlan أو ما شابه).")
         return
     
-    service_plan_df = all_sheets["ServicePlan"]
-    card_services_sheet_name = f"Card{card_num}_Services"
+    service_plan_df = all_sheets[service_plan_sheets[0]]
     
-    # إذا لم يكن هناك شيت خدمات منفصل، نبحث في الشيت القديم
-    if card_services_sheet_name not in all_sheets:
-        # محاولة البحث في الشيت القديم
-        card_old_sheet_name = f"Card{card_num}"
-        if card_old_sheet_name in all_sheets:
-            card_df = all_sheets[card_old_sheet_name]
-            # فلترة فقط الصفوف التي لها Min_Tones و Max_Tones
-            services_df = card_df[
-                (card_df.get("Min_Tones", pd.NA).notna()) & 
-                (card_df.get("Max_Tones", pd.NA).notna()) &
-                (card_df.get("Min_Tones", "") != "") & 
-                (card_df.get("Max_Tones", "") != "")
-            ].copy()
-        else:
-            st.warning(f"⚠ لا يوجد شيت باسم {card_services_sheet_name} أو {card_old_sheet_name}")
-            return
-    else:
-        card_df = all_sheets[card_services_sheet_name]
-        services_df = card_df.copy()
-
+    # البحث عن شيت خدمات الماكينة بأي اسم
+    machine_service_sheets = find_sheets_by_card_number(all_sheets, card_num)
+    
+    if not machine_service_sheets:
+        st.warning(f"⚠ لم يتم العثور على شيت لرقم الماكينة {card_num}")
+        return
+    
+    # استخدام أول شيت وجدناه
+    card_df = all_sheets[machine_service_sheets[0]]
+    
+    # فلترة فقط الصفوف التي لها Min_Tones و Max_Tones
+    # البحث عن أعمدة الأطنان بأي شكل
+    min_tone_cols = [col for col in card_df.columns if "min" in normalize_name(col) and "ton" in normalize_name(col)]
+    max_tone_cols = [col for col in card_df.columns if "max" in normalize_name(col) and "ton" in normalize_name(col)]
+    
+    services_df = card_df.copy()
+    if min_tone_cols and max_tone_cols:
+        min_col = min_tone_cols[0]
+        max_col = max_tone_cols[0]
+        services_df = services_df[
+            (services_df[min_col].notna()) & 
+            (services_df[max_col].notna()) &
+            (services_df[min_col].astype(str).str.strip() != "") & 
+            (services_df[max_col].astype(str).str.strip() != "")
+        ].copy()
+    
     st.subheader("⚙ نطاق العرض")
     view_option = st.radio(
         "اختر نطاق العرض:",
@@ -702,14 +780,25 @@ def check_service_status(card_num, current_tons, all_sheets):
             max_range = st.number_input("إلى (طن):", min_value=min_range, step=100, value=max_range, key=f"service_max_range_{card_num}")
 
     # اختيار الشرائح
+    # البحث عن أعمدة الأطنان في شيت ServicePlan
+    service_min_cols = [col for col in service_plan_df.columns if "min" in normalize_name(col) and "ton" in normalize_name(col)]
+    service_max_cols = [col for col in service_plan_df.columns if "max" in normalize_name(col) and "ton" in normalize_name(col)]
+    
+    if not service_min_cols or not service_max_cols:
+        st.error("❌ لم يتم العثور على أعمدة Min_Tones و Max_Tones في شيت الخدمات.")
+        return
+    
+    service_min_col = service_min_cols[0]
+    service_max_col = service_max_cols[0]
+    
     if view_option == "الشريحة الحالية فقط":
-        selected_slices = service_plan_df[(service_plan_df["Min_Tones"] <= current_tons) & (service_plan_df["Max_Tones"] >= current_tons)]
+        selected_slices = service_plan_df[(service_plan_df[service_min_col] <= current_tons) & (service_plan_df[service_max_col] >= current_tons)]
     elif view_option == "كل الشرائح الأقل":
-        selected_slices = service_plan_df[service_plan_df["Max_Tones"] <= current_tons]
+        selected_slices = service_plan_df[service_plan_df[service_max_col] <= current_tons]
     elif view_option == "كل الشرائح الأعلى":
-        selected_slices = service_plan_df[service_plan_df["Min_Tones"] >= current_tons]
+        selected_slices = service_plan_df[service_plan_df[service_min_col] >= current_tons]
     elif view_option == "نطاق مخصص":
-        selected_slices = service_plan_df[(service_plan_df["Min_Tones"] >= min_range) & (service_plan_df["Max_Tones"] <= max_range)]
+        selected_slices = service_plan_df[(service_plan_df[service_min_col] >= min_range) & (service_plan_df[service_max_col] <= max_range)]
     else:
         selected_slices = service_plan_df.copy()
 
@@ -726,12 +815,16 @@ def check_service_status(card_num, current_tons, all_sheets):
         "by_slice": {}  # إحصائيات حسب الشريحة
     }
     
+    # البحث عن عمود الخدمات في ServicePlan
+    service_cols = [col for col in service_plan_df.columns if "service" in normalize_name(col) or "خدم" in normalize_name(col)]
+    service_col = service_cols[0] if service_cols else "Service"
+    
     for _, current_slice in selected_slices.iterrows():
-        slice_min = current_slice["Min_Tones"]
-        slice_max = current_slice["Max_Tones"]
+        slice_min = current_slice[service_min_col]
+        slice_max = current_slice[service_max_col]
         slice_key = f"{slice_min}-{slice_max}"
         
-        needed_service_raw = current_slice.get("Service", "")
+        needed_service_raw = current_slice.get(service_col, "")
         needed_parts = split_needed_services(needed_service_raw)
         needed_norm = [normalize_name(p) for p in needed_parts]
         
@@ -749,7 +842,7 @@ def check_service_status(card_num, current_tons, all_sheets):
         service_stats["total_needed_services"] += len(needed_parts)
 
         # البحث في خدمات الماكينة
-        mask = (services_df.get("Min_Tones", 0).fillna(0) <= slice_max) & (services_df.get("Max_Tones", 0).fillna(0) >= slice_min)
+        mask = (services_df.get(service_min_col, 0).fillna(0) <= slice_max) & (services_df.get(service_max_col, 0).fillna(0) >= slice_min)
         matching_rows = services_df[mask]
 
         if not matching_rows.empty:
@@ -758,15 +851,18 @@ def check_service_status(card_num, current_tons, all_sheets):
                 
                 # تحديد الأعمدة التي تحتوي على خدمات منجزة (استبعاد أعمدة البيانات الوصفية)
                 metadata_columns = {
-                    "card", "Tones", "Min_Tones", "Max_Tones", "Date", 
-                    "Other", "Servised by", "Event", "Correction", "Images",
-                    "Card", "TONES", "MIN_TONES", "MAX_TONES", "DATE",
-                    "OTHER", "EVENT", "CORRECTION", "SERVISED BY", "IMAGES",
-                    "servised by", "Servised By", 
-                    "Serviced by", "Service by", "Serviced By", "Service By",
+                    "card", "Tones", "Date", "Other", "Event", "Correction", "Images",
+                    "Card", "TONES", "DATE", "OTHER", "EVENT", "CORRECTION", "IMAGES",
+                    "servised by", "Servised By", "Serviced by", "Service by",
                     "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة",
                     "صور", "الصور", "مرفقات", "المرفقات"
                 }
+                
+                # إضافة أعمدة الأطنان
+                if min_tone_cols:
+                    metadata_columns.add(min_tone_cols[0])
+                if max_tone_cols:
+                    metadata_columns.add(max_tone_cols[0])
                 
                 all_columns = set(services_df.columns)
                 service_columns = all_columns - metadata_columns
@@ -788,8 +884,15 @@ def check_service_status(card_num, current_tons, all_sheets):
                             service_stats["total_done_services"] += 1
 
                 # جمع بيانات السيرفيس فقط
-                current_date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
-                current_tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
+                # البحث عن عمود التاريخ
+                date_cols = [col for col in row.index if "date" in normalize_name(col) or "تاريخ" in normalize_name(col)]
+                date_col = date_cols[0] if date_cols else "Date"
+                current_date = str(row.get(date_col, "")).strip() if pd.notna(row.get(date_col)) else "-"
+                
+                # البحث عن عمود الأطنان
+                tone_cols = [col for col in row.index if "ton" in normalize_name(col) and not ("min" in normalize_name(col) or "max" in normalize_name(col))]
+                tone_col = tone_cols[0] if tone_cols else "Tones"
+                current_tones = str(row.get(tone_col, "")).strip() if pd.notna(row.get(tone_col)) else "-"
                 
                 # البحث عن فني الخدمة
                 servised_by_value = get_servised_by_value(row)
@@ -1224,7 +1327,7 @@ def check_events_and_corrections(all_sheets):
                 
                 # قسم التواريخ
                 with st.expander("📅 **التواريخ**", expanded=True):
-                    st.caption("ابحق بالتاريخ (سنة، شهر/سنة)")
+                    st.caption("ابحث بالتاريخ (سنة، شهر/سنة)")
                     date_input = st.text_input(
                         "مثال: 2024 أو 1/2024 أو 2024,2025",
                         value=st.session_state.search_params.get("date_range", ""),
@@ -1598,11 +1701,6 @@ def show_advanced_search_results_with_duration(search_params, all_sheets):
     total_machines = 0
     processed_machines = 0
     
-    # حساب إجمالي عدد الماكينات
-    for sheet_name in all_sheets.keys():
-        if sheet_name != "ServicePlan" and sheet_name.startswith("Card"):
-            total_machines += 1
-    
     # معالجة أرقام الماكينات المطلوبة
     target_card_numbers = parse_card_numbers(search_params["card_numbers"])
     
@@ -1626,30 +1724,29 @@ def show_advanced_search_results_with_duration(search_params, all_sheets):
     
     # البحث في جميع الشيتات
     for sheet_name in all_sheets.keys():
-        if sheet_name == "ServicePlan":
-            continue
-        
-        # استخراج رقم الماكينة
-        card_num_match = re.search(r'Card(\d+)', sheet_name)
-        if not card_num_match:
-            continue
-            
-        card_num = int(card_num_match.group(1))
-        
-        # التحقق من رقم الماكينة إذا كان هناك تحديد
-        if target_card_numbers and card_num not in target_card_numbers:
+        # تخطي شيت ServicePlan (إن وجد)
+        if normalize_name(sheet_name) in ["serviceplan", "service", "services"]:
             continue
         
         processed_machines += 1
-        if total_machines > 0:
-            progress_bar.progress(processed_machines / total_machines)
-        status_text.text(f"🔍 جاري معالجة الماكينة {card_num}...")
+        if len(all_sheets) > 0:
+            progress_bar.progress(processed_machines / len(all_sheets))
         
         df = all_sheets[sheet_name].copy()
         
         # البحث في الصفوف
         for _, row in df.iterrows():
-            # تطبيق معايير البحث
+            # استخراج رقم الماكينة من الصف
+            card_num = extract_card_number_from_row(row, sheet_name)
+            
+            if card_num is None:
+                continue
+            
+            # التحقق من رقم الماكينة إذا كان هناك تحديد
+            if target_card_numbers and card_num not in target_card_numbers:
+                continue
+            
+            # تطبيق معايير البحث الأخرى
             if not check_row_criteria(row, df, card_num, target_techs, target_dates, 
                                      search_terms, search_params):
                 continue
@@ -1669,6 +1766,29 @@ def show_advanced_search_results_with_duration(search_params, all_sheets):
     else:
         st.warning("⚠ لم يتم العثور على نتائج تطابق معايير البحث")
         st.info("💡 حاول تعديل معايير البحث أو استخدام مصطلحات أوسع")
+
+def extract_card_number_from_row(row, sheet_name):
+    """استخراج رقم الماكينة من الصف أو اسم الشيت"""
+    # أولاً: البحث في أعمدة الصف
+    card_columns = [col for col in row.index if "card" in normalize_name(col) or "ماكينة" in normalize_name(col) or "كارت" in normalize_name(col)]
+    
+    for col in card_columns:
+        value = str(row[col]).strip()
+        if value and value.lower() not in ["nan", "none", ""]:
+            try:
+                # محاولة استخراج رقم من القيمة
+                numbers = re.findall(r'\d+', value)
+                if numbers:
+                    return int(numbers[0])
+            except:
+                continue
+    
+    # ثانياً: البحث في اسم الشيت
+    sheet_numbers = re.findall(r'\d+', sheet_name)
+    if sheet_numbers:
+        return int(sheet_numbers[0])
+    
+    return None
 
 def display_search_results_with_duration(results, search_params):
     """عرض نتائج البحث مع خاصية حساب المدة"""
@@ -2331,7 +2451,7 @@ def extract_event_correction(row, df):
 
 def extract_row_data(row, df, card_num):
     """استخراج بيانات الصف"""
-    card_num_value = str(row.get("card", "")).strip() if pd.notna(row.get("card")) else str(card_num)
+    card_num_value = str(card_num)
     date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
     tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
     
@@ -2702,6 +2822,155 @@ def edit_events_and_corrections(sheets_edit):
                 st.rerun()
 
 # -------------------------------
+# 🆕 دالة إضافة شيت جديد بأي اسم
+# -------------------------------
+def add_new_sheet(sheets_edit):
+    """إضافة شيت جديد بأي اسم"""
+    st.subheader("🆕 إضافة شيت جديد")
+    
+    st.markdown("### إضافة شيت جديد بأي اسم")
+    st.info("يمكنك إضافة شيت بأي اسم تريده، ويمكن البحث فيه لاحقاً بأي شكل")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        new_sheet_name = st.text_input("اسم الشيت الجديد:", 
+                                      placeholder="أدخل أي اسم للشيت",
+                                      key="new_sheet_name_input")
+        
+        # اقتراح أسماء
+        st.caption("أو اختر من الأسماء المقترحة:")
+        suggested_names = st.columns(3)
+        with suggested_names[0]:
+            if st.button("📊 تقرير 2025", key="suggest_report"):
+                st.session_state.new_sheet_name_input = "تقرير 2025"
+                st.rerun()
+        with suggested_names[1]:
+            if st.button("🔧 صيانة جديدة", key="suggest_maintenance"):
+                st.session_state.new_sheet_name_input = "صيانة جديدة"
+                st.rerun()
+        with suggested_names[2]:
+            if st.button("📈 إحصائيات", key="suggest_stats"):
+                st.session_state.new_sheet_name_input = "إحصائيات"
+                st.rerun()
+    
+    with col2:
+        # خيارات الشيت الجديد
+        st.markdown("**خيارات الشيت الجديد:**")
+        
+        create_with_template = st.checkbox("إنشاء بنموذج قياسي", value=True, 
+                                          key="create_with_template")
+        
+        if create_with_template:
+            template_type = st.selectbox("نموذج الشيت:",
+                                       ["ماكينة جديدة", "سجل أحداث", "سجل خدمات", "جدول بيانات عام"],
+                                       key="sheet_template")
+        
+        num_initial_rows = st.number_input("عدد الصفوف الابتدائية:", 
+                                          min_value=1, max_value=100, value=10,
+                                          key="initial_rows")
+    
+    # تحديد الأعمدة الافتراضية
+    if create_with_template:
+        if template_type == "ماكينة جديدة":
+            default_columns = ["Card", "Date", "Event", "Correction", "Servised by", "Tones", "Notes"]
+        elif template_type == "سجل أحداث":
+            default_columns = ["Event_ID", "Date", "Machine_Number", "Event_Type", "Description", "Technician", "Status"]
+        elif template_type == "سجل خدمات":
+            default_columns = ["Service_ID", "Date", "Machine_Number", "Service_Type", "Details", "Technician", "Cost", "Status"]
+        else:  # جدول بيانات عام
+            default_columns = ["ID", "Date", "Description", "Value", "Category", "Notes"]
+    else:
+        default_columns = ["Column1", "Column2", "Column3", "Column4", "Column5"]
+    
+    # تعديل الأعمدة
+    st.markdown("### ✏ تعديل أعمدة الشيت الجديد")
+    columns_data = []
+    
+    for i in range(len(default_columns)):
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            col_name = st.text_input(f"اسم العمود {i+1}:", 
+                                    value=default_columns[i] if i < len(default_columns) else f"Column{i+1}",
+                                    key=f"col_name_{i}")
+        with col2:
+            col_type = st.selectbox("نوع البيانات:", 
+                                   ["نص", "رقم", "تاريخ", "ملاحظات"],
+                                   key=f"col_type_{i}")
+        columns_data.append({"name": col_name, "type": col_type})
+    
+    # إضافة أعمدة إضافية
+    if st.button("➕ إضافة عمود جديد", key="add_more_columns"):
+        if "extra_columns" not in st.session_state:
+            st.session_state.extra_columns = 0
+        st.session_state.extra_columns += 1
+        st.rerun()
+    
+    # معالجة الأعمدة الإضافية
+    if "extra_columns" in st.session_state and st.session_state.extra_columns > 0:
+        for i in range(st.session_state.extra_columns):
+            extra_idx = len(default_columns) + i
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                col_name = st.text_input(f"اسم العمود الإضافي {i+1}:", 
+                                        value=f"Extra_Column_{i+1}",
+                                        key=f"extra_col_name_{i}")
+            with col2:
+                col_type = st.selectbox("نوع البيانات:", 
+                                       ["نص", "رقم", "تاريخ", "ملاحظات"],
+                                       key=f"extra_col_type_{i}")
+            columns_data.append({"name": col_name, "type": col_type})
+    
+    if st.button("🆕 إنشاء الشيت الجديد", type="primary", key="create_new_sheet_btn"):
+        if not new_sheet_name.strip():
+            st.warning("⚠ الرجاء إدخال اسم للشيت الجديد.")
+            return
+        
+        if new_sheet_name in sheets_edit:
+            st.error(f"❌ الشيت '{new_sheet_name}' موجود بالفعل.")
+            return
+        
+        # إنشاء DataFrame جديد
+        column_names = [col["name"] for col in columns_data]
+        
+        # إنشاء بيانات أولية
+        initial_data = {}
+        for i, col_name in enumerate(column_names):
+            col_type = columns_data[i]["type"]
+            if col_type == "رقم":
+                initial_data[col_name] = [0] * num_initial_rows
+            elif col_type == "تاريخ":
+                initial_data[col_name] = [datetime.now().strftime("%d/%m/%Y")] * num_initial_rows
+            else:
+                initial_data[col_name] = [""] * num_initial_rows
+        
+        new_df = pd.DataFrame(initial_data)
+        sheets_edit[new_sheet_name] = new_df.astype(object)
+        
+        # حفظ تلقائي في GitHub
+        new_sheets = auto_save_to_github(
+            sheets_edit,
+            f"إضافة شيت جديد: {new_sheet_name}"
+        )
+        
+        if new_sheets is not None:
+            sheets_edit = new_sheets
+            st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' بنجاح!")
+            st.info(f"📊 يحتوي الشيت على {len(column_names)} أعمدة و {num_initial_rows} صف")
+            
+            # عرض معاينة للشيت الجديد
+            with st.expander("👁️ معاينة الشيت الجديد", expanded=True):
+                st.dataframe(new_df.head(5), use_container_width=True)
+            
+            # مسح الحقول
+            if "extra_columns" in st.session_state:
+                del st.session_state.extra_columns
+            
+            st.rerun()
+        else:
+            st.error("❌ فشل إنشاء الشيت الجديد.")
+
+# -------------------------------
 # 🖥 دالة تعديل الشيت مع زر حفظ يدوي
 # -------------------------------
 def edit_sheet_with_save_button(sheets_edit):
@@ -2822,141 +3091,6 @@ def edit_sheet_with_save_button(sheets_edit):
         # زر لإعادة تحميل البيانات
         if st.button("🔄 تحديث البيانات", key=f"refresh_{sheet_name}"):
             st.rerun()
-    
-    return sheets_edit
-
-# -------------------------------
-# 🖥 دالة إضافة شيت جديد
-# -------------------------------
-def add_new_sheet(sheets_edit):
-    """إضافة شيت جديد إلى ملف Excel"""
-    st.subheader("📄 إضافة شيت جديد")
-    
-    # إدخال اسم الشيت الجديد
-    new_sheet_name = st.text_input(
-        "اسم الشيت الجديد:",
-        placeholder="أدخل اسم الشيت الجديد (بدون مسافات، بالإنجليزية)",
-        key="new_sheet_name"
-    )
-    
-    # تحديد نوع الشيت
-    sheet_type = st.radio(
-        "نوع الشيت الجديد:",
-        ["شيت خدمات (CardX_Services)", "شيت أحداث (CardX)", "شيت بيانات عامة", "شيت مخصص"],
-        horizontal=True,
-        key="sheet_type"
-    )
-    
-    # تحديد عدد الأعمدة
-    num_columns = st.number_input(
-        "عدد الأعمدة الابتدائية:",
-        min_value=1,
-        max_value=20,
-        value=5,
-        step=1,
-        key="num_columns"
-    )
-    
-    # تحديد أسماء الأعمدة
-    st.markdown("### أسماء الأعمدة")
-    default_columns = []
-    
-    # أعمدة افتراضية حسب نوع الشيت
-    if sheet_type == "شيت خدمات (CardX_Services)":
-        default_columns = ["card", "Date", "Servised by", "Tones", "Min_Tones", "Max_Tones"]
-    elif sheet_type == "شيت أحداث (CardX)":
-        default_columns = ["card", "Date", "Event", "Correction", "Servised by", "Tones", "Images"]
-    elif sheet_type == "شيت بيانات عامة":
-        default_columns = ["ID", "Name", "Value", "Date", "Notes"]
-    else:
-        default_columns = [f"Column_{i+1}" for i in range(num_columns)]
-    
-    # إدخال أسماء الأعمدة
-    column_names = []
-    for i in range(num_columns):
-        default_name = default_columns[i] if i < len(default_columns) else f"Column_{i+1}"
-        col_name = st.text_input(
-            f"اسم العمود {i+1}:",
-            value=default_name,
-            key=f"col_name_{i}"
-        )
-        if col_name.strip():
-            column_names.append(col_name.strip())
-        else:
-            column_names.append(f"Column_{i+1}")
-    
-    # خيار نسخ بيانات من شيت موجود
-    copy_from_existing = st.checkbox(
-        "نسخ هيكل بيانات من شيت موجود",
-        value=False,
-        key="copy_from_existing"
-    )
-    
-    source_sheet_name = None
-    if copy_from_existing and len(sheets_edit) > 0:
-        source_sheet_name = st.selectbox(
-            "اختر الشيت المراد نسخ هيكله:",
-            list(sheets_edit.keys()),
-            key="source_sheet"
-        )
-    
-    # زر الإنشاء
-    if st.button("📝 إنشاء الشيت الجديد", type="primary", key="create_sheet_btn"):
-        if not new_sheet_name:
-            st.warning("⚠ الرجاء إدخال اسم للشيت الجديد.")
-            return
-        
-        # تحقق من أن الاسم لا يحتوي على مسافات
-        if " " in new_sheet_name:
-            st.warning("⚠ اسم الشيت يجب ألا يحتوي على مسافات. استخدم _ بدلاً من المسافات.")
-            return
-        
-        # تحقق من عدم وجود شيت بنفس الاسم
-        if new_sheet_name in sheets_edit:
-            st.error(f"❌ الشيت '{new_sheet_name}' موجود بالفعل.")
-            return
-        
-        # إنشاء DataFrame جديد
-        if copy_from_existing and source_sheet_name:
-            # نسخ هيكل الشيت الموجود
-            source_df = sheets_edit[source_sheet_name]
-            new_df = pd.DataFrame(columns=source_df.columns)
-            st.success(f"✅ تم نسخ هيكل الشيت '{source_sheet_name}'")
-        else:
-            # إنشاء DataFrame بالأعمدة المحددة
-            new_df = pd.DataFrame(columns=column_names)
-        
-        # إضافة شيت جديد
-        sheets_edit[new_sheet_name] = new_df
-        
-        # حفظ تلقائي في GitHub
-        new_sheets = auto_save_to_github(
-            sheets_edit,
-            f"إضافة شيت جديد: {new_sheet_name}"
-        )
-        
-        if new_sheets is not None:
-            sheets_edit = new_sheets
-            st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' بنجاح!")
-            
-            # عرض معاينة للشيت الجديد
-            with st.expander("📋 معاينة الشيت الجديد", expanded=True):
-                st.markdown(f"**اسم الشيت:** {new_sheet_name}")
-                st.markdown(f"**عدد الأعمدة:** {len(new_df.columns)}")
-                st.markdown(f"**عدد الصفوف:** {len(new_df)}")
-                
-                if len(new_df.columns) > 0:
-                    st.markdown("**الأعمدة:**")
-                    for i, col in enumerate(new_df.columns):
-                        st.write(f"{i+1}. {col}")
-                
-                # عرض البيانات الفارغة
-                st.markdown("**هيكل البيانات:**")
-                st.dataframe(new_df, use_container_width=True)
-            
-            st.rerun()
-        else:
-            st.error("❌ فشل إنشاء الشيت الجديد!")
     
     return sheets_edit
 
@@ -3612,10 +3746,10 @@ if permissions["can_edit"] and len(tabs) > 2:
                 "عرض وتعديل شيت",
                 "إضافة صف جديد", 
                 "إضافة عمود جديد",
+                "🆕 إضافة شيت جديد",
                 "➕ إضافة حدث جديد مع صور",
                 "✏ تعديل الحدث والصور",
-                "📷 إدارة الصور",
-                "📄 إضافة شيت جديد"
+                "📷 إدارة الصور"
             ])
 
             # Tab 1: تعديل بيانات وعرض
@@ -3695,16 +3829,20 @@ if permissions["can_edit"] and len(tabs) > 2:
                     if st.button("🗑 مسح", key=f"clear_col_{sheet_name_col}"):
                         st.rerun()
 
-            # Tab 4: إضافة إيفينت جديد مع صور
+            # Tab 4: إضافة شيت جديد بأي اسم
             with tab4:
+                add_new_sheet(sheets_edit)
+
+            # Tab 5: إضافة إيفينت جديد مع صور
+            with tab5:
                 add_new_event(sheets_edit)
 
-            # Tab 5: تعديل الإيفينت والكوريكشن والصور
-            with tab5:
+            # Tab 6: تعديل الإيفينت والكوريكشن والصور
+            with tab6:
                 edit_events_and_corrections(sheets_edit)
             
-            # Tab 6: إدارة الصور
-            with tab6:
+            # Tab 7: إدارة الصور
+            with tab7:
                 st.subheader("📷 إدارة الصور المخزنة")
                 
                 if os.path.exists(IMAGES_FOLDER):
@@ -3774,7 +3912,3 @@ if permissions["can_edit"] and len(tabs) > 2:
                         st.info("ℹ️ لا توجد صور مخزنة بعد")
                 else:
                     st.warning(f"⚠ مجلد الصور {IMAGES_FOLDER} غير موجود")
-            
-            # Tab 7: إضافة شيت جديد
-            with tab7:
-                sheets_edit = add_new_sheet(sheets_edit)
