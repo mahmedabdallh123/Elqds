@@ -53,12 +53,136 @@ APP_CONFIG = {
 # ===============================
 USERS_FILE = "users.json"
 STATE_FILE = "state.json"
+NOTIFICATIONS_FILE = "notifications.json"  # ملف جديد للإشعارات
 SESSION_DURATION = timedelta(minutes=APP_CONFIG["SESSION_DURATION_MINUTES"])
 MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
 
 # إنشاء رابط GitHub تلقائياً من الإعدادات
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
+
+# -------------------------------
+# 🔔 دوال جديدة للإشعارات
+# -------------------------------
+def load_notifications():
+    """تحميل الإشعارات من ملف"""
+    if not os.path.exists(NOTIFICATIONS_FILE):
+        with open(NOTIFICATIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump([], f, indent=4, ensure_ascii=False)
+        return []
+    
+    try:
+        with open(NOTIFICATIONS_FILE, "r", encoding="utf-8") as f:
+            notifications = json.load(f)
+        return notifications
+    except Exception as e:
+        st.error(f"❌ خطأ في تحميل الإشعارات: {e}")
+        return []
+
+def save_notifications(notifications):
+    """حفظ الإشعارات إلى ملف"""
+    try:
+        with open(NOTIFICATIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(notifications, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        st.error(f"❌ خطأ في حفظ الإشعارات: {e}")
+        return False
+
+def add_notification(username, action, details, target_sheet=None, target_row=None):
+    """إضافة إشعار جديد"""
+    notifications = load_notifications()
+    
+    new_notification = {
+        "id": str(uuid.uuid4()),
+        "username": username,
+        "action": action,
+        "details": details,
+        "target_sheet": target_sheet,
+        "target_row": target_row,
+        "timestamp": datetime.now().isoformat(),
+        "read_by_admin": False
+    }
+    
+    notifications.insert(0, new_notification)  # إضافة في البداية
+    save_notifications(notifications)
+    return new_notification
+
+def mark_notifications_as_read():
+    """تحديد الإشعارات كمقروءة"""
+    notifications = load_notifications()
+    for notification in notifications:
+        notification["read_by_admin"] = True
+    save_notifications(notifications)
+
+def clear_all_notifications():
+    """حذف جميع الإشعارات"""
+    save_notifications([])
+
+def show_notifications_ui():
+    """عرض واجهة الإشعارات"""
+    if st.session_state.get("user_role") != "admin":
+        return
+    
+    notifications = load_notifications()
+    unread_count = sum(1 for n in notifications if not n.get("read_by_admin", False))
+    
+    with st.sidebar:
+        st.markdown("---")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown(f"### 🔔 الإشعارات")
+        with col2:
+            if unread_count > 0:
+                st.markdown(f"<span style='color:red; font-weight:bold;'>{unread_count} جديد</span>", unsafe_allow_html=True)
+        
+        if notifications:
+            # زر لتصفية الإشعارات
+            filter_option = st.selectbox(
+                "تصفية الإشعارات:",
+                ["جميع الإشعارات", "غير المقروءة فقط", "المقروءة فقط"],
+                key="notifications_filter"
+            )
+            
+            # تطبيق التصفية
+            if filter_option == "غير المقروءة فقط":
+                filtered_notifications = [n for n in notifications if not n.get("read_by_admin", False)]
+            elif filter_option == "المقروءة فقط":
+                filtered_notifications = [n for n in notifications if n.get("read_by_admin", False)]
+            else:
+                filtered_notifications = notifications
+            
+            # عرض الإشعارات
+            for i, notification in enumerate(filtered_notifications[:10]):  # عرض أول 10 إشعارات
+                with st.expander(f"{notification['action']} - {notification['username']}", expanded=(i < 3 and not notification.get('read_by_admin', False))):
+                    st.markdown(f"**المستخدم:** {notification['username']}")
+                    st.markdown(f"**الإجراء:** {notification['action']}")
+                    st.markdown(f"**التفاصيل:** {notification['details']}")
+                    if notification.get('target_sheet'):
+                        st.markdown(f"**الشيت:** {notification['target_sheet']}")
+                    st.markdown(f"**الوقت:** {datetime.fromisoformat(notification['timestamp']).strftime('%Y-%m-%d %H:%M:%S')}")
+                    
+                    if not notification.get('read_by_admin', False):
+                        if st.button("✅ تحديد كمقروء", key=f"mark_read_{notification['id']}"):
+                            notification['read_by_admin'] = True
+                            save_notifications(notifications)
+                            st.rerun()
+            
+            # أزرار التحكم
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("✅ تحديد الكل كمقروء", key="mark_all_read"):
+                    mark_notifications_as_read()
+                    st.rerun()
+            with col_btn2:
+                if st.button("🗑️ حذف جميع الإشعارات", key="clear_all_notifs"):
+                    clear_all_notifications()
+                    st.rerun()
+            
+            if len(filtered_notifications) > 10:
+                st.caption(f"... و {len(filtered_notifications) - 10} إشعارات أخرى")
+        else:
+            st.info("📭 لا توجد إشعارات جديدة")
 
 # -------------------------------
 # 🧩 دوال مساعدة للصور
@@ -70,7 +194,6 @@ def setup_images_folder():
         # إنشاء ملف .gitkeep لجعل المجلد فارغاً في GitHub
         with open(os.path.join(IMAGES_FOLDER, ".gitkeep"), "w") as f:
             pass
-        st.info(f"📁 تم إنشاء مجلد الصور: {IMAGES_FOLDER}")
 
 def save_uploaded_images(uploaded_files):
     """حفظ الصور المرفوعة وإرجاع أسماء الملفات"""
@@ -528,6 +651,15 @@ def auto_save_to_github(sheets_dict, operation_description):
     username = st.session_state.get("username", "unknown")
     commit_message = f"{operation_description} by {username} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     
+    # إضافة إشعار للإدارة إذا كان المستخدم ليس أدمن
+    if st.session_state.get("user_role") != "admin":
+        add_notification(
+            username=username,
+            action="تعديل بيانات",
+            details=operation_description,
+            target_sheet=operation_description
+        )
+    
     result = save_local_excel_and_push(sheets_dict, commit_message)
     if result is not None:
         st.success("✅ تم حفظ التغييرات تلقائياً في GitHub")
@@ -578,7 +710,9 @@ def get_user_permissions(user_role, user_permissions):
             "can_view": True,
             "can_edit": True,
             "can_manage_users": True,
-            "can_see_tech_support": True
+            "can_see_tech_support": True,
+            "can_export_data": True,
+            "can_see_notifications": True
         }
     
     # إذا كان الدور editor
@@ -587,7 +721,9 @@ def get_user_permissions(user_role, user_permissions):
             "can_view": True,
             "can_edit": True,
             "can_manage_users": False,
-            "can_see_tech_support": False
+            "can_see_tech_support": False,
+            "can_export_data": False,  # لا يمكن التصدير للمحررين
+            "can_see_notifications": False
         }
     
     # إذا كان الدور viewer أو أي دور آخر
@@ -597,7 +733,9 @@ def get_user_permissions(user_role, user_permissions):
             "can_view": "view" in user_permissions or "edit" in user_permissions or "all" in user_permissions,
             "can_edit": "edit" in user_permissions or "all" in user_permissions,
             "can_manage_users": "manage_users" in user_permissions or "all" in user_permissions,
-            "can_see_tech_support": "tech_support" in user_permissions or "all" in user_permissions
+            "can_see_tech_support": "tech_support" in user_permissions or "all" in user_permissions,
+            "can_export_data": "export" in user_permissions or "all" in user_permissions,
+            "can_see_notifications": False  # فقط الأدمن يرى الإشعارات
         }
 
 def get_servised_by_value(row):
@@ -961,15 +1099,21 @@ def check_service_status(card_num, current_tons, all_sheets):
                 if images_value and images_value != "-":
                     display_images(images_value, f"📷 صور للحدث #{idx+1}")
 
-        # تنزيل النتائج
-        buffer = io.BytesIO()
-        result_df.to_excel(buffer, index=False, engine="openpyxl")
-        st.download_button(
-            label="💾 حفظ النتائج كـ Excel",
-            data=buffer.getvalue(),
-            file_name=f"Service_Report_Card{card_num}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        # تنزيل النتائج (فقط للادمن)
+        permissions = get_user_permissions(st.session_state.get("user_role", "viewer"), 
+                                         st.session_state.get("user_permissions", ["view"]))
+        
+        if permissions["can_export_data"]:
+            buffer = io.BytesIO()
+            result_df.to_excel(buffer, index=False, engine="openpyxl")
+            st.download_button(
+                label="💾 حفظ النتائج كـ Excel (للادمن فقط)",
+                data=buffer.getvalue(),
+                file_name=f"Service_Report_Card{card_num}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.info("⛔ صلاحية التصدير متاحة فقط للمسؤولين")
     else:
         st.info("ℹ️ لا توجد خدمات مسجلة لهذه الماكينة.")
 
@@ -2078,105 +2222,112 @@ def display_search_results_with_duration(results, search_params):
     st.markdown("---")
     st.markdown("### 💾 خيارات التصدير")
     
-    export_col1, export_col2, export_col3 = st.columns(3)
+    # التحقق من صلاحية التصدير
+    permissions = get_user_permissions(st.session_state.get("user_role", "viewer"), 
+                                     st.session_state.get("user_permissions", ["view"]))
     
-    with export_col1:
-        # تصدير Excel
-        if not result_df.empty:
-            buffer_excel = io.BytesIO()
-            
-            export_df = result_df.copy()
-            
-            # إضافة أعمدة التنظيف للترتيب
-            export_df['Card_Number_Clean_Export'] = pd.to_numeric(export_df['Card Number'], errors='coerce')
-            export_df['Date_Clean_Export'] = pd.to_datetime(export_df['Date'], errors='coerce', dayfirst=True)
-            
-            # ترتيب البيانات
-            export_df = export_df.sort_values(by=['Card_Number_Clean_Export', 'Date_Clean_Export'], 
-                                             ascending=[True, False], na_position='last')
-            
-            # إزالة الأعمدة المؤقتة
-            export_df = export_df.drop(['Card_Number_Clean_Export', 'Date_Clean_Export'], axis=1, errors='ignore')
-            
-            # حفظ الملف
-            export_df.to_excel(buffer_excel, index=False, engine="openpyxl")
-            
-            st.download_button(
-                label="📊 حفظ كملف Excel",
-                data=buffer_excel.getvalue(),
-                file_name=f"بحث_أحداث_مرتب_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        else:
-            st.info("⚠ لا توجد بيانات للتصدير")
-    
-    with export_col2:
-        # تصدير CSV
-        if not result_df.empty:
-            buffer_csv = io.BytesIO()
-            
-            export_csv = result_df.copy()
-            
-            # إضافة أعمدة التنظيف للترتيب
-            export_csv['Card_Number_Clean_Export'] = pd.to_numeric(export_csv['Card Number'], errors='coerce')
-            export_csv['Date_Clean_Export'] = pd.to_datetime(export_csv['Date'], errors='coerce', dayfirst=True)
-            
-            # ترتيب البيانات
-            export_csv = export_csv.sort_values(by=['Card_Number_Clean_Export', 'Date_Clean_Export'], 
-                                               ascending=[True, False], na_position='last')
-            
-            # إزالة الأعمدة المؤقتة
-            export_csv = export_csv.drop(['Card_Number_Clean_Export', 'Date_Clean_Export'], axis=1, errors='ignore')
-            
-            # حفظ الملف
-            export_csv.to_csv(buffer_csv, index=False, encoding='utf-8-sig')
-            
-            st.download_button(
-                label="📄 حفظ كملف CSV",
-                data=buffer_csv.getvalue(),
-                file_name=f"بحث_أحداث_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        else:
-            st.info("⚠ لا توجد بيانات للتصدير")
-    
-    with export_col3:
-        # تصدير تقرير المدة
-        if search_params.get("calculate_duration", False) and 'durations_data' in locals():
-            if durations_data:
-                buffer_duration = io.BytesIO()
+    if permissions["can_export_data"]:
+        export_col1, export_col2, export_col3 = st.columns(3)
+        
+        with export_col1:
+            # تصدير Excel
+            if not result_df.empty:
+                buffer_excel = io.BytesIO()
                 
-                duration_export_df = pd.DataFrame(durations_data)
+                export_df = result_df.copy()
                 
-                with pd.ExcelWriter(buffer_duration, engine='openpyxl') as writer:
-                    duration_export_df.to_excel(writer, sheet_name='المدة_بين_الأحداث', index=False)
-                    
-                    # إضافة ملخص إحصائي
-                    summary_data = []
-                    for event_type in duration_export_df['Event_Type'].unique():
-                        type_data = duration_export_df[duration_export_df['Event_Type'] == event_type]
-                        summary_data.append({
-                            'نوع الحدث': event_type,
-                            'عدد الفترات': len(type_data),
-                            f'متوسط المدة ({search_params.get("duration_type", "أيام")})': type_data['Duration'].mean(),
-                            'أقل مدة': type_data['Duration'].min(),
-                            'أعلى مدة': type_data['Duration'].max()
-                        })
-                    
-                    summary_df = pd.DataFrame(summary_data)
-                    summary_df.to_excel(writer, sheet_name='ملخص_إحصائي', index=False)
+                # إضافة أعمدة التنظيف للترتيب
+                export_df['Card_Number_Clean_Export'] = pd.to_numeric(export_df['Card Number'], errors='coerce')
+                export_df['Date_Clean_Export'] = pd.to_datetime(export_df['Date'], errors='coerce', dayfirst=True)
+                
+                # ترتيب البيانات
+                export_df = export_df.sort_values(by=['Card_Number_Clean_Export', 'Date_Clean_Export'], 
+                                                 ascending=[True, False], na_position='last')
+                
+                # إزالة الأعمدة المؤقتة
+                export_df = export_df.drop(['Card_Number_Clean_Export', 'Date_Clean_Export'], axis=1, errors='ignore')
+                
+                # حفظ الملف
+                export_df.to_excel(buffer_excel, index=False, engine="openpyxl")
                 
                 st.download_button(
-                    label="⏱️ حفظ تقرير المدة",
-                    data=buffer_duration.getvalue(),
-                    file_name=f"تقرير_المدة_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    label="📊 حفظ كملف Excel (للادمن فقط)",
+                    data=buffer_excel.getvalue(),
+                    file_name=f"بحث_أحداث_مرتب_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
             else:
-                st.info("⚠ لا توجد بيانات مدة للتصدير")
+                st.info("⚠ لا توجد بيانات للتصدير")
+        
+        with export_col2:
+            # تصدير CSV
+            if not result_df.empty:
+                buffer_csv = io.BytesIO()
+                
+                export_csv = result_df.copy()
+                
+                # إضافة أعمدة التنظيف للترتيب
+                export_csv['Card_Number_Clean_Export'] = pd.to_numeric(export_csv['Card Number'], errors='coerce')
+                export_csv['Date_Clean_Export'] = pd.to_datetime(export_csv['Date'], errors='coerce', dayfirst=True)
+                
+                # ترتيب البيانات
+                export_csv = export_csv.sort_values(by=['Card_Number_Clean_Export', 'Date_Clean_Export'], 
+                                                   ascending=[True, False], na_position='last')
+                
+                # إزالة الأعمدة المؤقتة
+                export_csv = export_csv.drop(['Card_Number_Clean_Export', 'Date_Clean_Export'], axis=1, errors='ignore')
+                
+                # حفظ الملف
+                export_csv.to_csv(buffer_csv, index=False, encoding='utf-8-sig')
+                
+                st.download_button(
+                    label="📄 حفظ كملف CSV (للادمن فقط)",
+                    data=buffer_csv.getvalue(),
+                    file_name=f"بحث_أحداث_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            else:
+                st.info("⚠ لا توجد بيانات للتصدير")
+        
+        with export_col3:
+            # تصدير تقرير المدة
+            if search_params.get("calculate_duration", False) and 'durations_data' in locals():
+                if durations_data:
+                    buffer_duration = io.BytesIO()
+                    
+                    duration_export_df = pd.DataFrame(durations_data)
+                    
+                    with pd.ExcelWriter(buffer_duration, engine='openpyxl') as writer:
+                        duration_export_df.to_excel(writer, sheet_name='المدة_بين_الأحداث', index=False)
+                        
+                        # إضافة ملخص إحصائي
+                        summary_data = []
+                        for event_type in duration_export_df['Event_Type'].unique():
+                            type_data = duration_export_df[duration_export_df['Event_Type'] == event_type]
+                            summary_data.append({
+                                'نوع الحدث': event_type,
+                                'عدد الفترات': len(type_data),
+                                f'متوسط المدة ({search_params.get("duration_type", "أيام")})': type_data['Duration'].mean(),
+                                'أقل مدة': type_data['Duration'].min(),
+                                'أعلى مدة': type_data['Duration'].max()
+                            })
+                        
+                        summary_df = pd.DataFrame(summary_data)
+                        summary_df.to_excel(writer, sheet_name='ملخص_إحصائي', index=False)
+                    
+                    st.download_button(
+                        label="⏱️ حفظ تقرير المدة (للادمن فقط)",
+                        data=buffer_duration.getvalue(),
+                        file_name=f"تقرير_المدة_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                else:
+                    st.info("⚠ لا توجد بيانات مدة للتصدير")
+    else:
+        st.info("⛔ صلاحية التصدير متاحة فقط للمسؤولين")
 
 def show_event_frequency_analysis(durations_df, duration_unit):
     """تحليل معدل تكرار الأحداث"""
@@ -2629,6 +2780,15 @@ def add_new_event(sheets_edit):
         
         sheets_edit[sheet_name] = df_new.astype(object)
         
+        # إضافة إشعار للمسؤول
+        add_notification(
+            username=st.session_state.get("username", "غير معروف"),
+            action="إضافة حدث جديد",
+            details=f"تمت إضافة حدث جديد للماكينة {card_num} في شيت {sheet_name}" + (f" مع {len(saved_images)} صورة" if saved_images else ""),
+            target_sheet=sheet_name,
+            target_row=len(df_new) - 1
+        )
+        
         # حفظ تلقائي في GitHub
         new_sheets = auto_save_to_github(
             sheets_edit,
@@ -2800,6 +2960,15 @@ def edit_events_and_corrections(sheets_edit):
             
             sheets_edit[sheet_name] = df.astype(object)
             
+            # إضافة إشعار للمسؤول
+            add_notification(
+                username=st.session_state.get("username", "غير معروف"),
+                action="تعديل حدث",
+                details=f"تم تعديل حدث للماكينة {new_card} في شيت {sheet_name} (الصف {row_index})" + (f" مع تحديث {len(all_images)} صورة" if all_images else ""),
+                target_sheet=sheet_name,
+                target_row=row_index
+            )
+            
             # حفظ تلقائي في GitHub
             new_sheets = auto_save_to_github(
                 sheets_edit,
@@ -2947,6 +3116,14 @@ def add_new_sheet(sheets_edit):
         new_df = pd.DataFrame(initial_data)
         sheets_edit[new_sheet_name] = new_df.astype(object)
         
+        # إضافة إشعار للمسؤول
+        add_notification(
+            username=st.session_state.get("username", "غير معروف"),
+            action="إضافة شيت جديد",
+            details=f"تم إنشاء شيت جديد باسم '{new_sheet_name}' يحتوي على {len(column_names)} أعمدة و {num_initial_rows} صف",
+            target_sheet=new_sheet_name
+        )
+        
         # حفظ تلقائي في GitHub
         new_sheets = auto_save_to_github(
             sheets_edit,
@@ -3018,6 +3195,15 @@ def edit_sheet_with_save_button(sheets_edit):
             if st.button("💾 حفظ التغييرات", key=f"save_{sheet_name}", type="primary"):
                 # حفظ التغييرات
                 sheets_edit[sheet_name] = edited_df.astype(object)
+                
+                # إضافة إشعار للمسؤول إذا لم يكن هو المسؤول
+                if st.session_state.get("user_role") != "admin":
+                    add_notification(
+                        username=st.session_state.get("username", "غير معروف"),
+                        action="تعديل شيت",
+                        details=f"تم تعديل شيت '{sheet_name}' - {len(edited_df)} صف، {len(edited_df.columns)} عمود",
+                        target_sheet=sheet_name
+                    )
                 
                 # حفظ تلقائي في GitHub
                 new_sheets = auto_save_to_github(
@@ -3154,13 +3340,13 @@ def manage_users():
             # اختيار الصلاحيات بناءً على الدور
             if user_role == "admin":
                 default_permissions = ["all"]
-                available_permissions = ["all", "view", "edit", "manage_users", "tech_support"]
+                available_permissions = ["all", "view", "edit", "manage_users", "tech_support", "export"]
             elif user_role == "editor":
                 default_permissions = ["view", "edit"]
-                available_permissions = ["view", "edit", "export"]
+                available_permissions = ["view", "edit"]
             else:
                 default_permissions = ["view"]
-                available_permissions = ["view", "export"]
+                available_permissions = ["view"]
             
             selected_permissions = st.multiselect(
                 "الصلاحيات:",
@@ -3254,13 +3440,13 @@ def manage_users():
                     # تغيير الصلاحيات بناءً على الدور الجديد
                     if new_role == "admin":
                         default_permissions = ["all"]
-                        available_permissions = ["all", "view", "edit", "manage_users", "tech_support"]
+                        available_permissions = ["all", "view", "edit", "manage_users", "tech_support", "export"]
                     elif new_role == "editor":
                         default_permissions = ["view", "edit"]
-                        available_permissions = ["view", "edit", "export"]
+                        available_permissions = ["view", "edit"]
                     else:
                         default_permissions = ["view"]
-                        available_permissions = ["view", "export"]
+                        available_permissions = ["view"]
                     
                     current_permissions = user_info.get("permissions", default_permissions)
                     new_permissions = st.multiselect(
@@ -3560,6 +3746,20 @@ def tech_support():
     else:
         st.info("ℹ️ لم يتم تسجيل الدخول")
     
+    # إحصائيات الإشعارات
+    st.markdown("---")
+    st.markdown("### 🔔 إحصائيات الإشعارات")
+    
+    notifications = load_notifications()
+    unread_count = sum(1 for n in notifications if not n.get("read_by_admin", False))
+    total_count = len(notifications)
+    
+    col_not1, col_not2 = st.columns(2)
+    with col_not1:
+        st.metric("📨 عدد الإشعارات", total_count)
+    with col_not2:
+        st.metric("📬 إشعارات غير مقروءة", unread_count)
+    
     # زر إدارة مجلد الصور
     st.markdown("---")
     if st.button("🗑️ تنظيف مجلد الصور المؤقتة", key="clean_images"):
@@ -3656,6 +3856,10 @@ with st.sidebar:
     if os.path.exists(IMAGES_FOLDER):
         image_files = [f for f in os.listdir(IMAGES_FOLDER) if f.lower().endswith(tuple(APP_CONFIG["ALLOWED_IMAGE_TYPES"]))]
         st.caption(f"عدد الصور: {len(image_files)}")
+    
+    # عرض الإشعارات للمسؤول فقط
+    if st.session_state.get("user_role") == "admin":
+        show_notifications_ui()
     
     st.markdown("---")
     # زر لإعادة تسجيل الخروج
@@ -3785,6 +3989,16 @@ if permissions["can_edit"] and len(tabs) > 2:
                         
                         sheets_edit[sheet_name_add] = df_new.astype(object)
 
+                        # إضافة إشعار للمسؤول
+                        if st.session_state.get("user_role") != "admin":
+                            add_notification(
+                                username=st.session_state.get("username", "غير معروف"),
+                                action="إضافة صف جديد",
+                                details=f"تمت إضافة صف جديد في شيت '{sheet_name_add}'",
+                                target_sheet=sheet_name_add,
+                                target_row=len(df_new) - 1
+                            )
+                        
                         new_sheets = auto_save_to_github(
                             sheets_edit,
                             f"إضافة صف جديد في {sheet_name_add}"
@@ -3813,6 +4027,15 @@ if permissions["can_edit"] and len(tabs) > 2:
                         if new_col_name:
                             df_col[new_col_name] = default_value
                             sheets_edit[sheet_name_col] = df_col.astype(object)
+                            
+                            # إضافة إشعار للمسؤول
+                            if st.session_state.get("user_role") != "admin":
+                                add_notification(
+                                    username=st.session_state.get("username", "غير معروف"),
+                                    action="إضافة عمود جديد",
+                                    details=f"تمت إضافة عمود جديد '{new_col_name}' إلى شيت '{sheet_name_col}'",
+                                    target_sheet=sheet_name_col
+                                )
                             
                             new_sheets = auto_save_to_github(
                                 sheets_edit,
