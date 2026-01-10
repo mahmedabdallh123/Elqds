@@ -1017,7 +1017,8 @@ def check_service_status(card_num, current_tons, all_sheets):
         service_stats["total_needed_services"] += len(needed_parts)
 
         # البحث في خدمات الماكينة
-        mask = (services_df.get(service_min_col, 0).fillna(0) <= slice_max) & (services_df.get(service_max_col, 0).fillna(0) >= slice_min)
+        # التصحيح: استخدام [] بدلاً من .get() للوصول إلى أعمدة DataFrame
+        mask = (services_df[min_col].fillna(0) <= slice_max) & (services_df[max_col].fillna(0) >= slice_min)
         matching_rows = services_df[mask]
 
         if not matching_rows.empty:
@@ -1035,9 +1036,9 @@ def check_service_status(card_num, current_tons, all_sheets):
                 
                 # إضافة أعمدة الأطنان
                 if min_tone_cols:
-                    metadata_columns.add(min_tone_cols[0])
+                    metadata_columns.add(min_col)
                 if max_tone_cols:
-                    metadata_columns.add(max_tone_cols[0])
+                    metadata_columns.add(max_col)
                 
                 all_columns = set(services_df.columns)
                 service_columns = all_columns - metadata_columns
@@ -1062,12 +1063,12 @@ def check_service_status(card_num, current_tons, all_sheets):
                 # البحث عن عمود التاريخ
                 date_cols = [col for col in row.index if "date" in normalize_name(col) or "تاريخ" in normalize_name(col)]
                 date_col = date_cols[0] if date_cols else "Date"
-                current_date = str(row.get(date_col, "")).strip() if pd.notna(row.get(date_col)) else "-"
+                current_date = str(row.get(date_col, "")).strip() if pd.notna(row.get(date_col, "")) else "-"
                 
                 # البحث عن عمود الأطنان
                 tone_cols = [col for col in row.index if "ton" in normalize_name(col) and not ("min" in normalize_name(col) or "max" in normalize_name(col))]
                 tone_col = tone_cols[0] if tone_cols else "Tones"
-                current_tones = str(row.get(tone_col, "")).strip() if pd.notna(row.get(tone_col)) else "-"
+                current_tones = str(row.get(tone_col, "")).strip() if pd.notna(row.get(tone_col, "")) else "-"
                 
                 # البحث عن فني الخدمة
                 servised_by_value = get_servised_by_value(row)
