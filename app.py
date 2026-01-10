@@ -105,36 +105,19 @@ def add_notification(username, action, details, target_sheet=None, target_row=No
     }
     
     notifications.insert(0, new_notification)  # إضافة في البداية
-    
-    # حفظ الإشعارات في الملف
-    try:
-        with open(NOTIFICATIONS_FILE, "w", encoding="utf-8") as f:
-            json.dump(notifications, f, indent=4, ensure_ascii=False)
-        return True
-    except:
-        return False
+    save_notifications(notifications)
+    return new_notification
 
 def mark_notifications_as_read():
     """تحديد الإشعارات كمقروءة"""
     notifications = load_notifications()
     for notification in notifications:
         notification["read_by_admin"] = True
-    
-    try:
-        with open(NOTIFICATIONS_FILE, "w", encoding="utf-8") as f:
-            json.dump(notifications, f, indent=4, ensure_ascii=False)
-        return True
-    except:
-        return False
+    save_notifications(notifications)
 
 def clear_all_notifications():
     """حذف جميع الإشعارات"""
-    try:
-        with open(NOTIFICATIONS_FILE, "w", encoding="utf-8") as f:
-            json.dump([], f, indent=4, ensure_ascii=False)
-        return True
-    except:
-        return False
+    save_notifications([])
 
 def show_notifications_ui():
     """عرض واجهة الإشعارات"""
@@ -146,10 +129,12 @@ def show_notifications_ui():
     
     with st.sidebar:
         st.markdown("---")
-        st.markdown("### 🔔 الإشعارات")
-        
-        if unread_count > 0:
-            st.markdown(f"<span style='color:red; font-weight:bold;'>📍 {unread_count} جديد</span>", unsafe_allow_html=True)
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown(f"### 🔔 الإشعارات")
+        with col2:
+            if unread_count > 0:
+                st.markdown(f"<span style='color:red; font-weight:bold;'>{unread_count} جديد</span>", unsafe_allow_html=True)
         
         if notifications:
             # زر لتصفية الإشعارات
@@ -168,8 +153,8 @@ def show_notifications_ui():
                 filtered_notifications = notifications
             
             # عرض الإشعارات
-            for i, notification in enumerate(filtered_notifications[:5]):  # عرض أول 5 إشعارات فقط
-                with st.expander(f"📌 {notification['action']}", expanded=(i == 0 and not notification.get('read_by_admin', False))):
+            for i, notification in enumerate(filtered_notifications[:10]):  # عرض أول 10 إشعارات
+                with st.expander(f"{notification['action']} - {notification['username']}", expanded=(i < 3 and not notification.get('read_by_admin', False))):
                     st.markdown(f"**المستخدم:** {notification['username']}")
                     st.markdown(f"**الإجراء:** {notification['action']}")
                     st.markdown(f"**التفاصيل:** {notification['details']}")
@@ -178,34 +163,24 @@ def show_notifications_ui():
                     st.markdown(f"**الوقت:** {datetime.fromisoformat(notification['timestamp']).strftime('%Y-%m-%d %H:%M:%S')}")
                     
                     if not notification.get('read_by_admin', False):
-                        if st.button("✅ تحديد كمقروء", key=f"mark_read_{notification['id']}_{i}"):
+                        if st.button("✅ تحديد كمقروء", key=f"mark_read_{notification['id']}"):
                             notification['read_by_admin'] = True
-                            try:
-                                with open(NOTIFICATIONS_FILE, "w", encoding="utf-8") as f:
-                                    json.dump(notifications, f, indent=4, ensure_ascii=False)
-                                st.rerun()
-                            except:
-                                st.error("❌ خطأ في حفظ التغييرات")
+                            save_notifications(notifications)
+                            st.rerun()
             
             # أزرار التحكم
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
                 if st.button("✅ تحديد الكل كمقروء", key="mark_all_read"):
-                    if mark_notifications_as_read():
-                        st.success("✅ تم تحديد جميع الإشعارات كمقروءة")
-                        st.rerun()
-                    else:
-                        st.error("❌ فشل تحديد الإشعارات كمقروءة")
+                    mark_notifications_as_read()
+                    st.rerun()
             with col_btn2:
                 if st.button("🗑️ حذف جميع الإشعارات", key="clear_all_notifs"):
-                    if clear_all_notifications():
-                        st.success("✅ تم حذف جميع الإشعارات")
-                        st.rerun()
-                    else:
-                        st.error("❌ فشل حذف الإشعارات")
+                    clear_all_notifications()
+                    st.rerun()
             
-            if len(filtered_notifications) > 5:
-                st.caption(f"... و {len(filtered_notifications) - 5} إشعارات أخرى")
+            if len(filtered_notifications) > 10:
+                st.caption(f"... و {len(filtered_notifications) - 10} إشعارات أخرى")
         else:
             st.info("📭 لا توجد إشعارات جديدة")
 
@@ -315,19 +290,7 @@ def load_users():
                 "password": "admin123", 
                 "role": "admin", 
                 "created_at": datetime.now().isoformat(),
-                "permissions": ["all", "export"]
-            },
-            "editor": {
-                "password": "editor123", 
-                "role": "editor", 
-                "created_at": datetime.now().isoformat(),
-                "permissions": ["view", "edit"]
-            },
-            "viewer": {
-                "password": "viewer123", 
-                "role": "viewer", 
-                "created_at": datetime.now().isoformat(),
-                "permissions": ["view"]
+                "permissions": ["all"]
             }
         }
         with open(USERS_FILE, "w", encoding="utf-8") as f:
@@ -344,7 +307,7 @@ def load_users():
                 "password": "admin123", 
                 "role": "admin", 
                 "created_at": datetime.now().isoformat(),
-                "permissions": ["all", "export"]
+                "permissions": ["all"]
             }
             # حفظ الإضافة مباشرة
             with open(USERS_FILE, "w", encoding="utf-8") as f:
@@ -355,14 +318,14 @@ def load_users():
             if "role" not in user_data:
                 if username == "admin":
                     user_data["role"] = "admin"
-                    user_data["permissions"] = ["all", "export"]
+                    user_data["permissions"] = ["all"]
                 else:
                     user_data["role"] = "viewer"
                     user_data["permissions"] = ["view"]
             
             if "permissions" not in user_data:
                 if user_data.get("role") == "admin":
-                    user_data["permissions"] = ["all", "export"]
+                    user_data["permissions"] = ["all"]
                 elif user_data.get("role") == "editor":
                     user_data["permissions"] = ["view", "edit"]
                 else:
@@ -384,7 +347,7 @@ def load_users():
                 "password": "admin123", 
                 "role": "admin", 
                 "created_at": datetime.now().isoformat(),
-                "permissions": ["all", "export"]
+                "permissions": ["all"]
             }
         }
 
@@ -2818,14 +2781,13 @@ def add_new_event(sheets_edit):
         sheets_edit[sheet_name] = df_new.astype(object)
         
         # إضافة إشعار للمسؤول
-        if st.session_state.get("user_role") != "admin":
-            add_notification(
-                username=st.session_state.get("username", "غير معروف"),
-                action="إضافة حدث جديد",
-                details=f"تمت إضافة حدث جديد للماكينة {card_num} في شيت {sheet_name}" + (f" مع {len(saved_images)} صورة" if saved_images else ""),
-                target_sheet=sheet_name,
-                target_row=len(df_new) - 1
-            )
+        add_notification(
+            username=st.session_state.get("username", "غير معروف"),
+            action="إضافة حدث جديد",
+            details=f"تمت إضافة حدث جديد للماكينة {card_num} في شيت {sheet_name}" + (f" مع {len(saved_images)} صورة" if saved_images else ""),
+            target_sheet=sheet_name,
+            target_row=len(df_new) - 1
+        )
         
         # حفظ تلقائي في GitHub
         new_sheets = auto_save_to_github(
@@ -2999,14 +2961,13 @@ def edit_events_and_corrections(sheets_edit):
             sheets_edit[sheet_name] = df.astype(object)
             
             # إضافة إشعار للمسؤول
-            if st.session_state.get("user_role") != "admin":
-                add_notification(
-                    username=st.session_state.get("username", "غير معروف"),
-                    action="تعديل حدث",
-                    details=f"تم تعديل حدث للماكينة {new_card} في شيت {sheet_name} (الصف {row_index})" + (f" مع تحديث {len(all_images)} صورة" if all_images else ""),
-                    target_sheet=sheet_name,
-                    target_row=row_index
-                )
+            add_notification(
+                username=st.session_state.get("username", "غير معروف"),
+                action="تعديل حدث",
+                details=f"تم تعديل حدث للماكينة {new_card} في شيت {sheet_name} (الصف {row_index})" + (f" مع تحديث {len(all_images)} صورة" if all_images else ""),
+                target_sheet=sheet_name,
+                target_row=row_index
+            )
             
             # حفظ تلقائي في GitHub
             new_sheets = auto_save_to_github(
@@ -3156,13 +3117,12 @@ def add_new_sheet(sheets_edit):
         sheets_edit[new_sheet_name] = new_df.astype(object)
         
         # إضافة إشعار للمسؤول
-        if st.session_state.get("user_role") != "admin":
-            add_notification(
-                username=st.session_state.get("username", "غير معروف"),
-                action="إضافة شيت جديد",
-                details=f"تم إنشاء شيت جديد باسم '{new_sheet_name}' يحتوي على {len(column_names)} أعمدة و {num_initial_rows} صف",
-                target_sheet=new_sheet_name
-            )
+        add_notification(
+            username=st.session_state.get("username", "غير معروف"),
+            action="إضافة شيت جديد",
+            details=f"تم إنشاء شيت جديد باسم '{new_sheet_name}' يحتوي على {len(column_names)} أعمدة و {num_initial_rows} صف",
+            target_sheet=new_sheet_name
+        )
         
         # حفظ تلقائي في GitHub
         new_sheets = auto_save_to_github(
@@ -3379,7 +3339,7 @@ def manage_users():
             
             # اختيار الصلاحيات بناءً على الدور
             if user_role == "admin":
-                default_permissions = ["all", "export"]
+                default_permissions = ["all"]
                 available_permissions = ["all", "view", "edit", "manage_users", "tech_support", "export"]
             elif user_role == "editor":
                 default_permissions = ["view", "edit"]
@@ -3479,7 +3439,7 @@ def manage_users():
                     
                     # تغيير الصلاحيات بناءً على الدور الجديد
                     if new_role == "admin":
-                        default_permissions = ["all", "export"]
+                        default_permissions = ["all"]
                         available_permissions = ["all", "view", "edit", "manage_users", "tech_support", "export"]
                     elif new_role == "editor":
                         default_permissions = ["view", "edit"]
@@ -3806,24 +3766,13 @@ def tech_support():
         if os.path.exists(IMAGES_FOLDER):
             image_files = [f for f in os.listdir(IMAGES_FOLDER) if f.lower().endswith(tuple(APP_CONFIG["ALLOWED_IMAGE_TYPES"]))]
             if image_files:
+                for img_file in image_files:
+                    try:
+                        # يمكن إضافة منطق لحذف الصور القديمة هنا
+                        pass
+                    except:
+                        pass
                 st.info(f"ℹ️ يوجد {len(image_files)} صورة في المجلد")
-                # عرض خيار لحذف الصور القديمة
-                if st.checkbox("حذف الصور الأقدم من 30 يوم"):
-                    thirty_days_ago = datetime.now() - timedelta(days=30)
-                    deleted_count = 0
-                    for img_file in image_files:
-                        img_path = os.path.join(IMAGES_FOLDER, img_file)
-                        try:
-                            mod_time = datetime.fromtimestamp(os.path.getmtime(img_path))
-                            if mod_time < thirty_days_ago:
-                                os.remove(img_path)
-                                deleted_count += 1
-                        except:
-                            pass
-                    if deleted_count > 0:
-                        st.success(f"✅ تم حذف {deleted_count} صورة قديمة")
-                    else:
-                        st.info("ℹ️ لا توجد صور أقدم من 30 يوم")
             else:
                 st.info("ℹ️ لا توجد صور في المجلد")
         else:
@@ -3897,6 +3846,7 @@ with st.sidebar:
             st.markdown("---")
             st.warning(f"⚠ لديك {unsaved_count} شيت به تغييرات غير محفوظة")
             if st.button("💾 حفظ جميع التغييرات", key="save_all_changes", type="primary"):
+                # سيتم التعامل مع هذا في الواجهة الرئيسية
                 st.session_state["save_all_requested"] = True
                 st.rerun()
     
@@ -4011,11 +3961,7 @@ if permissions["can_edit"] and len(tabs) > 2:
                 # التحقق من طلب حفظ جميع التغييرات
                 if st.session_state.get("save_all_requested", False):
                     st.info("💾 جاري حفظ جميع التغييرات...")
-                    # حفظ جميع التغييرات
-                    for sheet_name, has_changes in st.session_state.unsaved_changes.items():
-                        if has_changes and sheet_name in sheets_edit:
-                            # هنا يمكنك إضافة منطق لحفظ كل شيت
-                            pass
+                    # هنا يمكنك إضافة منطق لحفظ جميع التغييرات
                     st.session_state["save_all_requested"] = False
                 
                 # استخدام دالة التعديل مع زر الحفظ
