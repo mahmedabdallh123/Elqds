@@ -893,8 +893,11 @@ def show_service_statistics(service_stats, result_df):
         st.info("ℹ️ لا توجد خدمات مطلوبة في النطاق المحدد.")
         return
     
-    # حساب النسبة العامة
+    # حساب النسبة العامة - التأكد من عدم تجاوز القيم المسموح بها
     completion_rate = (service_stats["total_done_services"] / service_stats["total_needed_services"]) * 100 if service_stats["total_needed_services"] > 0 else 0
+    
+    # التأكد من أن النسبة بين 0 و 100
+    completion_rate = max(0, min(100, completion_rate))
     
     # عرض النسب العامة
     col1, col2, col3, col4 = st.columns(4)
@@ -946,7 +949,13 @@ def show_service_statistics(service_stats, result_df):
         for service in sorted(all_services):
             needed_count = service_stats["service_counts"].get(service, 0)
             done_count = service_stats["service_done_counts"].get(service, 0)
-            completion_rate_service = (done_count / needed_count * 100) if needed_count > 0 else 0
+            
+            # حساب النسبة مع تجنب القسمة على صفر
+            if needed_count > 0:
+                completion_rate_service = (done_count / needed_count) * 100
+                completion_rate_service = max(0, min(100, completion_rate_service))
+            else:
+                completion_rate_service = 0
             
             stat_data.append({
                 "الخدمة": service,
@@ -1023,6 +1032,13 @@ def show_service_statistics(service_stats, result_df):
                 fig2.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig2, use_container_width=True)
                 
+                # إضافة progress bar آمن - بدون تجاوز القيم المسموحة
+                st.markdown(f"**📈 نسبة الإنجاز العامة:** {completion_rate:.1f}%")
+                if 0 <= completion_rate <= 100:
+                    st.progress(completion_rate / 100)
+                else:
+                    st.info("ℹ️ لا يمكن عرض شريط التقدم بسبب قيمة النسبة غير الصحيحة")
+                
             except ImportError:
                 # استخدام streamlit native charts بدلاً من plotly
                 st.info("📊 عرض البيانات باستخدام الرسوم البيانية المضمنة في Streamlit")
@@ -1033,13 +1049,19 @@ def show_service_statistics(service_stats, result_df):
                 dist_data = []
                 for service, needed_count in service_stats["service_counts"].items():
                     done_count = service_stats["service_done_counts"].get(service, 0)
-                    completion_rate = (done_count / needed_count * 100) if needed_count > 0 else 0
+                    
+                    # حساب النسبة مع تجنب القسمة على صفر
+                    if needed_count > 0:
+                        completion_rate_service = (done_count / needed_count) * 100
+                        completion_rate_service = max(0, min(100, completion_rate_service))
+                    else:
+                        completion_rate_service = 0
                     
                     dist_data.append({
                         "الخدمة": service,
                         "مطلوبة": needed_count,
                         "منفذة": done_count,
-                        "نسبة": f"{completion_rate:.1f}%"
+                        "نسبة": f"{completion_rate_service:.1f}%"
                     })
                 
                 if dist_data:
@@ -1066,9 +1088,12 @@ def show_service_statistics(service_stats, result_df):
                     height=400
                 )
                 
-                # عرض النسبة العامة كـ progress bar
+                # عرض النسبة العامة كـ progress bar آمن
                 st.markdown(f"**📈 نسبة الإنجاز العامة:** {completion_rate:.1f}%")
-                st.progress(completion_rate / 100)
+                if 0 <= completion_rate <= 100:
+                    st.progress(completion_rate / 100)
+                else:
+                    st.info("ℹ️ لا يمكن عرض شريط التقدم بسبب قيمة النسبة غير الصحيحة")
         else:
             st.info("ℹ️ لا توجد بيانات كافية لعرض المخططات.")
     
@@ -1077,7 +1102,12 @@ def show_service_statistics(service_stats, result_df):
         
         slice_stats_data = []
         for slice_key, slice_data in service_stats["by_slice"].items():
-            completion_rate_slice = (slice_data["total_done"] / slice_data["total_needed"] * 100) if slice_data["total_needed"] > 0 else 0
+            # حساب النسبة مع تجنب القسمة على صفر
+            if slice_data["total_needed"] > 0:
+                completion_rate_slice = (slice_data["total_done"] / slice_data["total_needed"]) * 100
+                completion_rate_slice = max(0, min(100, completion_rate_slice))
+            else:
+                completion_rate_slice = 0
             
             slice_stats_data.append({
                 "الشريحة": slice_key,
@@ -1114,6 +1144,8 @@ def show_service_statistics(service_stats, result_df):
                             # استخراج النسبة من النص
                             rate_text = slice_item["نسبة الإنجاز"]
                             rate_value = float(rate_text.replace("%", "").strip())
+                            # التأكد من أن النسبة بين 0 و 100
+                            rate_value = max(0, min(100, rate_value))
                             completion_rates.append(rate_value)
                         except:
                             continue
@@ -1152,6 +1184,8 @@ def show_service_statistics(service_stats, result_df):
                                 mid_point = (int(slice_range[0]) + int(slice_range[1])) / 2
                                 rate_text = slice_item["نسبة الإنجاز"]
                                 rate_value = float(rate_text.replace("%", "").strip())
+                                # التأكد من أن النسبة بين 0 و 100
+                                rate_value = max(0, min(100, rate_value))
                                 
                                 chart_data.append({
                                     "نطاق الأطنان": mid_point,
