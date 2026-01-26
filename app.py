@@ -1219,12 +1219,13 @@ def check_events_and_corrections(all_sheets):
             "exact_match": False,
             "include_empty": True,
             "sort_by": "رقم الماكينة",
-            "calculate_duration": False,
+            "calculate_duration": True,  # تفعيل بحساب المدة افتراضياً
             "duration_type": "أيام",
             "duration_filter_min": 0,
             "duration_filter_max": 365,
             "group_by_type": False,
-            "show_images": True
+            "show_images": True,
+            "add_duration_to_correction": True  # إضافة خاصية كتابة المدة في عمود الكوريكشن
         }
     
     if "search_triggered" not in st.session_state:
@@ -1239,7 +1240,7 @@ def check_events_and_corrections(all_sheets):
         main_tabs = st.tabs(["🔍 معايير البحث", "⏱️ خيارات المدة", "📊 تحليل زمني"])
         
         with main_tabs[0]:
-            col1, col2 = st.columns([1, 1])
+            col1, col2 = st.columns(2)
             
             with col1:
                 # قسم أرقام الماكينات
@@ -1337,7 +1338,7 @@ def check_events_and_corrections(all_sheets):
             with col_dur1:
                 calculate_duration = st.checkbox(
                     "📅 حساب المدة بين الأحداث",
-                    value=st.session_state.search_params.get("calculate_duration", False),
+                    value=st.session_state.search_params.get("calculate_duration", True),
                     key="checkbox_calculate_duration",
                     help="حساب المدة بين الأحداث لنفس الماكينة"
                 )
@@ -1357,6 +1358,13 @@ def check_events_and_corrections(all_sheets):
                         value=st.session_state.search_params.get("group_by_type", False),
                         key="checkbox_group_by_type",
                         help="فصل حساب المدة حسب نوع الحدث (حدث/تصحيح)"
+                    )
+                    
+                    add_duration_to_correction = st.checkbox(
+                        "✏ كتابة المدة في عمود الكوريكشن",
+                        value=st.session_state.search_params.get("add_duration_to_correction", True),
+                        key="checkbox_add_duration_to_correction",
+                        help="إضافة وصف المدة المكتوب في عمود الكوريكشن بعد حسابها"
                     )
             
             with col_dur2:
@@ -1417,6 +1425,7 @@ def check_events_and_corrections(all_sheets):
             "duration_filter_min": duration_filter_min if calculate_duration else 0,
             "duration_filter_max": duration_filter_max if calculate_duration else 365,
             "group_by_type": group_by_type if calculate_duration else False,
+            "add_duration_to_correction": add_duration_to_correction if calculate_duration else False,
             "analysis_options": analysis_options,
             "show_images": True
         })
@@ -1441,11 +1450,12 @@ def check_events_and_corrections(all_sheets):
                     "exact_match": False,
                     "include_empty": True,
                     "sort_by": "رقم الماكينة",
-                    "calculate_duration": False,
+                    "calculate_duration": True,
                     "duration_type": "أيام",
                     "duration_filter_min": 0,
                     "duration_filter_max": 365,
                     "group_by_type": False,
+                    "add_duration_to_correction": True,
                     "analysis_options": [],
                     "show_images": True
                 }
@@ -1466,6 +1476,7 @@ def check_events_and_corrections(all_sheets):
                     "duration_filter_min": 0,
                     "duration_filter_max": 365,
                     "group_by_type": True,
+                    "add_duration_to_correction": True,
                     "analysis_options": ["معدل تكرار الأحداث", "توزيع الأحداث زمنياً"],
                     "show_images": True
                 }
@@ -1485,7 +1496,7 @@ def check_events_and_corrections(all_sheets):
         # تنفيذ البحث
         show_advanced_search_results_with_duration(search_params, all_sheets)
 
-def calculate_durations_between_events(events_data, duration_type="أيام", group_by_type=False):
+def calculate_durations_between_events(events_data, duration_type="أيام", group_by_type=False, add_duration_to_correction=True):
     """حساب المدة بين الأحداث لنفس الماكينة"""
     if not events_data:
         return events_data
@@ -1504,7 +1515,7 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
             # تجربة تنسيقات مختلفة
             formats = [
                 "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",
-                "%Y/%m/%d", "%Y-%m-%d", "%Y.%m.%d",
+                "%Y/%m/%d", "%Y-%m-%d", "%Y.%m.%Y",
                 "%m/%d/%Y", "%m-%d-%Y", "%m.%d.%Y"
             ]
             
@@ -1529,6 +1540,7 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
     df['Duration'] = None
     df['Duration_Unit'] = None
     df['Event_Type'] = None
+    df['Duration_Description'] = ""  # لوصف المدة كتابياً
     
     # تحديد نوع الحدث (حدث أو تصحيح)
     def determine_event_type(event, correction):
@@ -1546,8 +1558,65 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
     
     df['Event_Type'] = df.apply(lambda row: determine_event_type(row.get('Event', '-'), row.get('Correction', '-')), axis=1)
     
+    # دالة لكتابة المدة كتابياً
+    def write_duration_description(duration_value, duration_unit, previous_date, current_date):
+        """كتابة وصف المدة كتابياً باللغة العربية"""
+        try:
+            # تحويل التواريخ إلى نص عربي
+            if previous_date and current_date:
+                # البحث عن تاريخ التركيب الأول (الصفر)
+                # في تطبيقك الحقيقي، قد تحتاج إلى تحديد تاريخ التركيب الأول من قاعدة البيانات
+                # هنا سنفترض أن الحدث الأول بتاريخ 0
+                
+                if duration_value > 0:
+                    # تحويل القيمة إلى نص عربي
+                    if duration_value < 1:
+                        if duration_unit == "يوم":
+                            return "أقل من يوم"
+                        elif duration_unit == "أسبوع":
+                            return "أقل من أسبوع"
+                        elif duration_unit == "شهر":
+                            return "أقل من شهر"
+                    else:
+                        # تقريب القيمة
+                        if duration_value.is_integer():
+                            duration_value_int = int(duration_value)
+                        else:
+                            duration_value_int = round(duration_value, 1)
+                        
+                        # كتابة العدد بالعربية
+                        arabic_numbers = {
+                            1: "واحد", 2: "اثنين", 3: "ثلاثة", 4: "أربعة", 5: "خمسة",
+                            6: "ستة", 7: "سبعة", 8: "ثمانية", 9: "تسعة", 10: "عشرة",
+                            11: "أحد عشر", 12: "اثنا عشر", 13: "ثلاثة عشر", 14: "أربعة عشر", 15: "خمسة عشر",
+                            20: "عشرين", 30: "ثلاثين", 40: "أربعين", 50: "خمسين", 100: "مائة", 200: "مائتين"
+                        }
+                        
+                        # كتابة الوحدة بالعربية
+                        if duration_unit == "يوم":
+                            unit_word = "يوم" if duration_value_int == 1 else "أيام"
+                        elif duration_unit == "أسبوع":
+                            unit_word = "أسبوع" if duration_value_int == 1 else "أسابيع"
+                        elif duration_unit == "شهر":
+                            unit_word = "شهر" if duration_value_int == 1 else "أشهر"
+                        
+                        # بناء النص
+                        if duration_value_int in arabic_numbers:
+                            duration_text = arabic_numbers[duration_value_int]
+                        else:
+                            duration_text = str(duration_value_int)
+                        
+                        return f"مدة {duration_text} {unit_word} منذ الحدث السابق"
+                else:
+                    return "هذا هو الحدث الأول (تاريخ التركيب)"
+            else:
+                return "لا توجد بيانات تاريخية كافية"
+        except Exception as e:
+            return f"مدة {duration_value} {duration_unit} منذ الحدث السابق"
+    
     # حساب المدة بين الأحداث لكل ماكينة
     durations_data = []
+    updated_events_data = events_data.copy()  # نسخة من البيانات الأصلية لتحديثها
     
     for card_num in df['Card Number'].unique():
         card_events = df[df['Card Number'] == card_num].copy()
@@ -1575,6 +1644,28 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
                         duration_value = duration_days
                         duration_unit = "يوم"
                     
+                    # كتابة المدة كتابياً
+                    duration_description = write_duration_description(
+                        duration_value, duration_unit, previous_date, current_date
+                    )
+                    
+                    # تحديث عمود Duration_Description في البيانات
+                    if add_duration_to_correction:
+                        # البحث عن الصف المقابل في البيانات الأصلية وتحديثه
+                        for idx, event in enumerate(updated_events_data):
+                            if (event.get('Card Number') == str(card_num) and 
+                                str(event.get('Date', '')).strip() == str(current_event['Date']).strip()):
+                                
+                                # إضافة وصف المدة إلى عمود الكوريكشن
+                                current_correction = event.get('Correction', '')
+                                if current_correction and current_correction != '-':
+                                    # إضافة وصف المدة بعد التصحيح الموجود
+                                    updated_events_data[idx]['Correction'] = f"{current_correction} | {duration_description}"
+                                else:
+                                    # إذا لم يكن هناك تصحيح، نضيف المدة فقط
+                                    updated_events_data[idx]['Correction'] = duration_description
+                                break
+                    
                     # التحقق من تجميع حسب النوع
                     if group_by_type:
                         current_type = current_event['Event_Type']
@@ -1587,6 +1678,7 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
                                 'Previous_Event_Date': previous_event['Date'],
                                 'Duration': round(duration_value, 1),
                                 'Duration_Unit': duration_unit,
+                                'Duration_Description': duration_description,
                                 'Event_Type': current_type,
                                 'Current_Event': current_event.get('Event', '-'),
                                 'Previous_Event': previous_event.get('Event', '-'),
@@ -1602,6 +1694,7 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
                             'Previous_Event_Date': previous_event['Date'],
                             'Duration': round(duration_value, 1),
                             'Duration_Unit': duration_unit,
+                            'Duration_Description': duration_description,
                             'Event_Type': f"{previous_event['Event_Type']} → {current_event['Event_Type']}",
                             'Current_Event': current_event.get('Event', '-'),
                             'Previous_Event': previous_event.get('Event', '-'),
@@ -1611,7 +1704,7 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
                         }
                         durations_data.append(duration_info)
     
-    return durations_data
+    return durations_data, updated_events_data
 
 def show_search_params(search_params):
     """عرض معايير البحث المستخدمة"""
@@ -1725,6 +1818,19 @@ def display_search_results_with_duration(results, search_params):
         st.warning("⚠ لا توجد نتائج لعرضها")
         return
     
+    # حساب المدة بين الأحداث
+    if search_params.get("calculate_duration", True):
+        durations_data, updated_results = calculate_durations_between_events(
+            results,
+            search_params.get("duration_type", "أيام"),
+            search_params.get("group_by_type", False),
+            search_params.get("add_duration_to_correction", True)
+        )
+        
+        # استخدام البيانات المحدثة التي تحتوي على وصف المدة في الكوريكشن
+        if search_params.get("add_duration_to_correction", True):
+            results = updated_results
+    
     result_df = pd.DataFrame(results)
     
     # التأكد من وجود البيانات
@@ -1790,15 +1896,16 @@ def display_search_results_with_duration(results, search_params):
             st.metric("📷 تحتوي على صور", 0)
     
     # حساب المدة بين الأحداث إذا كان مطلوباً
-    if search_params.get("calculate_duration", False):
+    if search_params.get("calculate_duration", True):
         st.markdown("---")
         st.markdown("### ⏱️ تحليل المدة بين الأحداث")
         
         # حساب المدة
-        durations_data = calculate_durations_between_events(
+        durations_data, _ = calculate_durations_between_events(
             results,
             search_params.get("duration_type", "أيام"),
-            search_params.get("group_by_type", False)
+            search_params.get("group_by_type", False),
+            search_params.get("add_duration_to_correction", True)
         )
         
         if durations_data:
@@ -1841,7 +1948,7 @@ def display_search_results_with_duration(results, search_params):
             # تنسيق الأعمدة للعرض
             display_columns = [
                 'Card Number', 'Previous_Event_Date', 'Current_Event_Date',
-                'Duration', 'Duration_Unit', 'Event_Type', 'Technician'
+                'Duration', 'Duration_Unit', 'Duration_Description', 'Event_Type', 'Technician'
             ]
             
             available_columns = [col for col in display_columns if col in filtered_durations.columns]
@@ -1891,11 +1998,26 @@ def display_search_results_with_duration(results, search_params):
         
         columns_to_show = [col for col in columns_to_show if col in display_df.columns]
         
+        # تلوين عمود الكوريكشن إذا كان يحتوي على وصف المدة
+        def highlight_correction_with_duration(val):
+            if isinstance(val, str) and any(keyword in val for keyword in ['مدة', 'يوم', 'أسبوع', 'شهر', 'منذ']):
+                return "background-color: #e6f7ff; color:#0056b3; font-weight:bold; border-left: 4px solid #1890ff;"
+            return ""
+        
+        styled_df = display_df[columns_to_show].style.applymap(
+            highlight_correction_with_duration, 
+            subset=['Correction'] if 'Correction' in display_df.columns else []
+        )
+        
         st.dataframe(
-            display_df[columns_to_show].style.apply(style_table, axis=1),
+            styled_df,
             use_container_width=True,
             height=500
         )
+        
+        # ملاحظة حول وصف المدة
+        if search_params.get("add_duration_to_correction", True):
+            st.info("📝 **ملاحظة:** تمت إضافة وصف المدة الزمنية بين الأحداث في عمود 'الكوريكشن' (مظلل بالأزرق)")
     
     with display_tabs[1]:
         # عرض تفصيلي لكل ماكينة بشكل منفصل
@@ -1943,7 +2065,12 @@ def display_search_results_with_duration(results, search_params):
                         if 'Event' in row and row['Event'] != '-':
                             st.markdown(f"**📝 الحدث:** {row['Event']}")
                         if 'Correction' in row and row['Correction'] != '-':
-                            st.markdown(f"**✏ التصحيح:** {row['Correction']}")
+                            # تلوين النص إذا كان يحتوي على وصف المدة
+                            correction_text = row['Correction']
+                            if any(keyword in str(correction_text) for keyword in ['مدة', 'يوم', 'أسبوع', 'شهر', 'منذ']):
+                                st.markdown(f"**✏ التصحيح:** <span style='color:#1890ff; font-weight:bold;'>{correction_text}</span>", unsafe_allow_html=True)
+                            else:
+                                st.markdown(f"**✏ التصحيح:** {correction_text}")
                     
                     with col_event2:
                         if 'Servised by' in row and row['Servised by'] != '-':
@@ -1991,7 +2118,14 @@ def display_search_results_with_duration(results, search_params):
                         st.markdown(f"**رقم الماكينة:** {card_num}")
                         st.markdown(f"**التاريخ:** {event_date}")
                         st.markdown(f"**الحدث:** {event_text[:50]}{'...' if len(event_text) > 50 else ''}")
-                        st.markdown(f"**التصحيح:** {row.get('Correction', '-')}")
+                        
+                        # عرض التصحيح مع تلوين خاص إذا كان يحتوي على وصف المدة
+                        correction_text = row.get('Correction', '-')
+                        if any(keyword in str(correction_text) for keyword in ['مدة', 'يوم', 'أسبوع', 'شهر', 'منذ']):
+                            st.markdown(f"**✏ التصحيح:** <span style='color:#1890ff; font-weight:bold;'>{correction_text}</span>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"**✏ التصحيح:** {correction_text}")
+                        
                         st.markdown(f"**فني الخدمة:** {row.get('Servised by', '-')}")
                     
                     with col_img2:
@@ -2013,7 +2147,7 @@ def display_search_results_with_duration(results, search_params):
         if not result_df.empty:
             buffer_excel = io.BytesIO()
             
-            export_df = result_df.copy()
+            export_df = display_df.copy()
             
             # إضافة أعمدة التنظيف للترتيب
             export_df['Card_Number_Clean_Export'] = pd.to_numeric(export_df['Card Number'], errors='coerce')
@@ -2044,7 +2178,7 @@ def display_search_results_with_duration(results, search_params):
         if not result_df.empty:
             buffer_csv = io.BytesIO()
             
-            export_csv = result_df.copy()
+            export_csv = display_df.copy()
             
             # إضافة أعمدة التنظيف للترتيب
             export_csv['Card_Number_Clean_Export'] = pd.to_numeric(export_csv['Card Number'], errors='coerce')
@@ -2072,7 +2206,14 @@ def display_search_results_with_duration(results, search_params):
     
     with export_col3:
         # تصدير تقرير المدة
-        if search_params.get("calculate_duration", False) and 'durations_data' in locals():
+        if search_params.get("calculate_duration", True):
+            durations_data, _ = calculate_durations_between_events(
+                results,
+                search_params.get("duration_type", "أيام"),
+                search_params.get("group_by_type", False),
+                search_params.get("add_duration_to_correction", True)
+            )
+            
             if durations_data:
                 buffer_duration = io.BytesIO()
                 
