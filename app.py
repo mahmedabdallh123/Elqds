@@ -26,7 +26,7 @@ APP_CONFIG = {
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
-    "REPO_NAME": "mahmedabdallh123/BELYARN",
+    "REPO_NAME": "mahmedabdallh123/Elqds",
     "BRANCH": "main",
     "FILE_PATH": "l4.xlsx",
     "LOCAL_FILE": "l4.xlsx",
