@@ -297,18 +297,18 @@ def show_all_notifications(username):
     # أزرار الإدارة
     col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("📌 تحديد الكل كمقروء", key="mark_all_read"):
+        if st.button("📌 تحديد الكل كمقروء", key="mark_all_read_all", help="تحديد جميع الإشعارات كمقروءة"):
             mark_all_notifications_as_read(username)
             st.success("✅ تم تحديد جميع الإشعارات كمقروءة!")
             st.rerun()
     
     with col2:
-        if st.button("🔄 تحديث", key="refresh_notifications"):
+        if st.button("🔄 تحديث", key="refresh_notifications_all"):
             st.rerun()
     
     with col3:
-        if st.button("🗑 حذف الكل", key="delete_all_notifications"):
-            if st.checkbox("⚠ تأكيد حذف جميع الإشعارات"):
+        if st.button("🗑 حذف الكل", key="delete_all_notifications_all"):
+            if st.checkbox("⚠ تأكيد حذف جميع الإشعارات", key="confirm_delete_all"):
                 notifications_data = load_notifications()
                 notifications_data["notifications"] = []
                 save_notifications(notifications_data)
@@ -318,8 +318,8 @@ def show_all_notifications(username):
     st.markdown("---")
     
     # عرض الإشعارات
-    for notification in notifications:
-        display_notification(notification, username)
+    for idx, notification in enumerate(notifications):
+        display_notification(notification, username, idx, "all")
 
 def show_unread_notifications(username):
     """عرض الإشعارات غير المقروءة"""
@@ -332,7 +332,7 @@ def show_unread_notifications(username):
     st.metric("📩 عدد الإشعارات غير المقروءة", len(notifications))
     
     # زر تحديد الكل كمقروء
-    if st.button("📌 تحديد الكل كمقروء", key="mark_all_unread_read"):
+    if st.button("📌 تحديد الكل كمقروء", key="mark_all_unread_read", help="تحديد جميع الإشعارات غير المقروءة كمقروءة"):
         mark_all_notifications_as_read(username)
         st.success("✅ تم تحديد جميع الإشعارات كمقروءة!")
         st.rerun()
@@ -340,11 +340,11 @@ def show_unread_notifications(username):
     st.markdown("---")
     
     # عرض الإشعارات غير المقروءة
-    for notification in notifications:
-        display_notification(notification, username)
+    for idx, notification in enumerate(notifications):
+        display_notification(notification, username, idx, "unread")
 
-def display_notification(notification, username):
-    """عرض إشعار واحد"""
+def display_notification(notification, username, index, tab_type):
+    """عرض إشعار واحد مع إضافة فهرس فريد للأزرار"""
     # تحديد لون الإشعار حسب النوع
     type_colors = {
         "info": "#17a2b8",      # أزرق فاتح
@@ -418,13 +418,13 @@ def display_notification(notification, username):
                 st.caption("⏰ غير معروف")
         
         with col_head3:
-            # أزرار الإجراءات
+            # أزرار الإجراءات مع مفاتيح فريدة
             if not is_read:
-                if st.button("📌", key=f"read_{notification['id']}", help="تحديد كمقروء"):
+                if st.button("📌", key=f"read_{tab_type}_{notification['id']}_{index}", help="تحديد كمقروء"):
                     mark_notification_as_read(notification["id"], username)
                     st.rerun()
             
-            if st.button("🗑", key=f"delete_{notification['id']}", help="حذف"):
+            if st.button("🗑", key=f"delete_{tab_type}_{notification['id']}_{index}", help="حذف"):
                 delete_notification(notification["id"])
                 st.rerun()
         
@@ -490,7 +490,7 @@ def manage_notifications(username):
         show_to_all = st.checkbox(
             "عرض الإشعارات لجميع المستخدمين",
             value=not APP_CONFIG["SHOW_NOTIFICATIONS_TO_ADMINS_ONLY"],
-            key="show_notifications_to_all"
+            key="show_notifications_to_all_manage"
         )
         
         if st.button("💾 حفظ الإعدادات", key="save_notification_settings"):
@@ -505,10 +505,10 @@ def manage_notifications(username):
             min_value=1,
             max_value=365,
             value=APP_CONFIG["KEEP_NOTIFICATIONS_DAYS"],
-            key="keep_notifications_days"
+            key="keep_notifications_days_manage"
         )
         
-        if st.button("💾 تحديث المدة", key="update_keep_days"):
+        if st.button("💾 تحديث المدة", key="update_keep_days_manage"):
             APP_CONFIG["KEEP_NOTIFICATIONS_DAYS"] = keep_days
             st.success(f"✅ تم تحديث مدة الاحتفاظ إلى {keep_days} يوم!")
     
@@ -520,7 +520,7 @@ def manage_notifications(username):
     col_clean1, col_clean2, col_clean3 = st.columns(3)
     
     with col_clean1:
-        if st.button("🗑 حذف الإشعارات المقروءة", key="delete_read_notifications"):
+        if st.button("🗑 حذف الإشعارات المقروءة", key="delete_read_notifications_manage"):
             notifications_data = load_notifications()
             
             # فلترة الإشعارات غير المقروءة فقط
@@ -538,9 +538,9 @@ def manage_notifications(username):
     
     with col_clean2:
         days_old = st.number_input("حذف الإشعارات الأقدم من (أيام)", 
-                                  min_value=1, max_value=365, value=30, key="days_old")
+                                  min_value=1, max_value=365, value=30, key="days_old_manage")
         
-        if st.button("🗑 حذف القديمة", key="delete_old_notifications"):
+        if st.button("🗑 حذف القديمة", key="delete_old_notifications_manage"):
             cutoff_date = datetime.now() - timedelta(days=days_old)
             notifications_data = load_notifications()
             
@@ -557,8 +557,8 @@ def manage_notifications(username):
             st.rerun()
     
     with col_clean3:
-        if st.button("🔄 إعادة تعيين", key="reset_notifications"):
-            if st.checkbox("⚠ تأكيد إعادة تعيين جميع الإشعارات"):
+        if st.button("🔄 إعادة تعيين", key="reset_notifications_manage"):
+            if st.checkbox("⚠ تأكيد إعادة تعيين جميع الإشعارات", key="confirm_reset_all"):
                 default_notifications = {
                     "notifications": [],
                     "last_check": datetime.now().isoformat(),
@@ -578,7 +578,7 @@ def manage_notifications(username):
     
     with col_export1:
         # تصدير الإشعارات
-        if st.button("💾 تصدير الإشعارات", key="export_notifications"):
+        if st.button("💾 تصدير الإشعارات", key="export_notifications_manage"):
             notifications_data = load_notifications()
             
             buffer = io.BytesIO()
@@ -590,7 +590,7 @@ def manage_notifications(username):
                 data=buffer.getvalue(),
                 file_name=f"notifications_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
                 mime="application/json",
-                key="download_notifications"
+                key="download_notifications_manage"
             )
     
     with col_export2:
@@ -598,7 +598,7 @@ def manage_notifications(username):
         uploaded_file = st.file_uploader(
             "رفع ملف إشعارات",
             type=['json'],
-            key="upload_notifications"
+            key="upload_notifications_manage"
         )
         
         if uploaded_file is not None:
@@ -607,7 +607,7 @@ def manage_notifications(username):
                 
                 # التحقق من صحة البيانات
                 if "notifications" in imported_data:
-                    if st.button("📤 استيراد البيانات", key="import_notifications"):
+                    if st.button("📤 استيراد البيانات", key="import_notifications_manage"):
                         # دمج الإشعارات
                         current_data = load_notifications()
                         
@@ -1823,7 +1823,7 @@ def check_events_and_corrections(all_sheets):
                     card_numbers = st.text_input(
                         "مثال: 1,3,5 أو 1-5 أو 2,4,7-10",
                         value=st.session_state.search_params.get("card_numbers", ""),
-                        key="input_cards",
+                        key="input_cards_events",
                         placeholder="اتركه فارغاً للبحث في كل الماكينات"
                     )
                     
@@ -1831,17 +1831,17 @@ def check_events_and_corrections(all_sheets):
                     st.caption("أو اختر من:")
                     quick_cards_col1, quick_cards_col2, quick_cards_col3 = st.columns(3)
                     with quick_cards_col1:
-                        if st.button("🔟 أول 10 ماكينات", key="quick_10"):
+                        if st.button("🔟 أول 10 ماكينات", key="quick_10_events"):
                             st.session_state.search_params["card_numbers"] = "1-10"
                             st.session_state.search_triggered = True
                             st.rerun()
                     with quick_cards_col2:
-                        if st.button("🔟 ماكينات 11-20", key="quick_20"):
+                        if st.button("🔟 ماكينات 11-20", key="quick_20_events"):
                             st.session_state.search_params["card_numbers"] = "11-20"
                             st.session_state.search_triggered = True
                             st.rerun()
                     with quick_cards_col3:
-                        if st.button("🗑 مسح", key="clear_cards"):
+                        if st.button("🗑 مسح", key="clear_cards_events"):
                             st.session_state.search_params["card_numbers"] = ""
                             st.rerun()
                 
@@ -1851,7 +1851,7 @@ def check_events_and_corrections(all_sheets):
                     date_input = st.text_input(
                         "مثال: 2024 أو 1/2024 أو 2024,2025",
                         value=st.session_state.search_params.get("date_range", ""),
-                        key="input_date",
+                        key="input_date_events",
                         placeholder="اتركه فارغاً للبحث في كل التواريخ"
                     )
             
@@ -1862,7 +1862,7 @@ def check_events_and_corrections(all_sheets):
                     tech_names = st.text_input(
                         "مثال: أحمد, محمد, علي",
                         value=st.session_state.search_params.get("tech_names", ""),
-                        key="input_techs",
+                        key="input_techs_events",
                         placeholder="اتركه فارغاً للبحث في كل الفنيين"
                     )
                 
@@ -1872,7 +1872,7 @@ def check_events_and_corrections(all_sheets):
                     search_text = st.text_input(
                         "مثال: صيانة, إصلاح, تغيير",
                         value=st.session_state.search_params.get("search_text", ""),
-                        key="input_text",
+                        key="input_text_events",
                         placeholder="اتركه فارغاً للبحث في كل النصوص"
                     )
             
@@ -1884,14 +1884,14 @@ def check_events_and_corrections(all_sheets):
                         "🔍 طريقة البحث:",
                         ["بحث جزئي", "مطابقة كاملة"],
                         index=0 if not st.session_state.search_params.get("exact_match") else 1,
-                        key="radio_search_mode",
+                        key="radio_search_mode_events",
                         help="بحث جزئي: يبحث عن النص في أي مكان. مطابقة كاملة: يبحث عن النص مطابق تماماً"
                     )
                 with col_adv2:
                     include_empty = st.checkbox(
                         "🔍 تضمين الحقول الفارغة",
                         value=st.session_state.search_params.get("include_empty", True),
-                        key="checkbox_include_empty",
+                        key="checkbox_include_empty_events",
                         help="تضمين النتائج التي تحتوي على حقول فارغة"
                     )
                 with col_adv3:
@@ -1901,7 +1901,7 @@ def check_events_and_corrections(all_sheets):
                         index=["رقم الماكينة", "التاريخ", "فني الخدمة", "مدة الحدث"].index(
                             st.session_state.search_params.get("sort_by", "رقم الماكينة")
                         ),
-                        key="select_sort_by"
+                        key="select_sort_by_events"
                     )
         
         with main_tabs[1]:
@@ -1913,7 +1913,7 @@ def check_events_and_corrections(all_sheets):
                 calculate_duration = st.checkbox(
                     "📅 حساب المدة بين الأحداث",
                     value=st.session_state.search_params.get("calculate_duration", False),
-                    key="checkbox_calculate_duration",
+                    key="checkbox_calculate_duration_events",
                     help="حساب المدة بين الأحداث لنفس الماكينة"
                 )
                 
@@ -1924,13 +1924,13 @@ def check_events_and_corrections(all_sheets):
                         index=["أيام", "أسابيع", "أشهر"].index(
                             st.session_state.search_params.get("duration_type", "أيام")
                         ),
-                        key="select_duration_type"
+                        key="select_duration_type_events"
                     )
                     
                     group_by_type = st.checkbox(
                         "📊 تجميع حسب نوع الحدث",
                         value=st.session_state.search_params.get("group_by_type", False),
-                        key="checkbox_group_by_type",
+                        key="checkbox_group_by_type_events",
                         help="فصل حساب المدة حسب نوع الحدث (حدث/تصحيح)"
                     )
             
@@ -1943,7 +1943,7 @@ def check_events_and_corrections(all_sheets):
                         min_value=0,
                         value=st.session_state.search_params.get("duration_filter_min", 0),
                         step=1,
-                        key="input_duration_min"
+                        key="input_duration_min_events"
                     )
                     
                     duration_filter_max = st.number_input(
@@ -1951,7 +1951,7 @@ def check_events_and_corrections(all_sheets):
                         min_value=duration_filter_min,
                         value=st.session_state.search_params.get("duration_filter_max", 365),
                         step=1,
-                        key="input_duration_max"
+                        key="input_duration_max_events"
                     )
                     
                     st.caption(f"سيتم عرض الأحداث التي تتراوح مدتها بين {duration_filter_min} و {duration_filter_max} {duration_type}")
@@ -1963,7 +1963,7 @@ def check_events_and_corrections(all_sheets):
                 "اختر نوع التحليل:",
                 ["معدل تكرار الأحداث", "مقارنة المدة حسب الفني", "توزيع الأحداث زمنياً", "مقارنة بين الحدث والتصحيح"],
                 default=[],
-                key="select_analysis_options"
+                key="select_analysis_options_events"
             )
             
             if "معدل تكرار الأحداث" in analysis_options:
@@ -2004,10 +2004,10 @@ def check_events_and_corrections(all_sheets):
                 "🔍 **بدء البحث والتحليل**",
                 type="primary",
                 use_container_width=True,
-                key="main_search_btn"
+                key="main_search_btn_events"
             )
         with col_btn2:
-            if st.button("🗑 **مسح الحقول**", use_container_width=True, key="clear_fields"):
+            if st.button("🗑 **مسح الحقول**", use_container_width=True, key="clear_fields_events"):
                 st.session_state.search_params = {
                     "card_numbers": "",
                     "date_range": "",
@@ -2027,7 +2027,7 @@ def check_events_and_corrections(all_sheets):
                 st.session_state.search_triggered = False
                 st.rerun()
         with col_btn3:
-            if st.button("📊 **عرض كل البيانات**", use_container_width=True, key="show_all"):
+            if st.button("📊 **عرض كل البيانات**", use_container_width=True, key="show_all_events"):
                 st.session_state.search_params = {
                     "card_numbers": "",
                     "date_range": "",
@@ -3201,7 +3201,7 @@ def edit_events_and_corrections(sheets_edit):
     st.markdown("### ✏ اختر الصف للتعديل")
     row_index = st.number_input("رقم الصف (ابدأ من 0):", min_value=0, max_value=len(df)-1, step=1, key="edit_row_index")
     
-    if st.button("تحميل بيانات الصف", key="load_row_data"):
+    if st.button("تحميل بيانات الصف", key="load_row_data_events"):
         if 0 <= row_index < len(df):
             st.session_state["editing_row"] = row_index
             st.session_state["editing_data"] = df.iloc[row_index].to_dict()
@@ -3212,10 +3212,10 @@ def edit_events_and_corrections(sheets_edit):
         st.markdown("### تعديل البيانات")
         col1, col2 = st.columns(2)
         with col1:
-            new_card = st.text_input("رقم الماكينة:", value=editing_data.get("card", ""), key="edit_card")
-            new_date = st.text_input("التاريخ:", value=editing_data.get("Date", ""), key="edit_date")
+            new_card = st.text_input("رقم الماكينة:", value=editing_data.get("card", ""), key="edit_card_events")
+            new_date = st.text_input("التاريخ:", value=editing_data.get("Date", ""), key="edit_date_events")
         with col2:
-            new_serviced_by = st.text_input("فني الخدمة:", value=editing_data.get("Servised by", ""), key="edit_serviced_by")
+            new_serviced_by = st.text_input("فني الخدمة:", value=editing_data.get("Servised by", ""), key="edit_serviced_by_events")
         
         # حقول الإيفينت والكوريكشن
         event_col = None
@@ -3229,9 +3229,9 @@ def edit_events_and_corrections(sheets_edit):
                 correction_col = col
         
         if event_col:
-            new_event = st.text_area("الحدث:", value=editing_data.get(event_col, ""), key="edit_event")
+            new_event = st.text_area("الحدث:", value=editing_data.get(event_col, ""), key="edit_event_events")
         if correction_col:
-            new_correction = st.text_area("التصحيح:", value=editing_data.get(correction_col, ""), key="edit_correction")
+            new_correction = st.text_area("التصحيح:", value=editing_data.get(correction_col, ""), key="edit_correction_events")
         
         # قسم إدارة الصور
         st.markdown("---")
@@ -3257,7 +3257,7 @@ def edit_events_and_corrections(sheets_edit):
             display_images(existing_images, "")
             
             # خيار حذف الصور
-            if st.checkbox("🗑️ حذف كل الصور الحالية", key="delete_existing_images"):
+            if st.checkbox("🗑️ حذف كل الصور الحالية", key="delete_existing_images_events"):
                 existing_images = []
         
         # إضافة صور جديدة
@@ -3266,7 +3266,7 @@ def edit_events_and_corrections(sheets_edit):
             "اختر صور جديدة لإضافتها:",
             type=APP_CONFIG["ALLOWED_IMAGE_TYPES"],
             accept_multiple_files=True,
-            key="edit_images_uploader"
+            key="edit_images_uploader_events"
         )
         
         all_images = existing_images.copy()
@@ -3279,7 +3279,7 @@ def edit_events_and_corrections(sheets_edit):
                 all_images.extend(new_saved_images)
                 st.success(f"✅ تم حفظ {len(new_saved_images)} صورة جديدة")
         
-        if st.button("💾 حفظ التعديلات والصور", key="save_edits_btn"):
+        if st.button("💾 حفظ التعديلات والصور", key="save_edits_btn_events"):
             # تحديث البيانات
             df.at[row_index, "card"] = new_card
             df.at[row_index, "Date"] = new_date
@@ -3357,7 +3357,7 @@ def edit_sheet_with_save_button(sheets_edit):
     if "unsaved_changes" not in st.session_state:
         st.session_state.unsaved_changes = {}
     
-    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_sheet")
+    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_sheet_main")
     
     if sheet_name not in st.session_state.unsaved_changes:
         st.session_state.unsaved_changes[sheet_name] = False
@@ -3373,7 +3373,7 @@ def edit_sheet_with_save_button(sheets_edit):
         df, 
         num_rows="dynamic", 
         use_container_width=True,
-        key=f"editor_{sheet_name}"
+        key=f"editor_{sheet_name}_main"
     )
     
     # التحقق من وجود تغييرات
@@ -3389,7 +3389,7 @@ def edit_sheet_with_save_button(sheets_edit):
         col1, col2, col3 = st.columns([1, 1, 2])
         
         with col1:
-            if st.button("💾 حفظ التغييرات", key=f"save_{sheet_name}", type="primary"):
+            if st.button("💾 حفظ التغييرات", key=f"save_{sheet_name}_main", type="primary"):
                 # حفظ التغييرات
                 sheets_edit[sheet_name] = edited_df.astype(object)
                 
@@ -3424,7 +3424,7 @@ def edit_sheet_with_save_button(sheets_edit):
                     st.error("❌ فشل حفظ التغييرات!")
         
         with col2:
-            if st.button("↩️ تراجع عن التغييرات", key=f"undo_{sheet_name}"):
+            if st.button("↩️ تراجع عن التغييرات", key=f"undo_{sheet_name}_main"):
                 # استعادة البيانات الأصلية
                 if sheet_name in st.session_state.original_sheets:
                     sheets_edit[sheet_name] = st.session_state.original_sheets[sheet_name].astype(object)
@@ -3492,7 +3492,7 @@ def edit_sheet_with_save_button(sheets_edit):
             st.session_state.unsaved_changes[sheet_name] = False
         
         # زر لإعادة تحميل البيانات
-        if st.button("🔄 تحديث البيانات", key=f"refresh_{sheet_name}"):
+        if st.button("🔄 تحديث البيانات", key=f"refresh_{sheet_name}_main"):
             st.rerun()
     
     return sheets_edit
@@ -3542,16 +3542,16 @@ def manage_users():
         
         col1, col2 = st.columns(2)
         with col1:
-            new_username = st.text_input("اسم المستخدم الجديد:", key="new_username")
-            new_password = st.text_input("كلمة المرور:", type="password", key="new_password")
-            confirm_password = st.text_input("تأكيد كلمة المرور:", type="password", key="confirm_password")
+            new_username = st.text_input("اسم المستخدم الجديد:", key="new_username_add")
+            new_password = st.text_input("كلمة المرور:", type="password", key="new_password_add")
+            confirm_password = st.text_input("تأكيد كلمة المرور:", type="password", key="confirm_password_add")
         
         with col2:
             user_role = st.selectbox(
                 "دور المستخدم:",
                 ["admin", "editor", "viewer"],
                 index=2,
-                key="new_user_role"
+                key="new_user_role_add"
             )
             
             # اختيار الصلاحيات بناءً على الدور
@@ -3569,10 +3569,10 @@ def manage_users():
                 "الصلاحيات:",
                 options=available_permissions,
                 default=default_permissions,
-                key="new_user_permissions"
+                key="new_user_permissions_add"
             )
         
-        if st.button("💾 إضافة المستخدم", key="add_user_btn"):
+        if st.button("💾 إضافة المستخدم", key="add_user_btn_main"):
             if not new_username:
                 st.warning("⚠ الرجاء إدخال اسم المستخدم.")
                 return
@@ -3633,7 +3633,7 @@ def manage_users():
             user_to_edit = st.selectbox(
                 "اختر المستخدم للتعديل:",
                 user_list,
-                key="select_user_to_edit"
+                key="select_user_to_edit_manage"
             )
             
             if user_to_edit:
@@ -3649,9 +3649,9 @@ def manage_users():
                     # تغيير كلمة المرور
                     st.markdown("##### 🔐 تغيير كلمة المرور")
                     new_password_edit = st.text_input("كلمة المرور الجديدة:", type="password", 
-                                                      key="edit_password")
+                                                      key="edit_password_manage")
                     confirm_password_edit = st.text_input("تأكيد كلمة المرور:", type="password", 
-                                                         key="edit_confirm_password")
+                                                         key="edit_confirm_password_manage")
                 
                 with col2:
                     # تغيير الدور
@@ -3659,7 +3659,7 @@ def manage_users():
                         "تغيير الدور:",
                         ["admin", "editor", "viewer"],
                         index=["admin", "editor", "viewer"].index(user_info.get("role", "viewer")),
-                        key="edit_user_role"
+                        key="edit_user_role_manage"
                     )
                     
                     # تغيير الصلاحيات بناءً على الدور الجديد
@@ -3678,13 +3678,13 @@ def manage_users():
                         "تغيير الصلاحيات:",
                         options=available_permissions,
                         default=current_permissions,
-                        key="edit_user_permissions"
+                        key="edit_user_permissions_manage"
                     )
                 
                 # أزرار التعديل
                 col_btn1, col_btn2, col_btn3 = st.columns(3)
                 with col_btn1:
-                    if st.button("💾 حفظ التعديلات", key="save_user_edit"):
+                    if st.button("💾 حفظ التعديلات", key="save_user_edit_manage"):
                         updated = False
                         
                         # تحميل أحدث البيانات قبل التعديل
@@ -3739,7 +3739,7 @@ def manage_users():
                 
                 with col_btn2:
                     # زر إعادة تعيين كلمة المرور
-                    if st.button("🔄 إعادة تعيين كلمة المرور", key="reset_password"):
+                    if st.button("🔄 إعادة تعيين كلمة المرور", key="reset_password_manage"):
                         # كلمة مرور افتراضية
                         default_password = "user123"
                         
@@ -3762,7 +3762,7 @@ def manage_users():
                 
                 with col_btn3:
                     # زر تحديث البيانات من الملف
-                    if st.button("🔄 تحديث البيانات", key="refresh_user_data"):
+                    if st.button("🔄 تحديث البيانات", key="refresh_user_data_manage"):
                         # تحميل أحدث البيانات من الملف
                         users = load_users()
                         st.success("✅ تم تحديث البيانات من الملف.")
@@ -3784,7 +3784,7 @@ def manage_users():
                 user_to_delete = st.selectbox(
                     "اختر المستخدم للحذف:",
                     deletable_users,
-                    key="select_user_to_delete"
+                    key="select_user_to_delete_manage"
                 )
                 
                 if user_to_delete:
@@ -3796,11 +3796,11 @@ def manage_users():
                     
                     # تأكيد الحذف
                     confirm_delete = st.checkbox(f"أؤكد أنني أريد حذف المستخدم '{user_to_delete}'", 
-                                                key="confirm_delete")
+                                                key="confirm_delete_manage")
                     
                     if confirm_delete:
                         if st.button("🗑️ حذف المستخدم نهائياً", type="primary", 
-                                    key="delete_user_final"):
+                                    key="delete_user_final_manage"):
                             # التحقق من أن المستخدم ليس مسجلاً دخولاً حالياً
                             state = load_state()
                             if user_to_delete in state and state[user_to_delete].get("active"):
@@ -3853,7 +3853,7 @@ def manage_users():
                     st.error(f"❌ خطأ في قراءة الملف: {e}")
         
         # زر تحديث البيانات من الملف
-        if st.button("🔄 تحديث جميع البيانات من الملف", key="refresh_all_data"):
+        if st.button("🔄 تحديث جميع البيانات من الملف", key="refresh_all_data_manage"):
             # تحميل أحدث البيانات
             users = load_users()
             
@@ -3868,7 +3868,7 @@ def manage_users():
             st.rerun()
         
         # زر تنزيل نسخة احتياطية
-        if st.button("💾 تنزيل نسخة احتياطية", key="download_backup"):
+        if st.button("💾 تنزيل نسخة احتياطية", key="download_backup_manage"):
             if os.path.exists(USERS_FILE):
                 with open(USERS_FILE, "rb") as f:
                     file_data = f.read()
@@ -3878,7 +3878,7 @@ def manage_users():
                     data=file_data,
                     file_name=f"users_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
                     mime="application/json",
-                    key="download_users_file"
+                    key="download_users_file_manage"
                 )
             else:
                 st.warning("⚠ ملف users.json غير موجود.")
@@ -3997,7 +3997,7 @@ def tech_support():
     
     # زر إدارة مجلد الصور
     st.markdown("---")
-    if st.button("🗑️ تنظيف مجلد الصور المؤقتة", key="clean_images"):
+    if st.button("🗑️ تنظيف مجلد الصور المؤقتة", key="clean_images_support"):
         if os.path.exists(IMAGES_FOLDER):
             image_files = [f for f in os.listdir(IMAGES_FOLDER) if f.lower().endswith(tuple(APP_CONFIG["ALLOWED_IMAGE_TYPES"]))]
             if image_files:
@@ -4014,7 +4014,7 @@ def tech_support():
             st.warning("⚠ مجلد الصور غير موجود")
     
     # زر إعادة التشغيل
-    if st.button("🔄 إعادة تشغيل التطبيق", key="restart_app"):
+    if st.button("🔄 إعادة تشغيل التطبيق", key="restart_app_support"):
         try:
             st.cache_data.clear()
             st.rerun()
@@ -4049,12 +4049,12 @@ with st.sidebar:
 
     st.markdown("---")
     st.write("🔧 أدوات:")
-    if st.button("🔄 تحديث الملف من GitHub", key="refresh_github"):
+    if st.button("🔄 تحديث الملف من GitHub", key="refresh_github_main"):
         if fetch_from_github_requests():
             st.rerun()
     
     # زر مسح الكاش
-    if st.button("🗑 مسح الكاش", key="clear_cache"):
+    if st.button("🗑 مسح الكاش", key="clear_cache_main"):
         try:
             st.cache_data.clear()
             st.rerun()
@@ -4062,7 +4062,7 @@ with st.sidebar:
             st.error(f"❌ خطأ في مسح الكاش: {e}")
     
     # زر تحديث الجلسة
-    if st.button("🔄 تحديث الجلسة", key="refresh_session"):
+    if st.button("🔄 تحديث الجلسة", key="refresh_session_main"):
         # تحميل أحدث بيانات المستخدم
         users = load_users()
         username = st.session_state.get("username")
@@ -4080,7 +4080,7 @@ with st.sidebar:
         if unsaved_count > 0:
             st.markdown("---")
             st.warning(f"⚠ لديك {unsaved_count} شيت به تغييرات غير محفوظة")
-            if st.button("💾 حفظ جميع التغييرات", key="save_all_changes", type="primary"):
+            if st.button("💾 حفظ جميع التغييرات", key="save_all_changes_main", type="primary"):
                 # سيتم التعامل مع هذا في الواجهة الرئيسية
                 st.session_state["save_all_requested"] = True
                 st.rerun()
@@ -4101,12 +4101,12 @@ with st.sidebar:
         if unread_count > 0:
             st.markdown(f"### 🔔 الإشعارات")
             st.warning(f"📩 لديك {unread_count} إشعار غير مقروء!")
-            if st.button("📋 عرض الإشعارات", key="show_notifications"):
+            if st.button("📋 عرض الإشعارات", key="show_notifications_sidebar"):
                 st.session_state["show_notifications"] = True
                 st.rerun()
     
     # زر إعادة تسجيل الخروج
-    if st.button("🚪 تسجيل الخروج", key="logout_btn"):
+    if st.button("🚪 تسجيل الخروج", key="logout_btn_main"):
         logout_action()
 
 # تحميل الشيتات (عرض وتحليل)
@@ -4174,11 +4174,11 @@ with tabs[0]:
     else:
         col1, col2 = st.columns(2)
         with col1:
-            card_num = st.number_input("رقم الماكينة:", min_value=1, step=1, key="card_num_service")
+            card_num = st.number_input("رقم الماكينة:", min_value=1, step=1, key="card_num_service_main")
         with col2:
-            current_tons = st.number_input("عدد الأطنان الحالية:", min_value=0, step=100, key="current_tons_service")
+            current_tons = st.number_input("عدد الأطنان الحالية:", min_value=0, step=100, key="current_tons_service_main")
 
-        if st.button("عرض حالة السيرفيس", key="show_service"):
+        if st.button("عرض حالة السيرفيس", key="show_service_main"):
             st.session_state["show_service_results"] = True
 
         if st.session_state.get("show_service_results", False):
@@ -4199,7 +4199,7 @@ with tabs[1]:
 # -------------------------------
 # Tab: تعديل وإدارة البيانات - للمحررين والمسؤولين فقط
 # -------------------------------
-if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة البيانات" in APP_CONFIG["CUSTOM_TABS"] and tabs[2]._label == "🛠 تعديل وإدارة البيانات":
+if permissions["can_edit"] and len(tabs) > 2 and tabs[2]._label == "🛠 تعديل وإدارة البيانات":
     with tabs[2]:
         st.header("🛠 تعديل وإدارة البيانات")
 
@@ -4233,7 +4233,7 @@ if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة الب
             # Tab 2: إضافة صف جديد
             with tab2:
                 st.subheader("➕ إضافة صف جديد")
-                sheet_name_add = st.selectbox("اختر الشيت لإضافة صف:", list(sheets_edit.keys()), key="add_sheet")
+                sheet_name_add = st.selectbox("اختر الشيت لإضافة صف:", list(sheets_edit.keys()), key="add_sheet_main")
                 df_add = sheets_edit[sheet_name_add].astype(str).reset_index(drop=True)
                 
                 st.markdown("أدخل بيانات الصف الجديد:")
@@ -4242,11 +4242,11 @@ if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة الب
                 cols = st.columns(3)
                 for i, col in enumerate(df_add.columns):
                     with cols[i % 3]:
-                        new_data[col] = st.text_input(f"{col}", key=f"add_{sheet_name_add}_{col}")
+                        new_data[col] = st.text_input(f"{col}", key=f"add_{sheet_name_add}_{col}_main")
 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    if st.button("💾 إضافة الصف الجديد", key=f"add_row_{sheet_name_add}", type="primary"):
+                    if st.button("💾 إضافة الصف الجديد", key=f"add_row_{sheet_name_add}_main", type="primary"):
                         new_row_df = pd.DataFrame([new_data]).astype(str)
                         df_new = pd.concat([df_add, new_row_df], ignore_index=True)
                         
@@ -4272,21 +4272,21 @@ if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة الب
                             st.rerun()
                 
                 with col_btn2:
-                    if st.button("🗑 مسح الحقول", key=f"clear_{sheet_name_add}"):
+                    if st.button("🗑 مسح الحقول", key=f"clear_{sheet_name_add}_main"):
                         st.rerun()
 
             # Tab 3: إضافة عمود جديد
             with tab3:
                 st.subheader("🆕 إضافة عمود جديد")
-                sheet_name_col = st.selectbox("اختر الشيت لإضافة عمود:", list(sheets_edit.keys()), key="add_col_sheet")
+                sheet_name_col = st.selectbox("اختر الشيت لإضافة عمود:", list(sheets_edit.keys()), key="add_col_sheet_main")
                 df_col = sheets_edit[sheet_name_col].astype(str)
                 
-                new_col_name = st.text_input("اسم العمود الجديد:", key="new_col_name")
-                default_value = st.text_input("القيمة الافتراضية لكل الصفوف (اختياري):", "", key="default_value")
+                new_col_name = st.text_input("اسم العمود الجديد:", key="new_col_name_main")
+                default_value = st.text_input("القيمة الافتراضية لكل الصفوف (اختياري):", "", key="default_value_main")
 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    if st.button("💾 إضافة العمود الجديد", key=f"add_col_{sheet_name_col}", type="primary"):
+                    if st.button("💾 إضافة العمود الجديد", key=f"add_col_{sheet_name_col}_main", type="primary"):
                         if new_col_name:
                             df_col[new_col_name] = default_value
                             sheets_edit[sheet_name_col] = df_col.astype(object)
@@ -4313,7 +4313,7 @@ if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة الب
                             st.warning("⚠ الرجاء إدخال اسم العمود الجديد.")
                 
                 with col_btn2:
-                    if st.button("🗑 مسح", key=f"clear_col_{sheet_name_col}"):
+                    if st.button("🗑 مسح", key=f"clear_col_{sheet_name_col}_main"):
                         st.rerun()
 
             # Tab 4: إضافة إيفينت جديد مع صور
@@ -4335,7 +4335,7 @@ if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة الب
                         st.info(f"عدد الصور المخزنة: {len(image_files)}")
                         
                         # فلترة الصور
-                        search_term = st.text_input("🔍 بحث عن صور:", placeholder="ابحث باسم الصورة")
+                        search_term = st.text_input("🔍 بحث عن صور:", placeholder="ابحث باسم الصورة", key="image_search_main")
                         
                         filtered_images = image_files
                         if search_term:
@@ -4353,7 +4353,7 @@ if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة الب
                             # أزرار التنقل بين الصفحات
                             col_nav1, col_nav2, col_nav3 = st.columns([1, 2, 1])
                             with col_nav1:
-                                if st.button("⏪ السابق", disabled=st.session_state.image_page == 0):
+                                if st.button("⏪ السابق", key="prev_images_main", disabled=st.session_state.image_page == 0):
                                     st.session_state.image_page = max(0, st.session_state.image_page - 1)
                                     st.rerun()
                             
@@ -4361,7 +4361,7 @@ if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة الب
                                 st.caption(f"الصفحة {st.session_state.image_page + 1} من {total_pages}")
                             
                             with col_nav3:
-                                if st.button("التالي ⏩", disabled=st.session_state.image_page == total_pages - 1):
+                                if st.button("التالي ⏩", key="next_images_main", disabled=st.session_state.image_page == total_pages - 1):
                                     st.session_state.image_page = min(total_pages - 1, st.session_state.image_page + 1)
                                     st.rerun()
                             
@@ -4381,8 +4381,8 @@ if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة الب
                                             try:
                                                 st.image(img_path, caption=img_file, use_column_width=True)
                                                 
-                                                # زر حذف الصورة
-                                                if st.button(f"🗑 حذف", key=f"delete_{img_file}"):
+                                                # زر حذف الصورة مع مفتاح فريد
+                                                if st.button(f"🗑 حذف", key=f"delete_{img_file}_{i}_{j}_main"):
                                                     if delete_image_file(img_file):
                                                         st.success(f"✅ تم حذف {img_file}")
                                                         st.rerun()
