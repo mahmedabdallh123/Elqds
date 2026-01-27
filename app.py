@@ -22,11 +22,11 @@ except Exception:
 # ===============================
 APP_CONFIG = {
     # إعدادات التطبيق العامة
-    "APP_TITLE": "CMMS - سيرفيس تحضيرات",
+    "APP_TITLE": "CMMS -سيرفيس تحضيرات بيل يارن 1",
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
-    "REPO_NAME": "mahmedabdallh123/3",
+    "REPO_NAME": "mahmedabdallh123/BELYARN",
     "BRANCH": "main",
     "FILE_PATH": "l4.xlsx",
     "LOCAL_FILE": "l4.xlsx",
@@ -37,17 +37,12 @@ APP_CONFIG = {
     
     # إعدادات الواجهة
     "SHOW_TECH_SUPPORT_TO_ALL": False,
-    "CUSTOM_TABS": ["📊 فحص السيرفيس", "📋 فحص الإيفينت والكوريكشن", "🛠 تعديل وإدارة البيانات", "👥 إدارة المستخدمين", "📞 الدعم الفني", "🔔 الإشعارات"],
+    "CUSTOM_TABS": ["📊 فحص السيرفيس", "📋 فحص الإيفينت والكوريكشن", "🛠 تعديل وإدارة البيانات", "👥 إدارة المستخدمين", "📞 الدعم الفني"],
     
     # إعدادات الصور
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp"],
-    "MAX_IMAGE_SIZE_MB": 5,
-    
-    # إعدادات الإشعارات
-    "NOTIFICATIONS_FILE": "notifications.json",
-    "KEEP_NOTIFICATIONS_DAYS": 30,
-    "SHOW_NOTIFICATIONS_TO_ADMINS_ONLY": True
+    "MAX_IMAGE_SIZE_MB": 5
 }
 
 # ===============================
@@ -58,576 +53,9 @@ STATE_FILE = "state.json"
 SESSION_DURATION = timedelta(minutes=APP_CONFIG["SESSION_DURATION_MINUTES"])
 MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
-NOTIFICATIONS_FILE = APP_CONFIG["NOTIFICATIONS_FILE"]
 
 # إنشاء رابط GitHub تلقائياً من الإعدادات
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
-
-# -------------------------------
-# 🔔 نظام الإشعارات
-# -------------------------------
-def load_notifications():
-    """تحميل الإشعارات من ملف JSON"""
-    if not os.path.exists(NOTIFICATIONS_FILE):
-        default_notifications = {
-            "notifications": [],
-            "last_check": datetime.now().isoformat(),
-            "next_id": 1
-        }
-        with open(NOTIFICATIONS_FILE, "w", encoding="utf-8") as f:
-            json.dump(default_notifications, f, indent=4, ensure_ascii=False)
-        return default_notifications
-    
-    try:
-        with open(NOTIFICATIONS_FILE, "r", encoding="utf-8") as f:
-            notifications_data = json.load(f)
-        
-        # التحقق من وجود الهيكل الأساسي
-        if "notifications" not in notifications_data:
-            notifications_data["notifications"] = []
-        if "last_check" not in notifications_data:
-            notifications_data["last_check"] = datetime.now().isoformat()
-        if "next_id" not in notifications_data:
-            # توليد ID من أكبر ID موجود
-            max_id = 0
-            for notification in notifications_data["notifications"]:
-                if "id" in notification and notification["id"] > max_id:
-                    max_id = notification["id"]
-            notifications_data["next_id"] = max_id + 1
-        
-        return notifications_data
-    except Exception as e:
-        st.error(f"❌ خطأ في تحميل الإشعارات: {e}")
-        return {
-            "notifications": [],
-            "last_check": datetime.now().isoformat(),
-            "next_id": 1
-        }
-
-def save_notifications(notifications_data):
-    """حفظ الإشعارات إلى ملف JSON"""
-    try:
-        with open(NOTIFICATIONS_FILE, "w", encoding="utf-8") as f:
-            json.dump(notifications_data, f, indent=4, ensure_ascii=False)
-        return True
-    except Exception as e:
-        st.error(f"❌ خطأ في حفظ الإشعارات: {e}")
-        return False
-
-def add_notification(title, message, notification_type="info", created_by="system", 
-                     affected_sheet=None, affected_row=None, affected_column=None):
-    """إضافة إشعار جديد"""
-    notifications_data = load_notifications()
-    
-    notification_id = notifications_data["next_id"]
-    
-    new_notification = {
-        "id": notification_id,
-        "title": title,
-        "message": message,
-        "type": notification_type,  # info, success, warning, error
-        "created_by": created_by,
-        "affected_sheet": affected_sheet,
-        "affected_row": affected_row,
-        "affected_column": affected_column,
-        "timestamp": datetime.now().isoformat(),
-        "read": False,
-        "read_by": [],
-        "read_at": None
-    }
-    
-    notifications_data["notifications"].append(new_notification)
-    notifications_data["next_id"] += 1
-    
-    # تنظيف الإشعارات القديمة
-    cleanup_old_notifications(notifications_data)
-    
-    if save_notifications(notifications_data):
-        return notification_id
-    return None
-
-def cleanup_old_notifications(notifications_data):
-    """تنظيف الإشعارات القديمة"""
-    keep_days = APP_CONFIG["KEEP_NOTIFICATIONS_DAYS"]
-    cutoff_date = datetime.now() - timedelta(days=keep_days)
-    
-    filtered_notifications = []
-    for notification in notifications_data["notifications"]:
-        try:
-            notification_date = datetime.fromisoformat(notification["timestamp"])
-            if notification_date > cutoff_date:
-                filtered_notifications.append(notification)
-        except:
-            # إذا كان هناك خطأ في التاريخ، نحتفظ بالإشعار
-            filtered_notifications.append(notification)
-    
-    notifications_data["notifications"] = filtered_notifications
-    return notifications_data
-
-def mark_notification_as_read(notification_id, username):
-    """تحديد الإشعار كمقروء"""
-    notifications_data = load_notifications()
-    
-    for notification in notifications_data["notifications"]:
-        if notification["id"] == notification_id:
-            if not notification["read"]:
-                notification["read"] = True
-                notification["read_at"] = datetime.now().isoformat()
-            
-            if username not in notification["read_by"]:
-                notification["read_by"].append(username)
-            
-            break
-    
-    save_notifications(notifications_data)
-
-def mark_all_notifications_as_read(username):
-    """تحديد جميع الإشعارات كمقروءة"""
-    notifications_data = load_notifications()
-    
-    for notification in notifications_data["notifications"]:
-        if not notification["read"]:
-            notification["read"] = True
-            notification["read_at"] = datetime.now().isoformat()
-        
-        if username not in notification["read_by"]:
-            notification["read_by"].append(username)
-    
-    save_notifications(notifications_data)
-
-def delete_notification(notification_id):
-    """حذف إشعار"""
-    notifications_data = load_notifications()
-    
-    notifications_data["notifications"] = [
-        n for n in notifications_data["notifications"] 
-        if n["id"] != notification_id
-    ]
-    
-    save_notifications(notifications_data)
-
-def get_unread_notifications_count(username):
-    """الحصول على عدد الإشعارات غير المقروءة"""
-    notifications_data = load_notifications()
-    
-    if APP_CONFIG["SHOW_NOTIFICATIONS_TO_ADMINS_ONLY"]:
-        # التحقق من صلاحيات المستخدم
-        users = load_users()
-        user_role = users.get(username, {}).get("role", "viewer")
-        if user_role != "admin":
-            return 0
-    
-    unread_count = 0
-    for notification in notifications_data["notifications"]:
-        if not notification["read"] or username not in notification["read_by"]:
-            unread_count += 1
-    
-    return unread_count
-
-def get_recent_notifications(limit=10, unread_only=False, username=None):
-    """الحصول على الإشعارات الأخيرة"""
-    notifications_data = load_notifications()
-    
-    # فلترة الإشعارات
-    filtered_notifications = notifications_data["notifications"].copy()
-    
-    # تصفية حسب المستخدم إذا كان مطلوباً
-    if APP_CONFIG["SHOW_NOTIFICATIONS_TO_ADMINS_ONLY"] and username:
-        users = load_users()
-        user_role = users.get(username, {}).get("role", "viewer")
-        if user_role != "admin":
-            return []
-    
-    # تصفية حسب الحالة "مقروء"
-    if unread_only and username:
-        filtered_notifications = [
-            n for n in filtered_notifications 
-            if not n["read"] or username not in n["read_by"]
-        ]
-    
-    # ترتيب حسب التاريخ (الأحدث أولاً)
-    filtered_notifications.sort(
-        key=lambda x: datetime.fromisoformat(x["timestamp"]), 
-        reverse=True
-    )
-    
-    return filtered_notifications[:limit]
-
-def notifications_ui():
-    """واجهة عرض الإشعارات"""
-    st.header("🔔 الإشعارات")
-    
-    username = st.session_state.get("username")
-    if not username:
-        st.warning("⚠ يرجى تسجيل الدخول لعرض الإشعارات.")
-        return
-    
-    # التحقق من الصلاحيات
-    if APP_CONFIG["SHOW_NOTIFICATIONS_TO_ADMINS_ONLY"]:
-        users = load_users()
-        user_role = users.get(username, {}).get("role", "viewer")
-        if user_role != "admin":
-            st.error("❌ صلاحية مشاهدة الإشعارات مقتصرة على المسؤولين فقط.")
-            return
-    
-    # تبويبات الإشعارات
-    tab1, tab2, tab3 = st.tabs(["📋 جميع الإشعارات", "📩 غير المقروء", "⚙ إدارة الإشعارات"])
-    
-    with tab1:
-        show_all_notifications(username)
-    
-    with tab2:
-        show_unread_notifications(username)
-    
-    with tab3:
-        manage_notifications(username)
-
-def show_all_notifications(username):
-    """عرض جميع الإشعارات"""
-    notifications = get_recent_notifications(limit=50, username=username)
-    
-    if not notifications:
-        st.info("ℹ️ لا توجد إشعارات حتى الآن.")
-        return
-    
-    # عداد الإشعارات
-    unread_count = get_unread_notifications_count(username)
-    st.metric("🔔 عدد الإشعارات غير المقروءة", unread_count)
-    
-    # أزرار الإدارة
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("📌 تحديد الكل كمقروء", key="mark_all_read"):
-            mark_all_notifications_as_read(username)
-            st.success("✅ تم تحديد جميع الإشعارات كمقروءة!")
-            st.rerun()
-    
-    with col2:
-        if st.button("🔄 تحديث", key="refresh_notifications"):
-            st.rerun()
-    
-    with col3:
-        if st.button("🗑 حذف الكل", key="delete_all_notifications"):
-            if st.checkbox("⚠ تأكيد حذف جميع الإشعارات"):
-                notifications_data = load_notifications()
-                notifications_data["notifications"] = []
-                save_notifications(notifications_data)
-                st.success("✅ تم حذف جميع الإشعارات!")
-                st.rerun()
-    
-    st.markdown("---")
-    
-    # عرض الإشعارات
-    for notification in notifications:
-        display_notification(notification, username)
-
-def show_unread_notifications(username):
-    """عرض الإشعارات غير المقروءة"""
-    notifications = get_recent_notifications(limit=50, unread_only=True, username=username)
-    
-    if not notifications:
-        st.info("🎉 لا توجد إشعارات غير مقروءة!")
-        return
-    
-    st.metric("📩 عدد الإشعارات غير المقروءة", len(notifications))
-    
-    # زر تحديد الكل كمقروء
-    if st.button("📌 تحديد الكل كمقروء", key="mark_all_unread_read"):
-        mark_all_notifications_as_read(username)
-        st.success("✅ تم تحديد جميع الإشعارات كمقروءة!")
-        st.rerun()
-    
-    st.markdown("---")
-    
-    # عرض الإشعارات غير المقروءة
-    for notification in notifications:
-        display_notification(notification, username)
-
-def display_notification(notification, username):
-    """عرض إشعار واحد"""
-    # تحديد لون الإشعار حسب النوع
-    type_colors = {
-        "info": "#17a2b8",      # أزرق فاتح
-        "success": "#28a745",   # أخضر
-        "warning": "#ffc107",   # أصفر
-        "error": "#dc3545"      # أحمر
-    }
-    
-    type_icons = {
-        "info": "ℹ️",
-        "success": "✅",
-        "warning": "⚠️",
-        "error": "❌"
-    }
-    
-    color = type_colors.get(notification["type"], "#6c757d")
-    icon = type_icons.get(notification["type"], "📢")
-    
-    # تحديد إذا كان مقروءاً من قبل المستخدم الحالي
-    is_read = notification.get("read", False) and username in notification.get("read_by", [])
-    
-    # إنشاء كارد للإشعار
-    with st.container():
-        # تخصيص الخلفية حسب حالة القراءة
-        if is_read:
-            st.markdown(f"""
-            <div style="
-                background-color: #f8f9fa;
-                border-left: 4px solid {color};
-                padding: 12px;
-                margin: 8px 0;
-                border-radius: 4px;
-                opacity: 0.8;
-            ">
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div style="
-                background-color: white;
-                border-left: 4px solid {color};
-                padding: 12px;
-                margin: 8px 0;
-                border-radius: 4px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            ">
-            """, unsafe_allow_html=True)
-        
-        # رأس الإشعار
-        col_head1, col_head2, col_head3 = st.columns([6, 2, 1])
-        with col_head1:
-            st.markdown(f"**{icon} {notification['title']}**")
-        with col_head2:
-            # عرض الوقت المنقضي
-            try:
-                timestamp = datetime.fromisoformat(notification["timestamp"])
-                time_diff = datetime.now() - timestamp
-                
-                if time_diff.days > 0:
-                    time_text = f"منذ {time_diff.days} يوم"
-                elif time_diff.seconds > 3600:
-                    hours = time_diff.seconds // 3600
-                    time_text = f"منذ {hours} ساعة"
-                elif time_diff.seconds > 60:
-                    minutes = time_diff.seconds // 60
-                    time_text = f"منذ {minutes} دقيقة"
-                else:
-                    time_text = "الآن"
-                
-                st.caption(f"⏰ {time_text}")
-            except:
-                st.caption("⏰ غير معروف")
-        
-        with col_head3:
-            # أزرار الإجراءات
-            if not is_read:
-                if st.button("📌", key=f"read_{notification['id']}", help="تحديد كمقروء"):
-                    mark_notification_as_read(notification["id"], username)
-                    st.rerun()
-            
-            if st.button("🗑", key=f"delete_{notification['id']}", help="حذف"):
-                delete_notification(notification["id"])
-                st.rerun()
-        
-        # محتوى الإشعار
-        st.markdown(f"**الرسالة:** {notification['message']}")
-        
-        # معلومات إضافية
-        details_cols = st.columns(3)
-        with details_cols[0]:
-            st.caption(f"👤 {notification.get('created_by', 'نظام')}")
-        
-        with details_cols[1]:
-            if notification.get('affected_sheet'):
-                st.caption(f"📋 الشيت: {notification['affected_sheet']}")
-        
-        with details_cols[2]:
-            if notification.get('affected_row') is not None:
-                st.caption(f"📊 الصف: {notification['affected_row']}")
-        
-        # حالة القراءة
-        if notification.get('read_by'):
-            read_by_text = ", ".join(notification['read_by'][:3])
-            if len(notification['read_by']) > 3:
-                read_by_text += f" و{len(notification['read_by']) - 3} آخرين"
-            st.caption(f"👁️ المقروء من قبل: {read_by_text}")
-        
-        st.markdown("</div>", unsafe_allow_html=True)
-
-def manage_notifications(username):
-    """إدارة الإشعارات"""
-    st.markdown("### ⚙ إدارة الإشعارات")
-    
-    # إحصائيات
-    notifications_data = load_notifications()
-    total_notifications = len(notifications_data["notifications"])
-    
-    # حساب الإشعارات حسب النوع
-    type_counts = {"info": 0, "success": 0, "warning": 0, "error": 0}
-    for notification in notifications_data["notifications"]:
-        notif_type = notification.get("type", "info")
-        type_counts[notif_type] = type_counts.get(notif_type, 0) + 1
-    
-    # عرض الإحصائيات
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("📊 الإجمالي", total_notifications)
-    with col2:
-        st.metric("ℹ️ معلومات", type_counts["info"])
-    with col3:
-        st.metric("✅ نجاح", type_counts["success"])
-    with col4:
-        st.metric("⚠️ تحذيرات", type_counts["warning"])
-    
-    st.markdown("---")
-    
-    # إعدادات الإشعارات
-    st.markdown("### 🔧 إعدادات الإشعارات")
-    
-    col_set1, col_set2 = st.columns(2)
-    
-    with col_set1:
-        # تغيير إعدادات عرض الإشعارات
-        show_to_all = st.checkbox(
-            "عرض الإشعارات لجميع المستخدمين",
-            value=not APP_CONFIG["SHOW_NOTIFICATIONS_TO_ADMINS_ONLY"],
-            key="show_notifications_to_all"
-        )
-        
-        if st.button("💾 حفظ الإعدادات", key="save_notification_settings"):
-            # تحديث الإعدادات
-            APP_CONFIG["SHOW_NOTIFICATIONS_TO_ADMINS_ONLY"] = not show_to_all
-            st.success("✅ تم حفظ الإعدادات!")
-    
-    with col_set2:
-        # تغيير مدة الاحتفاظ بالإشعارات
-        keep_days = st.slider(
-            "مدة الاحتفاظ بالإشعارات (أيام)",
-            min_value=1,
-            max_value=365,
-            value=APP_CONFIG["KEEP_NOTIFICATIONS_DAYS"],
-            key="keep_notifications_days"
-        )
-        
-        if st.button("💾 تحديث المدة", key="update_keep_days"):
-            APP_CONFIG["KEEP_NOTIFICATIONS_DAYS"] = keep_days
-            st.success(f"✅ تم تحديث مدة الاحتفاظ إلى {keep_days} يوم!")
-    
-    st.markdown("---")
-    
-    # أدوات التنظيف
-    st.markdown("### 🧹 أدوات التنظيف")
-    
-    col_clean1, col_clean2, col_clean3 = st.columns(3)
-    
-    with col_clean1:
-        if st.button("🗑 حذف الإشعارات المقروءة", key="delete_read_notifications"):
-            notifications_data = load_notifications()
-            
-            # فلترة الإشعارات غير المقروءة فقط
-            unread_notifications = [
-                n for n in notifications_data["notifications"] 
-                if not n.get("read", False)
-            ]
-            
-            deleted_count = len(notifications_data["notifications"]) - len(unread_notifications)
-            notifications_data["notifications"] = unread_notifications
-            
-            if save_notifications(notifications_data):
-                st.success(f"✅ تم حذف {deleted_count} إشعار مقروء!")
-                st.rerun()
-    
-    with col_clean2:
-        days_old = st.number_input("حذف الإشعارات الأقدم من (أيام)", 
-                                  min_value=1, max_value=365, value=30, key="days_old")
-        
-        if st.button("🗑 حذف القديمة", key="delete_old_notifications"):
-            cutoff_date = datetime.now() - timedelta(days=days_old)
-            notifications_data = load_notifications()
-            
-            original_count = len(notifications_data["notifications"])
-            notifications_data["notifications"] = [
-                n for n in notifications_data["notifications"] 
-                if datetime.fromisoformat(n["timestamp"]) > cutoff_date
-            ]
-            
-            deleted_count = original_count - len(notifications_data["notifications"])
-            save_notifications(notifications_data)
-            
-            st.success(f"✅ تم حذف {deleted_count} إشعار قديم!")
-            st.rerun()
-    
-    with col_clean3:
-        if st.button("🔄 إعادة تعيين", key="reset_notifications"):
-            if st.checkbox("⚠ تأكيد إعادة تعيين جميع الإشعارات"):
-                default_notifications = {
-                    "notifications": [],
-                    "last_check": datetime.now().isoformat(),
-                    "next_id": 1
-                }
-                with open(NOTIFICATIONS_FILE, "w", encoding="utf-8") as f:
-                    json.dump(default_notifications, f, indent=4, ensure_ascii=False)
-                st.success("✅ تم إعادة تعيين نظام الإشعارات!")
-                st.rerun()
-    
-    st.markdown("---")
-    
-    # تصدير واستيراد الإشعارات
-    st.markdown("### 📥 تصدير واستيراد الإشعارات")
-    
-    col_export1, col_export2 = st.columns(2)
-    
-    with col_export1:
-        # تصدير الإشعارات
-        if st.button("💾 تصدير الإشعارات", key="export_notifications"):
-            notifications_data = load_notifications()
-            
-            buffer = io.BytesIO()
-            json_str = json.dumps(notifications_data, indent=4, ensure_ascii=False, default=str)
-            buffer.write(json_str.encode('utf-8'))
-            
-            st.download_button(
-                label="📥 تحميل ملف JSON",
-                data=buffer.getvalue(),
-                file_name=f"notifications_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json",
-                key="download_notifications"
-            )
-    
-    with col_export2:
-        # استيراد الإشعارات
-        uploaded_file = st.file_uploader(
-            "رفع ملف إشعارات",
-            type=['json'],
-            key="upload_notifications"
-        )
-        
-        if uploaded_file is not None:
-            try:
-                imported_data = json.load(uploaded_file)
-                
-                # التحقق من صحة البيانات
-                if "notifications" in imported_data:
-                    if st.button("📤 استيراد البيانات", key="import_notifications"):
-                        # دمج الإشعارات
-                        current_data = load_notifications()
-                        
-                        # إعادة ترقيم IDs لمنع التكرار
-                        max_id = current_data["next_id"]
-                        for notification in imported_data["notifications"]:
-                            notification["id"] = max_id
-                            max_id += 1
-                        
-                        # إضافة الإشعارات المستوردة
-                        current_data["notifications"].extend(imported_data["notifications"])
-                        current_data["next_id"] = max_id
-                        
-                        save_notifications(current_data)
-                        st.success(f"✅ تم استيراد {len(imported_data['notifications'])} إشعار!")
-                        st.rerun()
-                else:
-                    st.error("❌ ملف غير صالح: يجب أن يحتوي على حقل 'notifications'")
-            except Exception as e:
-                st.error(f"❌ خطأ في قراءة الملف: {e}")
 
 # -------------------------------
 # 🧩 دوال مساعدة للصور
@@ -1076,54 +504,20 @@ def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit
         try:
             contents = repo.get_contents(APP_CONFIG["FILE_PATH"], ref=APP_CONFIG["BRANCH"])
             result = repo.update_file(path=APP_CONFIG["FILE_PATH"], message=commit_message, content=content, sha=contents.sha, branch=APP_CONFIG["BRANCH"])
-            
-            # إضافة إشعار بنجاح الحفظ
-            add_notification(
-                title="✅ تم حفظ البيانات",
-                message=f"تم حفظ التغييرات ورفعها إلى GitHub: {commit_message}",
-                notification_type="success",
-                created_by=st.session_state.get("username", "system")
-            )
-            
+            st.success(f"✅ تم الحفظ والرفع إلى GitHub بنجاح: {commit_message}")
             return load_sheets_for_edit()
         except Exception as e:
             # حاول رفع كملف جديد أو إنشاء
             try:
                 result = repo.create_file(path=APP_CONFIG["FILE_PATH"], message=commit_message, content=content, branch=APP_CONFIG["BRANCH"])
-                
-                # إضافة إشعار بنجاح الإنشاء
-                add_notification(
-                    title="✅ تم إنشاء ملف جديد",
-                    message=f"تم إنشاء ملف جديد على GitHub: {commit_message}",
-                    notification_type="success",
-                    created_by=st.session_state.get("username", "system")
-                )
-                
+                st.success(f"✅ تم إنشاء ملف جديد على GitHub: {commit_message}")
                 return load_sheets_for_edit()
             except Exception as create_error:
                 st.error(f"❌ فشل إنشاء ملف جديد على GitHub: {create_error}")
-                
-                # إضافة إشعار بالفشل
-                add_notification(
-                    title="❌ فشل الحفظ",
-                    message=f"فشل حفظ التغييرات على GitHub: {create_error}",
-                    notification_type="error",
-                    created_by=st.session_state.get("username", "system")
-                )
-                
                 return None
 
     except Exception as e:
         st.error(f"❌ فشل الرفع إلى GitHub: {e}")
-        
-        # إضافة إشعار بالفشل
-        add_notification(
-            title="❌ فشل الحفظ",
-            message=f"فشل الرفع إلى GitHub: {e}",
-            notification_type="error",
-            created_by=st.session_state.get("username", "system")
-        )
-        
         return None
 
 def auto_save_to_github(sheets_dict, operation_description):
@@ -1181,8 +575,7 @@ def get_user_permissions(user_role, user_permissions):
             "can_view": True,
             "can_edit": True,
             "can_manage_users": True,
-            "can_see_tech_support": True,
-            "can_see_notifications": True
+            "can_see_tech_support": True
         }
     
     # إذا كان الدور editor
@@ -1191,8 +584,7 @@ def get_user_permissions(user_role, user_permissions):
             "can_view": True,
             "can_edit": True,
             "can_manage_users": False,
-            "can_see_tech_support": False,
-            "can_see_notifications": not APP_CONFIG["SHOW_NOTIFICATIONS_TO_ADMINS_ONLY"]
+            "can_see_tech_support": False
         }
     
     # إذا كان الدور viewer أو أي دور آخر
@@ -1202,8 +594,7 @@ def get_user_permissions(user_role, user_permissions):
             "can_view": "view" in user_permissions or "edit" in user_permissions or "all" in user_permissions,
             "can_edit": "edit" in user_permissions or "all" in user_permissions,
             "can_manage_users": "manage_users" in user_permissions or "all" in user_permissions,
-            "can_see_tech_support": "tech_support" in user_permissions or "all" in user_permissions,
-            "can_see_notifications": not APP_CONFIG["SHOW_NOTIFICATIONS_TO_ADMINS_ONLY"] or "notifications" in user_permissions
+            "can_see_tech_support": "tech_support" in user_permissions or "all" in user_permissions
         }
 
 def get_servised_by_value(row):
@@ -1502,8 +893,11 @@ def show_service_statistics(service_stats, result_df):
         st.info("ℹ️ لا توجد خدمات مطلوبة في النطاق المحدد.")
         return
     
-    # حساب النسبة العامة
+    # حساب النسبة العامة - التأكد من عدم تجاوز القيم المسموح بها
     completion_rate = (service_stats["total_done_services"] / service_stats["total_needed_services"]) * 100 if service_stats["total_needed_services"] > 0 else 0
+    
+    # التأكد من أن النسبة بين 0 و 100
+    completion_rate = max(0, min(100, completion_rate))
     
     # عرض النسب العامة
     col1, col2, col3, col4 = st.columns(4)
@@ -1555,7 +949,13 @@ def show_service_statistics(service_stats, result_df):
         for service in sorted(all_services):
             needed_count = service_stats["service_counts"].get(service, 0)
             done_count = service_stats["service_done_counts"].get(service, 0)
-            completion_rate_service = (done_count / needed_count * 100) if needed_count > 0 else 0
+            
+            # حساب النسبة مع تجنب القسمة على صفر
+            if needed_count > 0:
+                completion_rate_service = (done_count / needed_count) * 100
+                completion_rate_service = max(0, min(100, completion_rate_service))
+            else:
+                completion_rate_service = 0
             
             stat_data.append({
                 "الخدمة": service,
@@ -1632,6 +1032,13 @@ def show_service_statistics(service_stats, result_df):
                 fig2.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig2, use_container_width=True)
                 
+                # إضافة progress bar آمن - بدون تجاوز القيم المسموحة
+                st.markdown(f"**📈 نسبة الإنجاز العامة:** {completion_rate:.1f}%")
+                if 0 <= completion_rate <= 100:
+                    st.progress(completion_rate / 100)
+                else:
+                    st.info("ℹ️ لا يمكن عرض شريط التقدم بسبب قيمة النسبة غير الصحيحة")
+                
             except ImportError:
                 # استخدام streamlit native charts بدلاً من plotly
                 st.info("📊 عرض البيانات باستخدام الرسوم البيانية المضمنة في Streamlit")
@@ -1642,13 +1049,19 @@ def show_service_statistics(service_stats, result_df):
                 dist_data = []
                 for service, needed_count in service_stats["service_counts"].items():
                     done_count = service_stats["service_done_counts"].get(service, 0)
-                    completion_rate = (done_count / needed_count * 100) if needed_count > 0 else 0
+                    
+                    # حساب النسبة مع تجنب القسمة على صفر
+                    if needed_count > 0:
+                        completion_rate_service = (done_count / needed_count) * 100
+                        completion_rate_service = max(0, min(100, completion_rate_service))
+                    else:
+                        completion_rate_service = 0
                     
                     dist_data.append({
                         "الخدمة": service,
                         "مطلوبة": needed_count,
                         "منفذة": done_count,
-                        "نسبة": f"{completion_rate:.1f}%"
+                        "نسبة": f"{completion_rate_service:.1f}%"
                     })
                 
                 if dist_data:
@@ -1675,9 +1088,12 @@ def show_service_statistics(service_stats, result_df):
                     height=400
                 )
                 
-                # عرض النسبة العامة كـ progress bar
+                # عرض النسبة العامة كـ progress bar آمن
                 st.markdown(f"**📈 نسبة الإنجاز العامة:** {completion_rate:.1f}%")
-                st.progress(completion_rate / 100)
+                if 0 <= completion_rate <= 100:
+                    st.progress(completion_rate / 100)
+                else:
+                    st.info("ℹ️ لا يمكن عرض شريط التقدم بسبب قيمة النسبة غير الصحيحة")
         else:
             st.info("ℹ️ لا توجد بيانات كافية لعرض المخططات.")
     
@@ -1686,7 +1102,12 @@ def show_service_statistics(service_stats, result_df):
         
         slice_stats_data = []
         for slice_key, slice_data in service_stats["by_slice"].items():
-            completion_rate_slice = (slice_data["total_done"] / slice_data["total_needed"] * 100) if slice_data["total_needed"] > 0 else 0
+            # حساب النسبة مع تجنب القسمة على صفر
+            if slice_data["total_needed"] > 0:
+                completion_rate_slice = (slice_data["total_done"] / slice_data["total_needed"]) * 100
+                completion_rate_slice = max(0, min(100, completion_rate_slice))
+            else:
+                completion_rate_slice = 0
             
             slice_stats_data.append({
                 "الشريحة": slice_key,
@@ -1723,6 +1144,8 @@ def show_service_statistics(service_stats, result_df):
                             # استخراج النسبة من النص
                             rate_text = slice_item["نسبة الإنجاز"]
                             rate_value = float(rate_text.replace("%", "").strip())
+                            # التأكد من أن النسبة بين 0 و 100
+                            rate_value = max(0, min(100, rate_value))
                             completion_rates.append(rate_value)
                         except:
                             continue
@@ -1761,6 +1184,8 @@ def show_service_statistics(service_stats, result_df):
                                 mid_point = (int(slice_range[0]) + int(slice_range[1])) / 2
                                 rate_text = slice_item["نسبة الإنجاز"]
                                 rate_value = float(rate_text.replace("%", "").strip())
+                                # التأكد من أن النسبة بين 0 و 100
+                                rate_value = max(0, min(100, rate_value))
                                 
                                 chart_data.append({
                                     "نطاق الأطنان": mid_point,
@@ -1814,7 +1239,7 @@ def check_events_and_corrections(all_sheets):
         main_tabs = st.tabs(["🔍 معايير البحث", "⏱️ خيارات المدة", "📊 تحليل زمني"])
         
         with main_tabs[0]:
-            col1, col2 = st.columns(2)
+            col1, col2 = st.columns([1, 1])
             
             with col1:
                 # قسم أرقام الماكينات
@@ -2197,11 +1622,11 @@ def show_search_params(search_params):
         if search_params["card_numbers"]:
             params_display.append(f"**🔢 أرقام الماكينات:** {search_params['card_numbers']}")
         if search_params["date_range"]:
-            params_display.append(f"📅 **التواريخ:** {search_params['date_range']}")
+            params_display.append(f"**📅 التواريخ:** {search_params['date_range']}")
         if search_params["tech_names"]:
-            params_display.append(f"👨‍🔧 **فنيو الخدمة:** {search_params['tech_names']}")
+            params_display.append(f"**👨‍🔧 فنيو الخدمة:** {search_params['tech_names']}")
         if search_params["search_text"]:
-            params_display.append(f"📝 **نص البحث:** {search_params['search_text']}")
+            params_display.append(f"**📝 نص البحث:** {search_params['search_text']}")
         
         if params_display:
             st.info(" | ".join(params_display))
@@ -2514,24 +1939,24 @@ def display_search_results_with_duration(results, search_params):
                         total_events = row.get('Total_Events', '?')
                         st.markdown(f"**الحدث #{event_order} من {total_events}**")
                         if 'Date' in row:
-                            st.markdown(f"📅 **التاريخ:** {row['Date']}")
+                            st.markdown(f"**📅 التاريخ:** {row['Date']}")
                         if 'Event' in row and row['Event'] != '-':
-                            st.markdown(f"📝 **الحدث:** {row['Event']}")
+                            st.markdown(f"**📝 الحدث:** {row['Event']}")
                         if 'Correction' in row and row['Correction'] != '-':
-                            st.markdown(f"✏ **التصحيح:** {row['Correction']}")
+                            st.markdown(f"**✏ التصحيح:** {row['Correction']}")
                     
                     with col_event2:
                         if 'Servised by' in row and row['Servised by'] != '-':
-                            st.markdown(f"👨‍🔧 **فني الخدمة:** {row['Servised by']}")
+                            st.markdown(f"**👨‍🔧 فني الخدمة:** {row['Servised by']}")
                         if 'Tones' in row and row['Tones'] != '-':
-                            st.markdown(f"⚖️ **الأطنان:** {row['Tones']}")
+                            st.markdown(f"**⚖️ الأطنان:** {row['Tones']}")
                         
                         # عرض معلومات الصور إذا كانت موجودة
                         if 'Images' in row and row['Images'] not in ['-', '', None, 'nan']:
                             images_str = str(row['Images'])
                             if images_str.strip():
                                 images_count = len(images_str.split(',')) if images_str else 0
-                                st.markdown(f"📷 **عدد الصور:** {images_count}")
+                                st.markdown(f"**📷 عدد الصور:** {images_count}")
     
     with display_tabs[2]:
         # عرض الصور للأحداث التي تحتوي على صور
@@ -3132,16 +2557,6 @@ def add_new_event(sheets_edit):
         
         sheets_edit[sheet_name] = df_new.astype(object)
         
-        # إضافة إشعار
-        add_notification(
-            title="➕ حدث جديد",
-            message=f"تم إضافة حدث جديد في {sheet_name} للماكينة {card_num}",
-            notification_type="info",
-            created_by=st.session_state.get("username", "system"),
-            affected_sheet=sheet_name,
-            affected_row=len(df_new) - 1
-        )
-        
         # حفظ تلقائي في GitHub
         new_sheets = auto_save_to_github(
             sheets_edit,
@@ -3313,16 +2728,6 @@ def edit_events_and_corrections(sheets_edit):
             
             sheets_edit[sheet_name] = df.astype(object)
             
-            # إضافة إشعار
-            add_notification(
-                title="✏ حدث معدل",
-                message=f"تم تعديل حدث في {sheet_name} الصف {row_index}",
-                notification_type="info",
-                created_by=st.session_state.get("username", "system"),
-                affected_sheet=sheet_name,
-                affected_row=row_index
-            )
-            
             # حفظ تلقائي في GitHub
             new_sheets = auto_save_to_github(
                 sheets_edit,
@@ -3393,15 +2798,6 @@ def edit_sheet_with_save_button(sheets_edit):
                 # حفظ التغييرات
                 sheets_edit[sheet_name] = edited_df.astype(object)
                 
-                # إضافة إشعار
-                add_notification(
-                    title="📝 تعديل بيانات",
-                    message=f"تم تعديل بيانات في شيت {sheet_name}",
-                    notification_type="info",
-                    created_by=st.session_state.get("username", "system"),
-                    affected_sheet=sheet_name
-                )
-                
                 # حفظ تلقائي في GitHub
                 new_sheets = auto_save_to_github(
                     sheets_edit,
@@ -3445,32 +2841,12 @@ def edit_sheet_with_save_button(sheets_edit):
                     added_rows = len(edited_df) - len(df)
                     st.write(f"➕ **صفوف مضافة:** {added_rows}")
                     changes_count += added_rows
-                    
-                    # إضافة إشعارات للصفوف المضافة
-                    for i in range(len(df), len(edited_df)):
-                        add_notification(
-                            title="➕ صف جديد",
-                            message=f"تم إضافة صف جديد في شيت {sheet_name}",
-                            notification_type="success",
-                            created_by=st.session_state.get("username", "system"),
-                            affected_sheet=sheet_name,
-                            affected_row=i
-                        )
                 
                 # التحقق من الصفوف المحذوفة
                 elif len(edited_df) < len(df):
                     deleted_rows = len(df) - len(edited_df)
                     st.write(f"🗑️ **صفوف محذوفة:** {deleted_rows}")
                     changes_count += deleted_rows
-                    
-                    # إضافة إشعار للصفوف المحذوفة
-                    add_notification(
-                        title="🗑️ حذف صفوف",
-                        message=f"تم حذف {deleted_rows} صف من شيت {sheet_name}",
-                        notification_type="warning",
-                        created_by=st.session_state.get("username", "system"),
-                        affected_sheet=sheet_name
-                    )
                 
                 # التحقق من التغييرات في القيم
                 changed_cells = 0
@@ -3606,14 +2982,6 @@ def manage_users():
             
             # حفظ في الملف JSON
             if save_users(current_users):
-                # إضافة إشعار
-                add_notification(
-                    title="👤 مستخدم جديد",
-                    message=f"تم إضافة مستخدم جديد: {new_username}",
-                    notification_type="success",
-                    created_by=st.session_state.get("username", "system")
-                )
-                
                 st.success(f"✅ تم إضافة المستخدم '{new_username}' بنجاح!")
                 st.rerun()
             else:
@@ -3715,14 +3083,6 @@ def manage_users():
                         
                         if updated:
                             if save_users(latest_users):
-                                # إضافة إشعار
-                                add_notification(
-                                    title="👤 تعديل مستخدم",
-                                    message=f"تم تعديل مستخدم: {user_to_edit}",
-                                    notification_type="info",
-                                    created_by=st.session_state.get("username", "system")
-                                )
-                                
                                 st.success(f"✅ تم تحديث المستخدم '{user_to_edit}' بنجاح!")
                                 
                                 # إذا كان المستخدم الحالي هو الذي تم تعديله، قم بتحديث session state
@@ -3748,14 +3108,6 @@ def manage_users():
                         latest_users[user_to_edit]["password"] = default_password
                         
                         if save_users(latest_users):
-                            # إضافة إشعار
-                            add_notification(
-                                title="🔐 إعادة تعيين كلمة مرور",
-                                message=f"تم إعادة تعيين كلمة مرور المستخدم: {user_to_edit}",
-                                notification_type="warning",
-                                created_by=st.session_state.get("username", "system")
-                            )
-                            
                             st.warning(f"⚠ تم إعادة تعيين كلمة مرور '{user_to_edit}' إلى: {default_password}")
                             st.info("📋 يجب على المستخدم تغيير كلمة المرور عند أول تسجيل دخول.")
                             st.rerun()
@@ -3815,14 +3167,6 @@ def manage_users():
                                 del latest_users[user_to_delete]
                                 
                                 if save_users(latest_users):
-                                    # إضافة إشعار
-                                    add_notification(
-                                        title="🗑️ حذف مستخدم",
-                                        message=f"تم حذف المستخدم: {user_to_delete}",
-                                        notification_type="warning",
-                                        created_by=st.session_state.get("username", "system")
-                                    )
-                                    
                                     st.success(f"✅ تم حذف المستخدم '{user_to_delete}' بنجاح!")
                                     st.rerun()
                                 else:
@@ -4093,19 +3437,7 @@ with st.sidebar:
         st.caption(f"عدد الصور: {len(image_files)}")
     
     st.markdown("---")
-    
-    # إظهار عدد الإشعارات غير المقروءة
-    username = st.session_state.get("username")
-    if username:
-        unread_count = get_unread_notifications_count(username)
-        if unread_count > 0:
-            st.markdown(f"### 🔔 الإشعارات")
-            st.warning(f"📩 لديك {unread_count} إشعار غير مقروء!")
-            if st.button("📋 عرض الإشعارات", key="show_notifications"):
-                st.session_state["show_notifications"] = True
-                st.rerun()
-    
-    # زر إعادة تسجيل الخروج
+    # زر لإعادة تسجيل الخروج
     if st.button("🚪 تسجيل الخروج", key="logout_btn"):
         logout_action()
 
@@ -4124,12 +3456,6 @@ user_role = st.session_state.get("user_role", "viewer")
 user_permissions = st.session_state.get("user_permissions", ["view"])
 permissions = get_user_permissions(user_role, user_permissions)
 
-# التحقق من طلب عرض الإشعارات
-if st.session_state.get("show_notifications", False):
-    notifications_ui()
-    st.session_state["show_notifications"] = False
-    st.stop()
-
 # تحديد التبويبات بناءً على الصلاحيات
 if permissions["can_manage_users"]:  # admin
     tabs = st.tabs(APP_CONFIG["CUSTOM_TABS"])
@@ -4143,25 +3469,10 @@ if permissions["can_manage_users"]:  # admin
         with tabs[4]:
             tech_support()
     
-    # Tab: الإشعارات (للمسؤولين فقط أو إذا كان الإعداد يسمح للجميع)
-    if permissions["can_see_notifications"]:
-        with tabs[5]:
-            notifications_ui()
-    
 elif permissions["can_edit"]:  # editor
-    tabs = st.tabs(["📊 فحص السيرفيس", "📋 فحص الإيفينت والكوريكشن", "🛠 تعديل وإدارة البيانات", "🔔 الإشعارات"])
-    
-    # Tab: الإشعارات للمحررين
-    if permissions["can_see_notifications"]:
-        with tabs[3]:
-            notifications_ui()
+    tabs = st.tabs(["📊 فحص السيرفيس", "📋 فحص الإيفينت والكوريكشن", "🛠 تعديل وإدارة البيانات"])
 else:  # viewer
-    tabs = st.tabs(["📊 فحص السيرفيس", "📋 فحص الإيفينت والكوريكشن", "🔔 الإشعارات"])
-    
-    # Tab: الإشعارات للمشاهدين
-    if permissions["can_see_notifications"]:
-        with tabs[2]:
-            notifications_ui()
+    tabs = st.tabs(["📊 فحص السيرفيس", "📋 فحص الإيفينت والكوريكشن"])
 
 # -------------------------------
 # Tab: فحص السيرفيس (لجميع المستخدمين)
@@ -4199,7 +3510,7 @@ with tabs[1]:
 # -------------------------------
 # Tab: تعديل وإدارة البيانات - للمحررين والمسؤولين فقط
 # -------------------------------
-if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة البيانات" in APP_CONFIG["CUSTOM_TABS"] and tabs[2]._label == "🛠 تعديل وإدارة البيانات":
+if permissions["can_edit"] and len(tabs) > 2:
     with tabs[2]:
         st.header("🛠 تعديل وإدارة البيانات")
 
@@ -4251,16 +3562,6 @@ if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة الب
                         df_new = pd.concat([df_add, new_row_df], ignore_index=True)
                         
                         sheets_edit[sheet_name_add] = df_new.astype(object)
-                        
-                        # إضافة إشعار
-                        add_notification(
-                            title="➕ صف جديد",
-                            message=f"تم إضافة صف جديد في شيت {sheet_name_add}",
-                            notification_type="success",
-                            created_by=st.session_state.get("username", "system"),
-                            affected_sheet=sheet_name_add,
-                            affected_row=len(df_new) - 1
-                        )
 
                         new_sheets = auto_save_to_github(
                             sheets_edit,
@@ -4290,16 +3591,6 @@ if permissions["can_edit"] and len(tabs) > 2 and "تعديل وإدارة الب
                         if new_col_name:
                             df_col[new_col_name] = default_value
                             sheets_edit[sheet_name_col] = df_col.astype(object)
-                            
-                            # إضافة إشعار
-                            add_notification(
-                                title="🆕 عمود جديد",
-                                message=f"تم إضافة عمود جديد '{new_col_name}' إلى {sheet_name_col}",
-                                notification_type="info",
-                                created_by=st.session_state.get("username", "system"),
-                                affected_sheet=sheet_name_col,
-                                affected_column=new_col_name
-                            )
                             
                             new_sheets = auto_save_to_github(
                                 sheets_edit,
