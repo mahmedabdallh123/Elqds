@@ -22,7 +22,7 @@ except Exception:
 # ===============================
 APP_CONFIG = {
     # إعدادات التطبيق العامة
-    "APP_TITLE": "CMMS -سيرفيس تحضيرات ",
+    "APP_TITLE": "CMMS - سيرفيس تحضيرات بيل يارن 1",
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
@@ -30,10 +30,6 @@ APP_CONFIG = {
     "BRANCH": "main",
     "FILE_PATH": "l4.xlsx",
     "LOCAL_FILE": "l4.xlsx",
-    
-    # إعدادات GitHub للملفات
-    "GITHUB_USERS_FILE": "users.json",
-    "GITHUB_STATE_FILE": "state.json",
     
     # إعدادات الأمان
     "MAX_ACTIVE_USERS": 2,
@@ -60,7 +56,6 @@ IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
 
 # إنشاء رابط GitHub تلقائياً من الإعدادات
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
-GITHUB_USERS_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['GITHUB_USERS_FILE']}"
 
 # -------------------------------
 # 🧩 دوال مساعدة للصور
@@ -72,7 +67,6 @@ def setup_images_folder():
         # إنشاء ملف .gitkeep لجعل المجلد فارغاً في GitHub
         with open(os.path.join(IMAGES_FOLDER, ".gitkeep"), "w") as f:
             pass
-        st.info(f"📁 تم إنشاء مجلد الصور: {IMAGES_FOLDER}")
 
 def save_uploaded_images(uploaded_files):
     """حفظ الصور المرفوعة وإرجاع أسماء الملفات"""
@@ -126,7 +120,6 @@ def get_image_url(image_filename):
     
     file_path = os.path.join(IMAGES_FOLDER, image_filename)
     if os.path.exists(file_path):
-        # في Streamlit Cloud، نستخدم absolute path
         return file_path
     return None
 
@@ -158,159 +151,125 @@ def display_images(image_filenames, caption="الصور المرفقة"):
                         st.write(f"📷 {image_filename} (غير موجود)")
 
 # -------------------------------
-# 🧩 دوال مساعدة للملفات والحالة - معدلة لحفظ في GitHub
+# 🧩 دوال مساعدة للملفات والحالة
 # -------------------------------
 def load_users():
-    """تحميل بيانات المستخدمين من GitHub مع استخدام الملف المحلي كنسخة احتياطية"""
+    """تحميل بيانات المستخدمين من ملف JSON - نسخة محسنة"""
     try:
-        # محاولة التحميل من GitHub أولاً
-        if GITHUB_AVAILABLE:
-            token = st.secrets.get("github", {}).get("token", None)
-            if token:
-                g = Github(token)
-                repo = g.get_repo(APP_CONFIG["REPO_NAME"])
-                
-                try:
-                    # محاولة جلب ملف المستخدمين من GitHub
-                    users_content = repo.get_contents(APP_CONFIG["GITHUB_USERS_FILE"], 
-                                                     ref=APP_CONFIG["BRANCH"])
-                    content = b64decode(users_content.content).decode('utf-8')
-                    users = json.loads(content)
-                    
-                    # حفظ نسخة محلية احتياطية
-                    with open(USERS_FILE, "w", encoding="utf-8") as f:
-                        json.dump(users, f, indent=4, ensure_ascii=False)
-                    
-                    # التأكد من وجود المستخدم admin الأساسي
-                    if "admin" not in users:
-                        users["admin"] = {
-                            "password": "admin123", 
-                            "role": "admin", 
-                            "created_at": datetime.now().isoformat(),
-                            "permissions": ["all"]
-                        }
-                        # حفظ الإضافة في GitHub أيضاً
-                        save_users_to_github(users)
-                    
-                    return users
-                except Exception as github_error:
-                    # إذا فشل، استخدم الملف المحلي مع رسالة تنبيه
-                    st.warning(f"⚠ تعذر تحميل المستخدمين من GitHub، سيتم استخدام النسخة المحلية: {github_error}")
-    except Exception as e:
-        st.warning(f"⚠ خطأ في تحميل المستخدمين من GitHub: {e}")
-    
-    # النسخة الاحتياطية: الملف المحلي
-    if not os.path.exists(USERS_FILE):
-        default_users = {
-            "admin": {
-                "password": "admin123", 
-                "role": "admin", 
-                "created_at": datetime.now().isoformat(),
-                "permissions": ["all"]
+        # إذا لم يكن الملف موجوداً، قم بإنشائه مع المستخدم الافتراضي
+        if not os.path.exists(USERS_FILE):
+            # إنشاء المستخدم admin الأساسي
+            default_users = {
+                "admin": {
+                    "password": "admin123", 
+                    "role": "admin", 
+                    "created_at": datetime.now().isoformat(),
+                    "permissions": ["all"],
+                    "active": False
+                }
             }
-        }
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(default_users, f, indent=4, ensure_ascii=False)
+            save_users_to_file(default_users)
+            return default_users
         
-        # محاولة رفع النسخة الافتراضية إلى GitHub
-        try:
-            save_users_to_github(default_users)
-        except:
-            pass
-        
-        return default_users
-    
-    try:
+        # تحميل الملف
         with open(USERS_FILE, "r", encoding="utf-8") as f:
             users = json.load(f)
         
-        # التأكد من وجود المستخدم admin
+        # التحقق من وجود المستخدم admin
         if "admin" not in users:
             users["admin"] = {
                 "password": "admin123", 
                 "role": "admin", 
                 "created_at": datetime.now().isoformat(),
-                "permissions": ["all"]
+                "permissions": ["all"],
+                "active": False
             }
-            with open(USERS_FILE, "w", encoding="utf-8") as f:
-                json.dump(users, f, indent=4, ensure_ascii=False)
+            save_users_to_file(users)
+        
+        # التأكد من وجود جميع الحقول لكل مستخدم
+        for username, user_data in users.items():
+            required_fields = ["password", "role", "created_at", "permissions", "active"]
+            for field in required_fields:
+                if field not in user_data:
+                    if field == "password" and username == "admin":
+                        user_data[field] = "admin123"
+                    elif field == "role" and username == "admin":
+                        user_data[field] = "admin"
+                    elif field == "role":
+                        user_data[field] = "viewer"
+                    elif field == "permissions" and username == "admin":
+                        user_data[field] = ["all"]
+                    elif field == "permissions" and user_data.get("role") == "editor":
+                        user_data[field] = ["view", "edit"]
+                    elif field == "permissions":
+                        user_data[field] = ["view"]
+                    elif field == "created_at":
+                        user_data[field] = datetime.now().isoformat()
+                    elif field == "active":
+                        user_data[field] = False
+        
+        # حفظ أي تحديثات
+        save_users_to_file(users)
         
         return users
     except Exception as e:
-        st.error(f"❌ خطأ في ملف users.json: {e}")
-        return {"admin": {"password": "admin123", "role": "admin", "created_at": datetime.now().isoformat(), "permissions": ["all"]}}
+        st.error(f"❌ خطأ في تحميل ملف users.json: {e}")
+        # إرجاع المستخدم الافتراضي في حالة الخطأ
+        return {
+            "admin": {
+                "password": "admin123", 
+                "role": "admin", 
+                "created_at": datetime.now().isoformat(),
+                "permissions": ["all"],
+                "active": False
+            }
+        }
 
-def save_users_to_github(users):
-    """حفظ بيانات المستخدمين إلى GitHub فقط"""
-    if not GITHUB_AVAILABLE:
-        return False
-    
-    token = st.secrets.get("github", {}).get("token", None)
-    if not token:
-        return False
-    
+def save_users_to_file(users_data):
+    """حفظ بيانات المستخدمين إلى ملف JSON"""
     try:
-        g = Github(token)
-        repo = g.get_repo(APP_CONFIG["REPO_NAME"])
-        
-        username = st.session_state.get("username", "unknown")
-        commit_message = f"تحديث المستخدمين بواسطة {username} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        
-        # تحويل المستخدمين إلى JSON
-        content = json.dumps(users, indent=4, ensure_ascii=False).encode('utf-8')
-        
-        try:
-            # محاولة تحديث الملف الموجود
-            contents = repo.get_contents(APP_CONFIG["GITHUB_USERS_FILE"], 
-                                        ref=APP_CONFIG["BRANCH"])
-            result = repo.update_file(
-                path=APP_CONFIG["GITHUB_USERS_FILE"],
-                message=commit_message,
-                content=content,
-                sha=contents.sha,
-                branch=APP_CONFIG["BRANCH"]
-            )
-            return True
-        except:
-            # إذا الملف غير موجود، إنشاء ملف جديد
-            try:
-                result = repo.create_file(
-                    path=APP_CONFIG["GITHUB_USERS_FILE"],
-                    message=commit_message,
-                    content=content,
-                    branch=APP_CONFIG["BRANCH"]
-                )
-                return True
-            except Exception as create_error:
-                st.error(f"❌ فشل إنشاء ملف المستخدمين على GitHub: {create_error}")
-                return False
-    
-    except Exception as e:
-        st.error(f"❌ فشل حفظ المستخدمين في GitHub: {e}")
-        return False
-
-def save_users(users):
-    """حفظ بيانات المستخدمين إلى GitHub والملف المحلي"""
-    try:
-        # 1. الحفظ في الملف المحلي أولاً
         with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(users, f, indent=4, ensure_ascii=False)
-        
-        # 2. رفع إلى GitHub
-        success = save_users_to_github(users)
-        
-        if success:
-            return True
-        else:
-            st.warning("⚠ تم الحفظ محلياً فقط. لم يتم حفظ التغييرات في GitHub.")
-            return True
-    
+            json.dump(users_data, f, indent=4, ensure_ascii=False)
+        return True
     except Exception as e:
         st.error(f"❌ خطأ في حفظ ملف users.json: {e}")
         return False
 
+def update_user_in_file(username, user_data):
+    """تحديث بيانات مستخدم محدد في الملف"""
+    try:
+        users = load_users()
+        users[username] = user_data
+        return save_users_to_file(users)
+    except Exception as e:
+        st.error(f"❌ خطأ في تحديث المستخدم {username}: {e}")
+        return False
+
+def add_user_to_file(username, user_data):
+    """إضافة مستخدم جديد إلى الملف"""
+    try:
+        users = load_users()
+        if username in users:
+            return False  # المستخدم موجود بالفعل
+        users[username] = user_data
+        return save_users_to_file(users)
+    except Exception as e:
+        st.error(f"❌ خطأ في إضافة المستخدم {username}: {e}")
+        return False
+
+def delete_user_from_file(username):
+    """حذف مستخدم من الملف"""
+    try:
+        users = load_users()
+        if username in users:
+            del users[username]
+            return save_users_to_file(users)
+        return False
+    except Exception as e:
+        st.error(f"❌ خطأ في حذف المستخدم {username}: {e}")
+        return False
+
 def load_state():
-    """تحميل حالة الجلسات"""
     if not os.path.exists(STATE_FILE):
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f, indent=4, ensure_ascii=False)
@@ -322,12 +281,10 @@ def load_state():
         return {}
 
 def save_state(state):
-    """حفظ حالة الجلسات"""
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=4, ensure_ascii=False)
 
 def cleanup_sessions(state):
-    """تنظيف الجلسات المنتهية"""
     now = datetime.now()
     changed = False
     for user, info in list(state.items()):
@@ -346,7 +303,6 @@ def cleanup_sessions(state):
     return state
 
 def remaining_time(state, username):
-    """حساب الوقت المتبقي للجلسة"""
     if not username or username not in state:
         return None
     info = state.get(username)
@@ -365,7 +321,6 @@ def remaining_time(state, username):
 # 🔐 تسجيل الخروج
 # -------------------------------
 def logout_action():
-    """إجراء تسجيل الخروج"""
     state = load_state()
     username = st.session_state.get("username")
     if username and username in state:
@@ -381,7 +336,6 @@ def logout_action():
 # 🧠 واجهة تسجيل الدخول
 # -------------------------------
 def login_ui():
-    """واجهة تسجيل الدخول"""
     users = load_users()
     state = cleanup_sessions(load_state())
     if "logged_in" not in st.session_state:
@@ -392,11 +346,9 @@ def login_ui():
 
     st.title(f"{APP_CONFIG['APP_ICON']} تسجيل الدخول - {APP_CONFIG['APP_TITLE']}")
 
-    # تحميل قائمة المستخدمين مباشرة من الملف
+    # تحميل قائمة المستخدمين من الملف
     try:
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            current_users = json.load(f)
-        user_list = list(current_users.keys())
+        user_list = list(users.keys())
     except:
         user_list = list(users.keys())
 
@@ -410,7 +362,7 @@ def login_ui():
 
     if not st.session_state.logged_in:
         if st.button("تسجيل الدخول"):
-            # تحميل المستخدمين من جديد للتأكد من أحدث بيانات
+            # تحميل المستخدمين من الملف
             current_users = load_users()
             
             if username_input in current_users and current_users[username_input]["password"] == password:
@@ -1281,7 +1233,7 @@ def show_service_statistics(service_stats, result_df):
             st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
 
 # -------------------------------
-# 🖥 دالة فحص الإيفينت والكوريكشن - مع خاصية حساب المدة وعرض الصور (مصححة)
+# 🖥 دالة فحص الإيفينت والكوريكشن - مع خاصية حساب المدة وعرض الصور
 # -------------------------------
 def check_events_and_corrections(all_sheets):
     """فحص الإيفينت والكوريكشن مع خاصية حساب المدة بين الأحداث"""
@@ -2521,7 +2473,7 @@ def parse_card_numbers(card_numbers_str):
     return numbers
 
 # -------------------------------
-# 🖥 دالة إضافة إيفينت جديد - مع خاصية رفع الصور (مصححة)
+# 🖥 دالة إضافة إيفينت جديد - مع خاصية رفع الصور
 # -------------------------------
 def add_new_event(sheets_edit):
     """إضافة إيفينت جديد في شيت منفصل مع خاصية رفع الصور"""
@@ -2954,13 +2906,13 @@ def edit_sheet_with_save_button(sheets_edit):
     return sheets_edit
 
 # -------------------------------
-# 👥 إدارة المستخدمين (للمسؤولين فقط) - معدلة لحفظ دائم في GitHub
+# 👥 إدارة المستخدمين (للمسؤولين فقط) - دائمة
 # -------------------------------
 def manage_users():
-    """إدارة المستخدمين والصلاحيات مع حفظ دائم في GitHub"""
-    st.header("👥 إدارة المستخدمين")
+    """إدارة المستخدمين والصلاحيات مع حفظ دائم في ملف JSON"""
+    st.header("👥 إدارة المستخدمين (نظام دائم)")
     
-    # تحميل أحدث بيانات المستخدمين من GitHub
+    # تحميل أحدث بيانات المستخدمين من الملف
     users = load_users()
     
     # التحقق من أن المستخدم الحالي هو admin
@@ -2980,7 +2932,8 @@ def manage_users():
                 "اسم المستخدم": username,
                 "الدور": user_info.get("role", "viewer"),
                 "الصلاحيات": ", ".join(user_info.get("permissions", ["view"])),
-                "تاريخ الإنشاء": user_info.get("created_at", "غير معروف")[:10] if user_info.get("created_at") else "غير معروف"
+                "تاريخ الإنشاء": user_info.get("created_at", "غير معروف")[:19] if "created_at" in user_info else "غير معروف",
+                "الحالة": "🟢 نشط" if user_info.get("active", False) else "🔴 غير نشط"
             })
         
         users_df = pd.DataFrame(users_data)
@@ -2994,7 +2947,7 @@ def manage_users():
     user_tabs = st.tabs(["➕ إضافة مستخدم جديد", "✏ تعديل مستخدم", "🗑 حذف مستخدم", "🔄 تحديث الملف"])
     
     with user_tabs[0]:
-        st.markdown("#### ➕ إضافة مستخدم جديد")
+        st.markdown("#### ➕ إضافة مستخدم جديد (دائم)")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -3028,7 +2981,7 @@ def manage_users():
                 key="new_user_permissions"
             )
         
-        if st.button("💾 إضافة المستخدم", key="add_user_btn"):
+        if st.button("💾 إضافة المستخدم (دائم)", key="add_user_btn"):
             if not new_username:
                 st.warning("⚠ الرجاء إدخال اسم المستخدم.")
                 return
@@ -3057,26 +3010,26 @@ def manage_users():
                 "password": new_password,
                 "role": user_role,
                 "permissions": selected_permissions if selected_permissions else default_permissions,
-                "created_at": datetime.now().isoformat()
+                "created_at": datetime.now().isoformat(),
+                "active": False
             }
             
-            # حفظ في الملف JSON وفي GitHub
-            if save_users(current_users):
-                st.success(f"✅ تم إضافة المستخدم '{new_username}' بنجاح في GitHub!")
+            # حفظ في الملف JSON مباشرة
+            if save_users_to_file(current_users):
+                st.success(f"✅ تم إضافة المستخدم '{new_username}' بنجاح وحفظه بشكل دائم!")
+                st.info("📝 يمكن الآن استخدام هذا المستخدم لتسجيل الدخول في أي وقت.")
                 st.rerun()
             else:
                 st.error("❌ حدث خطأ أثناء حفظ المستخدم.")
     
     with user_tabs[1]:
-        st.markdown("#### ✏ تعديل مستخدم")
+        st.markdown("#### ✏ تعديل مستخدم (دائم)")
         
         if not users:
             st.info("ℹ️ لا توجد مستخدمين لتعديلهم.")
         else:
             # استثناء المستخدم admin من القائمة إذا كان المستخدم الحالي ليس admin
             user_list = list(users.keys())
-            if current_user != "admin":
-                user_list = [u for u in user_list if u != "admin"]
             
             user_to_edit = st.selectbox(
                 "اختر المستخدم للتعديل:",
@@ -3093,6 +3046,7 @@ def manage_users():
                 with col1:
                     st.info(f"**المستخدم:** {user_to_edit}")
                     st.info(f"**الدور الحالي:** {user_info.get('role', 'viewer')}")
+                    st.info(f"**تاريخ الإنشاء:** {user_info.get('created_at', 'غير معروف')}")
                     
                     # تغيير كلمة المرور
                     st.markdown("##### 🔐 تغيير كلمة المرور")
@@ -3132,7 +3086,7 @@ def manage_users():
                 # أزرار التعديل
                 col_btn1, col_btn2, col_btn3 = st.columns(3)
                 with col_btn1:
-                    if st.button("💾 حفظ التعديلات", key="save_user_edit"):
+                    if st.button("💾 حفظ التعديلات (دائم)", key="save_user_edit"):
                         updated = False
                         
                         # تحميل أحدث البيانات قبل التعديل
@@ -3162,8 +3116,8 @@ def manage_users():
                             updated = True
                         
                         if updated:
-                            if save_users(latest_users):
-                                st.success(f"✅ تم تحديث المستخدم '{user_to_edit}' بنجاح في GitHub!")
+                            if save_users_to_file(latest_users):
+                                st.success(f"✅ تم تحديث المستخدم '{user_to_edit}' بنجاح وحفظ التغييرات بشكل دائم!")
                                 
                                 # إذا كان المستخدم الحالي هو الذي تم تعديله، قم بتحديث session state
                                 if st.session_state.get("username") == user_to_edit:
@@ -3187,7 +3141,7 @@ def manage_users():
                         latest_users = load_users()
                         latest_users[user_to_edit]["password"] = default_password
                         
-                        if save_users(latest_users):
+                        if save_users_to_file(latest_users):
                             st.warning(f"⚠ تم إعادة تعيين كلمة مرور '{user_to_edit}' إلى: {default_password}")
                             st.info("📋 يجب على المستخدم تغيير كلمة المرور عند أول تسجيل دخول.")
                             st.rerun()
@@ -3195,20 +3149,20 @@ def manage_users():
                 with col_btn3:
                     # زر تحديث البيانات من الملف
                     if st.button("🔄 تحديث البيانات", key="refresh_user_data"):
-                        # تحميل أحدث البيانات من GitHub
+                        # تحميل أحدث البيانات من الملف
                         users = load_users()
-                        st.success("✅ تم تحديث البيانات من GitHub بنجاح!")
+                        st.success("✅ تم تحديث البيانات من الملف.")
                         st.rerun()
     
     with user_tabs[2]:
-        st.markdown("#### 🗑 حذف مستخدم")
+        st.markdown("#### 🗑 حذف مستخدم (دائم)")
         
         if not users:
             st.info("ℹ️ لا توجد مستخدمين لحذفهم.")
         else:
             # قائمة المستخدمين المتاحة للحذف (لا يمكن حذف المسؤول الرئيسي أو المستخدم الحالي)
             deletable_users = [u for u in users.keys() 
-                             if u != "admin" and u != current_user]
+                             if u != "admin"]
             
             if not deletable_users:
                 st.warning("⚠ لا يمكن حذف أي مستخدمين.")
@@ -3222,12 +3176,12 @@ def manage_users():
                 if user_to_delete:
                     user_info = users[user_to_delete]
                     
-                    st.warning(f"⚠ **تحذير:** أنت على وشك حذف المستخدم '{user_to_delete}'")
+                    st.warning(f"⚠ **تحذير:** أنت على وشك حذف المستخدم '{user_to_delete}' بشكل دائم!")
                     st.info(f"**الدور:** {user_info.get('role', 'viewer')}")
                     st.info(f"**تاريخ الإنشاء:** {user_info.get('created_at', 'غير معروف')}")
                     
                     # تأكيد الحذف
-                    confirm_delete = st.checkbox(f"أؤكد أنني أريد حذف المستخدم '{user_to_delete}'", 
+                    confirm_delete = st.checkbox(f"أؤكد أنني أريد حذف المستخدم '{user_to_delete}' نهائياً", 
                                                 key="confirm_delete")
                     
                     if confirm_delete:
@@ -3239,95 +3193,88 @@ def manage_users():
                                 st.error("❌ لا يمكن حذف المستخدم أثناء تسجيل دخوله.")
                                 return
                             
-                            # تحميل أحدث البيانات قبل الحذف
-                            latest_users = load_users()
-                            
-                            # حذف المستخدم
-                            if user_to_delete in latest_users:
-                                del latest_users[user_to_delete]
-                                
-                                if save_users(latest_users):
-                                    st.success(f"✅ تم حذف المستخدم '{user_to_delete}' بنجاح من GitHub!")
-                                    st.rerun()
-                                else:
-                                    st.error("❌ حدث خطأ أثناء حذف المستخدم.")
+                            # حذف المستخدم مباشرة من الملف
+                            if delete_user_from_file(user_to_delete):
+                                st.success(f"✅ تم حذف المستخدم '{user_to_delete}' نهائياً بنجاح!")
+                                st.rerun()
                             else:
-                                st.error("❌ المستخدم غير موجود.")
+                                st.error("❌ حدث خطأ أثناء حذف المستخدم.")
     
     with user_tabs[3]:
-        st.markdown("#### 🔄 تحديث وإدارة ملف المستخدمين")
+        st.markdown("#### 🔄 تحديث وإدارة ملف المستخدمين (دائم)")
         
-        # معلومات عن الملف في GitHub
-        st.info(f"**💾 ملف المستخدمين في GitHub:** `{APP_CONFIG['GITHUB_USERS_FILE']}`")
-        
-        # زر تحديث البيانات من GitHub
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🔄 تحديث البيانات من GitHub", key="refresh_from_github", use_container_width=True):
-                # تحميل أحدث البيانات
-                users = load_users()
-                
-                # تحديث حالة الجلسة للمستخدم الحالي
-                current_user = st.session_state.get("username")
-                if current_user and current_user in users:
-                    st.session_state.user_role = users[current_user].get("role", "viewer")
-                    st.session_state.user_permissions = users[current_user].get("permissions", ["view"])
-                    st.success(f"✅ تم تحديث بيانات جلسة {current_user}")
-                
-                st.success("✅ تم تحديث جميع البيانات من GitHub بنجاح!")
-                st.rerun()
-        
-        with col2:
-            # زر تنزيل نسخة احتياطية
-            if st.button("💾 تنزيل نسخة احتياطية", key="download_backup", use_container_width=True):
-                if os.path.exists(USERS_FILE):
-                    with open(USERS_FILE, "rb") as f:
-                        file_data = f.read()
-                    
-                    st.download_button(
-                        label="📥 تحميل ملف users.json",
-                        data=file_data,
-                        file_name=f"users_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                        mime="application/json",
-                        key="download_users_file"
-                    )
-                else:
-                    st.warning("⚠ ملف users.json غير موجود محلياً.")
-        
-        # عرض معلومات الملف المحلي
+        # عرض معلومات الملف
         if os.path.exists(USERS_FILE):
             file_stats = os.stat(USERS_FILE)
             file_size_kb = file_stats.st_size / 1024
             file_mod_time = datetime.fromtimestamp(file_stats.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
             
-            with st.expander("📄 معلومات الملف المحلي", expanded=False):
-                st.info(f"**اسم الملف:** {USERS_FILE}")
-                st.info(f"**حجم الملف:** {file_size_kb:.2f} كيلوبايت")
-                st.info(f"**آخر تعديل:** {file_mod_time}")
-                
-                # عرض محتوى الملف الخام
-                with st.expander("📄 عرض محتوى ملف users.json المحلي"):
-                    try:
-                        with open(USERS_FILE, "r", encoding="utf-8") as f:
-                            file_content = f.read()
-                        st.code(file_content, language="json")
-                    except Exception as e:
-                        st.error(f"❌ خطأ في قراءة الملف: {e}")
-        
-        # زر إنشاء نسخة أولية في GitHub
-        st.markdown("---")
-        st.markdown("### 🚀 تهيئة أولية")
-        
-        if st.button("🚀 إنشاء ملف المستخدمين في GitHub", key="init_users_github"):
-            # تحميل البيانات الحالية
-            current_users = load_users()
+            st.info(f"**اسم الملف:** {USERS_FILE}")
+            st.info(f"**حجم الملف:** {file_size_kb:.2f} كيلوبايت")
+            st.info(f"**آخر تعديل:** {file_mod_time}")
+            st.info(f"**عدد المستخدمين:** {len(users)}")
             
-            # محاولة حفظ في GitHub
-            if save_users_to_github(current_users):
-                st.success("✅ تم إنشاء ملف المستخدمين في GitHub بنجاح!")
-                st.info("📋 سيتم الآن استخدام GitHub كمركز تخزين رئيسي للمستخدمين.")
+            # عرض محتوى الملف الخام
+            with st.expander("📄 عرض محتوى ملف users.json"):
+                try:
+                    with open(USERS_FILE, "r", encoding="utf-8") as f:
+                        file_content = f.read()
+                    st.code(file_content, language="json")
+                except Exception as e:
+                    st.error(f"❌ خطأ في قراءة الملف: {e}")
+        
+        # زر تحديث البيانات من الملف
+        if st.button("🔄 تحديث جميع البيانات من الملف", key="refresh_all_data"):
+            # تحميل أحدث البيانات
+            users = load_users()
+            
+            # تحديث حالة الجلسة للمستخدم الحالي
+            current_user = st.session_state.get("username")
+            if current_user and current_user in users:
+                st.session_state.user_role = users[current_user].get("role", "viewer")
+                st.session_state.user_permissions = users[current_user].get("permissions", ["view"])
+                st.success(f"✅ تم تحديث بيانات جلسة {current_user}")
+            
+            st.success("✅ تم تحديث جميع البيانات من الملف بنجاح!")
+            st.rerun()
+        
+        # زر تنزيل نسخة احتياطية
+        if st.button("💾 تنزيل نسخة احتياطية", key="download_backup"):
+            if os.path.exists(USERS_FILE):
+                with open(USERS_FILE, "rb") as f:
+                    file_data = f.read()
+                
+                st.download_button(
+                    label="📥 تحميل ملف users.json",
+                    data=file_data,
+                    file_name=f"users_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json",
+                    key="download_users_file"
+                )
             else:
-                st.error("❌ فشل إنشاء ملف المستخدمين في GitHub.")
+                st.warning("⚠ ملف users.json غير موجود.")
+        
+        # زر استعادة النسخة الافتراضية
+        st.markdown("---")
+        st.markdown("#### ⚠️ خيارات متقدمة")
+        
+        if st.button("🔄 استعادة المستخدمين الافتراضيين", key="restore_defaults"):
+            default_users = {
+                "admin": {
+                    "password": "admin123", 
+                    "role": "admin", 
+                    "created_at": datetime.now().isoformat(),
+                    "permissions": ["all"],
+                    "active": False
+                }
+            }
+            
+            if save_users_to_file(default_users):
+                st.success("✅ تم استعادة المستخدمين الافتراضيين بنجاح!")
+                st.warning("⚠ سيتم تسجيل خروج جميع المستخدمين.")
+                logout_action()
+            else:
+                st.error("❌ حدث خطأ أثناء الاستعادة.")
 
 # -------------------------------
 # 📞 الدعم الفني
@@ -3343,7 +3290,6 @@ def tech_support():
     **الملف الرئيسي:** {APP_CONFIG["FILE_PATH"]}
     **مستودع GitHub:** {APP_CONFIG["REPO_NAME"]}
     **فرع العمل:** {APP_CONFIG["BRANCH"]}
-    **ملف المستخدمين:** {APP_CONFIG["GITHUB_USERS_FILE"]}
     
     ### 🔧 استكشاف الأخطاء وإصلاحها
     
@@ -3358,18 +3304,13 @@ def tech_support():
        - تأكد من وجود token GitHub في الإعدادات
        - تحقق من صلاحيات الرفع إلى المستودع
     
-    3. **المشكلة:** تعديلات المستخدمين تختفي بعد فترة
-       **الحل:**
-       - الآن تم حل المشكلة! التعديلات تحفظ في GitHub بشكل دائم
-       - تأكد من حفظ التعديلات بالزر المناسب
-    
-    4. **المشكلة:** التطبيق يعمل ببطء
+    3. **المشكلة:** التطبيق يعمل ببطء
        **الحل:**
        - اضغط على زر "🗑 مسح الكاش"
        - قلل عدد الصفوف المعروضة
        - استخدم فلاتر البحث
     
-    5. **المشكلة:** الصور لا تظهر
+    4. **المشكلة:** الصور لا تظهر
        **الحل:**
        - تأكد من أن ملفات الصور موجودة في مجلد {IMAGES_FOLDER}
        - تحقق من أذونات المجلد
@@ -3505,19 +3446,6 @@ with st.sidebar:
         if fetch_from_github_requests():
             st.rerun()
     
-    # زر تحديث ملف المستخدمين من GitHub
-    if st.button("🔄 تحديث المستخدمين من GitHub", key="refresh_users_github"):
-        # تحميل أحدث بيانات المستخدمين
-        users = load_users()
-        username = st.session_state.get("username")
-        if username and username in users:
-            st.session_state.user_role = users[username].get("role", "viewer")
-            st.session_state.user_permissions = users[username].get("permissions", ["view"])
-            st.success("✅ تم تحديث بيانات المستخدمين!")
-            st.rerun()
-        else:
-            st.warning("⚠ لا يمكن تحديث بيانات المستخدمين.")
-    
     # زر مسح الكاش
     if st.button("🗑 مسح الكاش", key="clear_cache"):
         try:
@@ -3528,7 +3456,7 @@ with st.sidebar:
     
     # زر تحديث الجلسة
     if st.button("🔄 تحديث الجلسة", key="refresh_session"):
-        # تحميل أحدث بيانات المستخدم
+        # تحميل أحدث بيانات المستخدم من الملف
         users = load_users()
         username = st.session_state.get("username")
         if username and username in users:
