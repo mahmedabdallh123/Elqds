@@ -2,7 +2,7 @@
     "admin": {
         "active": false,
         "created_at": "2026-01-30T12:14:01.487794",
-        "password": "000000",
+        "password": "1111",
         "permissions": [
             "all"
         ],
