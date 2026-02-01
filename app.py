@@ -191,7 +191,7 @@ def download_users_from_github():
         }
 
 def upload_users_to_github(users_data):
-    """رفع ملف المستخدمين إلى GitHub"""
+    """رفع ملف المستخدمين إلى GitHub - تم إصلاح الخطأ"""
     try:
         token = st.secrets.get("github", {}).get("token", None)
         if not token:
@@ -215,18 +215,24 @@ def upload_users_to_github(users_data):
                 branch="main"
             )
             return True
-        except Exception:
-            # إنشاء ملف جديد إذا لم يكن موجوداً
-            try:
-                result = repo.create_file(
-                    path="users.json",
-                    message=f"إنشاء ملف المستخدمين بواسطة {st.session_state.get('username', 'admin')} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                    content=users_json,
-                    branch="main"
-                )
-                return True
-            except Exception as create_error:
-                st.error(f"❌ خطأ في إنشاء ملف المستخدمين على GitHub: {create_error}")
+        except Exception as e:
+            # إذا كان الخطأ أن الملف غير موجود (404) أو SHA غير موجود
+            error_msg = str(e)
+            if "404" in error_msg or "sha" in error_msg.lower() or "not found" in error_msg.lower():
+                # إنشاء ملف جديد إذا لم يكن موجوداً
+                try:
+                    result = repo.create_file(
+                        path="users.json",
+                        message=f"إنشاء ملف المستخدمين بواسطة {st.session_state.get('username', 'admin')} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                        content=users_json,
+                        branch="main"
+                    )
+                    return True
+                except Exception as create_error:
+                    st.error(f"❌ خطأ في إنشاء ملف المستخدمين على GitHub: {create_error}")
+                    return False
+            else:
+                st.error(f"❌ خطأ في تحديث ملف المستخدمين على GitHub: {e}")
                 return False
                 
     except Exception as e:
@@ -599,13 +605,19 @@ def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit
             st.success(f"✅ تم الحفظ والرفع إلى GitHub بنجاح: {commit_message}")
             return load_sheets_for_edit()
         except Exception as e:
-            # حاول رفع كملف جديد أو إنشاء
-            try:
-                result = repo.create_file(path=APP_CONFIG["FILE_PATH"], message=commit_message, content=content, branch=APP_CONFIG["BRANCH"])
-                st.success(f"✅ تم إنشاء ملف جديد على GitHub: {commit_message}")
-                return load_sheets_for_edit()
-            except Exception as create_error:
-                st.error(f"❌ فشل إنشاء ملف جديد على GitHub: {create_error}")
+            # إذا كان الملف غير موجود أو هناك مشكلة في SHA
+            error_msg = str(e)
+            if "404" in error_msg or "sha" in error_msg.lower():
+                try:
+                    # حاول إنشاء ملف جديد
+                    result = repo.create_file(path=APP_CONFIG["FILE_PATH"], message=commit_message, content=content, branch=APP_CONFIG["BRANCH"])
+                    st.success(f"✅ تم إنشاء ملف جديد على GitHub: {commit_message}")
+                    return load_sheets_for_edit()
+                except Exception as create_error:
+                    st.error(f"❌ فشل إنشاء ملف جديد على GitHub: {create_error}")
+                    return None
+            else:
+                st.error(f"❌ فشل الرفع إلى GitHub: {e}")
                 return None
 
     except Exception as e:
