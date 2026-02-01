@@ -42,7 +42,15 @@ APP_CONFIG = {
     # إعدادات الصور
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp"],
-    "MAX_IMAGE_SIZE_MB": 5
+    "MAX_IMAGE_SIZE_MB": 5,
+    
+    # إعدادات الأعمدة الافتراضية
+    "DEFAULT_COLUMNS": [
+        "card", "Date", "Event", "Correction", "Servised by", "Tones", "Images"
+    ],
+    
+    # إعدادات الشيتات الافتراضية
+    "DEFAULT_SHEET_NAME": "Card1"
 }
 
 # ===============================
@@ -751,6 +759,81 @@ def get_images_value(row):
                 return value
     
     return ""
+
+# -------------------------------
+# 🔧 دوال إدارة الشيتات والأعمدة
+# -------------------------------
+def create_new_sheet(sheets_dict, sheet_name, columns=None):
+    """إنشاء شيت جديد مع أعمدة محددة"""
+    if sheet_name in sheets_dict:
+        st.warning(f"⚠ الشيت '{sheet_name}' موجود بالفعل!")
+        return sheets_dict
+    
+    # إذا لم يتم تحديد أعمدة، استخدم الأعمدة الافتراضية
+    if columns is None:
+        columns = APP_CONFIG["DEFAULT_COLUMNS"]
+    
+    # إنشاء DataFrame جديد بالأعمدة المحددة
+    new_df = pd.DataFrame(columns=columns)
+    
+    # إضافة الشيت الجديد إلى القاموس
+    sheets_dict[sheet_name] = new_df
+    
+    return sheets_dict
+
+def rename_column_in_sheet(sheets_dict, sheet_name, old_column_name, new_column_name):
+    """إعادة تسمية عمود في شيت معين"""
+    if sheet_name not in sheets_dict:
+        st.error(f"❌ الشيت '{sheet_name}' غير موجود!")
+        return sheets_dict
+    
+    df = sheets_dict[sheet_name]
+    
+    if old_column_name not in df.columns:
+        st.error(f"❌ العمود '{old_column_name}' غير موجود في الشيت '{sheet_name}'!")
+        return sheets_dict
+    
+    # إعادة تسمية العمود
+    df.rename(columns={old_column_name: new_column_name}, inplace=True)
+    
+    return sheets_dict
+
+def delete_column_from_sheet(sheets_dict, sheet_name, column_name):
+    """حذف عمود من شيت معين"""
+    if sheet_name not in sheets_dict:
+        st.error(f"❌ الشيت '{sheet_name}' غير موجود!")
+        return sheets_dict
+    
+    df = sheets_dict[sheet_name]
+    
+    if column_name not in df.columns:
+        st.error(f"❌ العمود '{column_name}' غير موجود في الشيت '{sheet_name}'!")
+        return sheets_dict
+    
+    # حذف العمود
+    df.drop(columns=[column_name], inplace=True)
+    
+    return sheets_dict
+
+def reorder_columns_in_sheet(sheets_dict, sheet_name, new_column_order):
+    """إعادة ترتيب الأعمدة في شيت معين"""
+    if sheet_name not in sheets_dict:
+        st.error(f"❌ الشيت '{sheet_name}' غير موجود!")
+        return sheets_dict
+    
+    df = sheets_dict[sheet_name]
+    
+    # التحقق من أن جميع الأعمدة المطلوبة موجودة
+    for col in new_column_order:
+        if col not in df.columns:
+            st.error(f"❌ العمود '{col}' غير موجود في الشيت '{sheet_name}'!")
+            return sheets_dict
+    
+    # إعادة ترتيب الأعمدة
+    df = df[new_column_order]
+    sheets_dict[sheet_name] = df
+    
+    return sheets_dict
 
 # -------------------------------
 # 🖥 دالة فحص الإيفينت والكوريكشن - مع خاصية حساب المدة وعرض الصور
@@ -2302,6 +2385,271 @@ def edit_events_and_corrections(sheets_edit):
                 st.rerun()
 
 # -------------------------------
+# 🖥 دالة إدارة الشيتات والأعمدة
+# -------------------------------
+def manage_sheets_and_columns(sheets_edit):
+    """إدارة الشيتات والأعمدة"""
+    st.subheader("🗂 إدارة الشيتات والأعمدة")
+    
+    if not sheets_edit:
+        st.warning("⚠ لا توجد بيانات متاحة")
+        return sheets_edit
+    
+    # تبويبات للإدارة
+    manage_tabs = st.tabs(["➕ إنشاء شيت جديد", "✏ إدارة أعمدة شيت", "🗑 حذف شيت"])
+    
+    with manage_tabs[0]:
+        st.markdown("### ➕ إنشاء شيت جديد")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            new_sheet_name = st.text_input("اسم الشيت الجديد:", placeholder="مثال: Card10 أو ServiceLog", key="new_sheet_name")
+            
+            # اختيار نموذج الأعمدة
+            column_template = st.selectbox(
+                "نموذج الأعمدة:",
+                ["استخدام الأعمدة الافتراضية", "نسخ أعمدة من شيت موجود", "تحديد أعمدة مخصصة"],
+                key="column_template"
+            )
+        
+        with col2:
+            if column_template == "نسخ أعمدة من شيت موجود":
+                source_sheet = st.selectbox(
+                    "اختر الشيت لنسخ أعمدة منه:",
+                    list(sheets_edit.keys()),
+                    key="source_sheet_for_columns"
+                )
+            elif column_template == "تحديد أعمدة مخصصة":
+                custom_columns = st.text_area(
+                    "أدخل أسماء الأعمدة (مفصولة بفواصل):",
+                    placeholder="مثال: card, Date, Event, Correction, Servised by",
+                    key="custom_columns"
+                )
+        
+        # خيارات إضافية
+        initial_rows = st.number_input("عدد الصفوف الأولية:", min_value=0, max_value=100, value=0, step=1, key="initial_rows")
+        
+        if st.button("🚀 إنشاء الشيت الجديد", key="create_new_sheet_btn", type="primary"):
+            if not new_sheet_name.strip():
+                st.warning("⚠ الرجاء إدخال اسم للشيت الجديد")
+                return sheets_edit
+            
+            if new_sheet_name in sheets_edit:
+                st.warning(f"⚠ الشيت '{new_sheet_name}' موجود بالفعل!")
+                return sheets_edit
+            
+            # تحديد الأعمدة
+            columns_to_use = APP_CONFIG["DEFAULT_COLUMNS"]
+            
+            if column_template == "نسخ أعمدة من شيت موجود" and source_sheet in sheets_edit:
+                columns_to_use = list(sheets_edit[source_sheet].columns)
+            
+            elif column_template == "تحديد أعمدة مخصصة" and custom_columns.strip():
+                columns_to_use = [col.strip() for col in custom_columns.split(',') if col.strip()]
+            
+            # إنشاء الشيت الجديد
+            sheets_edit = create_new_sheet(sheets_edit, new_sheet_name, columns_to_use)
+            
+            # إضافة الصفوف الأولية إذا طلب
+            if initial_rows > 0:
+                empty_data = {col: [""] * initial_rows for col in columns_to_use}
+                sheets_edit[new_sheet_name] = pd.DataFrame(empty_data)
+            
+            # حفظ في GitHub
+            new_sheets = auto_save_to_github(
+                sheets_edit,
+                f"إنشاء شيت جديد '{new_sheet_name}' مع {len(columns_to_use)} أعمدة"
+            )
+            
+            if new_sheets is not None:
+                sheets_edit = new_sheets
+                st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' بنجاح!")
+                st.info(f"الأعمدة: {', '.join(columns_to_use[:5])}{'...' if len(columns_to_use) > 5 else ''}")
+                st.rerun()
+    
+    with manage_tabs[1]:
+        st.markdown("### ✏ إدارة أعمدة شيت")
+        
+        # اختيار الشيت
+        selected_sheet = st.selectbox(
+            "اختر الشيت:",
+            list(sheets_edit.keys()),
+            key="selected_sheet_for_columns"
+        )
+        
+        if selected_sheet:
+            df = sheets_edit[selected_sheet]
+            columns = list(df.columns)
+            
+            st.markdown(f"**الأعمدة الحالية في '{selected_sheet}':**")
+            st.info(f"عدد الأعمدة: {len(columns)}")
+            
+            # عرض الأعمدة الحالية
+            columns_df = pd.DataFrame({
+                "الرقم": range(1, len(columns) + 1),
+                "اسم العمود": columns,
+                "نوع البيانات": [str(df[col].dtype) for col in columns]
+            })
+            
+            st.dataframe(columns_df, use_container_width=True)
+            
+            # تبويبات العمليات
+            column_ops_tabs = st.tabs(["إعادة تسمية عمود", "إضافة عمود", "حذف عمود", "إعادة ترتيب الأعمدة"])
+            
+            with column_ops_tabs[0]:
+                st.markdown("#### إعادة تسمية عمود")
+                
+                col_rename1, col_rename2 = st.columns(2)
+                
+                with col_rename1:
+                    old_column_name = st.selectbox(
+                        "اختر العمود لإعادة التسمية:",
+                        columns,
+                        key="old_column_name"
+                    )
+                
+                with col_rename2:
+                    new_column_name = st.text_input(
+                        "الاسم الجديد للعمود:",
+                        value=old_column_name if 'old_column_name' in locals() else "",
+                        key="new_column_name_input"
+                    )
+                
+                if st.button("✏️ إعادة تسمية", key="rename_column_btn"):
+                    if old_column_name and new_column_name and old_column_name != new_column_name:
+                        sheets_edit = rename_column_in_sheet(sheets_edit, selected_sheet, old_column_name, new_column_name)
+                        
+                        new_sheets = auto_save_to_github(
+                            sheets_edit,
+                            f"إعادة تسمية عمود '{old_column_name}' إلى '{new_column_name}' في شيت '{selected_sheet}'"
+                        )
+                        
+                        if new_sheets is not None:
+                            sheets_edit = new_sheets
+                            st.success(f"✅ تم إعادة تسمية العمود '{old_column_name}' إلى '{new_column_name}'")
+                            st.rerun()
+                    else:
+                        st.warning("⚠ الرجاء اختيار عمود وإدخال اسم جديد مختلف")
+            
+            with column_ops_tabs[1]:
+                st.markdown("#### إضافة عمود جديد")
+                
+                new_column_name_add = st.text_input("اسم العمود الجديد:", key="new_column_to_add")
+                default_value_add = st.text_input("القيمة الافتراضية (اختياري):", key="default_value_for_new_column")
+                
+                if st.button("➕ إضافة العمود", key="add_new_column_btn"):
+                    if new_column_name_add:
+                        if new_column_name_add not in df.columns:
+                            df[new_column_name_add] = default_value_add if default_value_add else ""
+                            sheets_edit[selected_sheet] = df
+                            
+                            new_sheets = auto_save_to_github(
+                                sheets_edit,
+                                f"إضافة عمود جديد '{new_column_name_add}' إلى شيت '{selected_sheet}'"
+                            )
+                            
+                            if new_sheets is not None:
+                                sheets_edit = new_sheets
+                                st.success(f"✅ تم إضافة العمود '{new_column_name_add}'")
+                                st.rerun()
+                        else:
+                            st.warning(f"⚠ العمود '{new_column_name_add}' موجود بالفعل!")
+                    else:
+                        st.warning("⚠ الرجاء إدخال اسم للعمود الجديد")
+            
+            with column_ops_tabs[2]:
+                st.markdown("#### حذف عمود")
+                
+                column_to_delete = st.selectbox(
+                    "اختر العمود للحذف:",
+                    columns,
+                    key="column_to_delete"
+                )
+                
+                if st.button("🗑 حذف العمود", key="delete_column_btn", type="secondary"):
+                    if column_to_delete:
+                        confirm = st.checkbox(f"هل أنت متأكد من حذف العمود '{column_to_delete}'؟")
+                        
+                        if confirm:
+                            sheets_edit = delete_column_from_sheet(sheets_edit, selected_sheet, column_to_delete)
+                            
+                            new_sheets = auto_save_to_github(
+                                sheets_edit,
+                                f"حذف عمود '{column_to_delete}' من شيت '{selected_sheet}'"
+                            )
+                            
+                            if new_sheets is not None:
+                                sheets_edit = new_sheets
+                                st.success(f"✅ تم حذف العمود '{column_to_delete}'")
+                                st.rerun()
+            
+            with column_ops_tabs[3]:
+                st.markdown("#### إعادة ترتيب الأعمدة")
+                
+                st.info("اسحب الأعمدة لإعادة ترتيبها:")
+                
+                # استخدام multiselect لتمثيل الترتيب
+                column_order = st.multiselect(
+                    "ترتيب الأعمدة:",
+                    columns,
+                    default=columns,
+                    key="column_order_multiselect"
+                )
+                
+                if st.button("🔄 تطبيق الترتيب الجديد", key="apply_column_order_btn"):
+                    if len(column_order) == len(columns):
+                        sheets_edit = reorder_columns_in_sheet(sheets_edit, selected_sheet, column_order)
+                        
+                        new_sheets = auto_save_to_github(
+                            sheets_edit,
+                            f"إعادة ترتيب أعمدة شيت '{selected_sheet}'"
+                        )
+                        
+                        if new_sheets is not None:
+                            sheets_edit = new_sheets
+                            st.success("✅ تم إعادة ترتيب الأعمدة بنجاح!")
+                            st.rerun()
+                    else:
+                        st.warning("⚠ يجب اختيار جميع الأعمدة للترتيب")
+    
+    with manage_tabs[2]:
+        st.markdown("### 🗑 حذف شيت")
+        
+        sheet_to_delete = st.selectbox(
+            "اختر الشيت للحذف:",
+            list(sheets_edit.keys()),
+            key="sheet_to_delete"
+        )
+        
+        if sheet_to_delete:
+            st.warning(f"⚠ تحذير: سيتم حذف الشيت '{sheet_to_delete}' بشكل دائم!")
+            
+            # عرض معلومات الشيت
+            if sheet_to_delete in sheets_edit:
+                df_to_delete = sheets_edit[sheet_to_delete]
+                st.info(f"الشيت يحتوي على: {len(df_to_delete)} صف و {len(df_to_delete.columns)} عمود")
+            
+            confirm_delete = st.checkbox(f"أنا أدرك أن حذف الشيت '{sheet_to_delete}' لا يمكن التراجع عنه", key="confirm_sheet_delete")
+            
+            if st.button("🗑️ حذف الشيت نهائياً", key="delete_sheet_btn", disabled=not confirm_delete, type="secondary"):
+                if confirm_delete:
+                    # حذف الشيت
+                    del sheets_edit[sheet_to_delete]
+                    
+                    new_sheets = auto_save_to_github(
+                        sheets_edit,
+                        f"حذف شيت '{sheet_to_delete}'"
+                    )
+                    
+                    if new_sheets is not None:
+                        sheets_edit = new_sheets
+                        st.success(f"✅ تم حذف الشيت '{sheet_to_delete}' بنجاح!")
+                        st.rerun()
+    
+    return sheets_edit
+
+# -------------------------------
 # 🖥 دالة تعديل الشيت مع زر حفظ يدوي
 # -------------------------------
 def edit_sheet_with_save_button(sheets_edit):
@@ -2551,17 +2899,21 @@ if permissions["can_edit"] and len(tabs) > 1:
         if sheets_edit is None:
             st.warning("❗ الملف المحلي غير موجود. اضغط تحديث من GitHub في الشريط الجانبي أولًا.")
         else:
-            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            # تبويبات متعددة للإدارة
+            tab_names = [
                 "عرض وتعديل شيت",
                 "إضافة صف جديد", 
                 "إضافة عمود جديد",
                 "➕ إضافة حدث جديد مع صور",
                 "✏ تعديل الحدث والصور",
+                "🗂 إدارة الشيتات والأعمدة",
                 "📷 إدارة الصور"
-            ])
+            ]
+            
+            tabs_edit = st.tabs(tab_names)
 
             # Tab 1: تعديل بيانات وعرض
-            with tab1:
+            with tabs_edit[0]:
                 # التحقق من طلب حفظ جميع التغييرات
                 if st.session_state.get("save_all_requested", False):
                     st.info("💾 جاري حفظ جميع التغييرات...")
@@ -2572,7 +2924,7 @@ if permissions["can_edit"] and len(tabs) > 1:
                 sheets_edit = edit_sheet_with_save_button(sheets_edit)
 
             # Tab 2: إضافة صف جديد
-            with tab2:
+            with tabs_edit[1]:
                 st.subheader("➕ إضافة صف جديد")
                 sheet_name_add = st.selectbox("اختر الشيت لإضافة صف:", list(sheets_edit.keys()), key="add_sheet")
                 df_add = sheets_edit[sheet_name_add].astype(str).reset_index(drop=True)
@@ -2607,7 +2959,7 @@ if permissions["can_edit"] and len(tabs) > 1:
                         st.rerun()
 
             # Tab 3: إضافة عمود جديد
-            with tab3:
+            with tabs_edit[2]:
                 st.subheader("🆕 إضافة عمود جديد")
                 sheet_name_col = st.selectbox("اختر الشيت لإضافة عمود:", list(sheets_edit.keys()), key="add_col_sheet")
                 df_col = sheets_edit[sheet_name_col].astype(str)
@@ -2638,15 +2990,19 @@ if permissions["can_edit"] and len(tabs) > 1:
                         st.rerun()
 
             # Tab 4: إضافة إيفينت جديد مع صور
-            with tab4:
+            with tabs_edit[3]:
                 add_new_event(sheets_edit)
 
             # Tab 5: تعديل الإيفينت والكوريكشن والصور
-            with tab5:
+            with tabs_edit[4]:
                 edit_events_and_corrections(sheets_edit)
             
-            # Tab 6: إدارة الصور
-            with tab6:
+            # Tab 6: إدارة الشيتات والأعمدة
+            with tabs_edit[5]:
+                sheets_edit = manage_sheets_and_columns(sheets_edit)
+            
+            # Tab 7: إدارة الصور
+            with tabs_edit[6]:
                 st.subheader("📷 إدارة الصور المخزنة")
                 
                 if os.path.exists(IMAGES_FOLDER):
