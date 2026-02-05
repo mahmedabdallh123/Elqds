@@ -22,7 +22,7 @@ except Exception:
 # ===============================
 APP_CONFIG = {
     # إعدادات التطبيق العامة
-    "APP_TITLE": "CMMS - سيرفيس تحضيرات ",
+    "APP_TITLE": "CMMS - نظام إدارة الصيانة الشامل",
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
@@ -32,25 +32,22 @@ APP_CONFIG = {
     "LOCAL_FILE": "l4.xlsx",
     
     # إعدادات الأمان
-    "MAX_ACTIVE_USERS": 2,
-    "SESSION_DURATION_MINUTES": 15,
+    "MAX_ACTIVE_USERS": 5,
+    "SESSION_DURATION_MINUTES": 60,
     
     # إعدادات الواجهة
-    "SHOW_TECH_SUPPORT_TO_ALL": False,
-    "CUSTOM_TABS": ["📋 فحص الإيفينت والكوريكشن", "🛠 تعديل وإدارة البيانات"],
+    "SHOW_TECH_SUPPORT_TO_ALL": True,
+    "CUSTOM_TABS": ["📋 فحص الإيفينت والكوريكشن", "🛠 تعديل وإدارة البيانات", "📊 تحليلات متقدمة"],
     
     # إعدادات الصور
     "IMAGES_FOLDER": "event_images",
-    "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp"],
-    "MAX_IMAGE_SIZE_MB": 5,
+    "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
+    "MAX_IMAGE_SIZE_MB": 10,
     
     # إعدادات الأعمدة الافتراضية
     "DEFAULT_COLUMNS": [
         "card", "Date", "Event", "Correction", "Servised by", "Tones", "Images"
     ],
-    
-    # إعدادات الشيتات الافتراضية
-    "DEFAULT_SHEET_NAME": "Card1"
 }
 
 # ===============================
@@ -199,7 +196,7 @@ def download_users_from_github():
         }
 
 def upload_users_to_github(users_data):
-    """رفع ملف المستخدمين إلى GitHub - تم إصلاح الخطأ"""
+    """رفع ملف المستخدمين إلى GitHub"""
     try:
         token = st.secrets.get("github", {}).get("token", None)
         if not token:
@@ -523,11 +520,11 @@ def fetch_from_github_api():
         return False
 
 # -------------------------------
-# 📂 تحميل الشيتات (مخبأ) - معدل لقراءة جميع الشيتات
+# 📂 تحميل الشيتات (مخبأ) - معدل لقراءة جميع الشيتات بشكل ديناميكي
 # -------------------------------
 @st.cache_data(show_spinner=False)
 def load_all_sheets():
-    """تحميل جميع الشيتات من ملف Excel"""
+    """تحميل جميع الشيتات من ملف Excel بشكل ديناميكي"""
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
         return None
     
@@ -540,10 +537,16 @@ def load_all_sheets():
         
         # تنظيف أسماء الأعمدة لكل شيت
         for name, df in sheets.items():
+            if df.empty:
+                continue
             df.columns = df.columns.astype(str).str.strip()
+            # تعبئة القيم NaN لتجنب الأخطاء
+            df = df.fillna('')
+            sheets[name] = df
         
         return sheets
     except Exception as e:
+        st.error(f"❌ خطأ في تحميل الشيتات: {e}")
         return None
 
 # نسخة مع dtype=object لواجهة التحرير
@@ -563,9 +566,13 @@ def load_sheets_for_edit():
         # تنظيف أسماء الأعمدة لكل شيت
         for name, df in sheets.items():
             df.columns = df.columns.astype(str).str.strip()
+            # تعبئة القيم NaN
+            df = df.fillna('')
+            sheets[name] = df
         
         return sheets
     except Exception as e:
+        st.error(f"❌ خطأ في تحميل الشيتات للتحرير: {e}")
         return None
 
 # -------------------------------
@@ -687,7 +694,8 @@ def get_user_permissions(user_role, user_permissions):
             "can_view": True,
             "can_edit": True,
             "can_manage_users": True,
-            "can_see_tech_support": True
+            "can_see_tech_support": True,
+            "can_manage_sheets": True
         }
     
     # إذا كان الدور editor
@@ -696,7 +704,8 @@ def get_user_permissions(user_role, user_permissions):
             "can_view": True,
             "can_edit": True,
             "can_manage_users": False,
-            "can_see_tech_support": False
+            "can_see_tech_support": False,
+            "can_manage_sheets": True
         }
     
     # إذا كان الدور viewer أو أي دور آخر
@@ -706,419 +715,190 @@ def get_user_permissions(user_role, user_permissions):
             "can_view": "view" in user_permissions or "edit" in user_permissions or "all" in user_permissions,
             "can_edit": "edit" in user_permissions or "all" in user_permissions,
             "can_manage_users": "manage_users" in user_permissions or "all" in user_permissions,
-            "can_see_tech_support": "tech_support" in user_permissions or "all" in user_permissions
+            "can_see_tech_support": "tech_support" in user_permissions or "all" in user_permissions,
+            "can_manage_sheets": "manage_sheets" in user_permissions or "all" in user_permissions
         }
 
-def get_servised_by_value(row):
-    """استخراج قيمة فني الخدمة من الصف"""
-    # قائمة بالأعمدة المحتملة لفني الخدمة
-    servised_columns = [
-        "Servised by", "SERVISED BY", "servised by", "Servised By",
-        "Serviced by", "Service by", "Serviced By", "Service By",
-        "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة"
-    ]
+# ===============================
+# 🔧 دوال استخراج البيانات الديناميكية
+# ===============================
+def extract_sheet_data(df, sheet_name):
+    """استخراج البيانات من أي شيت بشكل ديناميكي"""
+    if df.empty:
+        return []
     
-    # البحث في الأعمدة المعروفة
-    for col in servised_columns:
-        if col in row.index:
-            value = str(row[col]).strip()
-            if value and value.lower() not in ["nan", "none", ""]:
-                return value
+    results = []
     
-    # البحث في جميع الأعمدة التي قد تحتوي على فني الخدمة
-    for col in row.index:
-        col_normalized = normalize_name(col)
-        if any(keyword in col_normalized for keyword in ["servisedby", "servicedby", "serviceby", "خدمبواسطة", "فني"]):
-            value = str(row[col]).strip()
-            if value and value.lower() not in ["nan", "none", ""]:
-                return value
+    # تحديد أسماء الأعمدة الهامة
+    card_column = None
+    date_column = None
+    event_column = None
+    correction_column = None
+    tech_column = None
+    images_column = None
+    tones_column = None
     
-    return "-"
+    # البحث عن الأعمدة المختلفة
+    for col in df.columns:
+        col_lower = str(col).lower().strip()
+        
+        # البحث عن عمود رقم الماكينة
+        if card_column is None and any(keyword in col_lower for keyword in ['card', 'machine', 'رقم', 'ماكينة', 'جهاز']):
+            card_column = col
+        
+        # البحث عن عمود التاريخ
+        elif date_column is None and any(keyword in col_lower for keyword in ['date', 'تاريخ', 'time']):
+            date_column = col
+        
+        # البحث عن عمود الحدث
+        elif event_column is None and any(keyword in col_lower for keyword in ['event', 'حدث', 'issue', 'مشكلة']):
+            event_column = col
+        
+        # البحث عن عمود التصحيح
+        elif correction_column is None and any(keyword in col_lower for keyword in ['correction', 'تصحيح', 'solution', 'حل']):
+            correction_column = col
+        
+        # البحث عن عمود الفني
+        elif tech_column is None and any(keyword in col_lower for keyword in ['servised', 'serviced', 'service', 'technician', 'فني', 'خدم', 'تم بواسطة']):
+            tech_column = col
+        
+        # البحث عن عمود الصور
+        elif images_column is None and any(keyword in col_lower for keyword in ['images', 'pictures', 'صور', 'مرفقات']):
+            images_column = col
+        
+        # البحث عن عمود الأطنان
+        elif tones_column is None and any(keyword in col_lower for keyword in ['tones', 'طن', 'أطنان', 'ton', 'tone']):
+            tones_column = col
+    
+    # إذا لم يتم العثور على أعمدة معينة، نستخدم الأعمدة الأولى المتاحة
+    if not card_column and len(df.columns) > 0:
+        card_column = df.columns[0]
+    
+    # استخراج البيانات من كل صف
+    for idx, row in df.iterrows():
+        try:
+            result = {
+                "Sheet Name": sheet_name,
+                "Row Index": idx,
+                "Card Number": str(row[card_column]) if card_column and card_column in row and pd.notna(row[card_column]) else sheet_name,
+                "Date": str(row[date_column]) if date_column and date_column in row and pd.notna(row[date_column]) else "-",
+                "Event": str(row[event_column]) if event_column and event_column in row and pd.notna(row[event_column]) else "-",
+                "Correction": str(row[correction_column]) if correction_column and correction_column in row and pd.notna(row[correction_column]) else "-",
+                "Servised by": str(row[tech_column]) if tech_column and tech_column in row and pd.notna(row[tech_column]) else "-",
+                "Tones": str(row[tones_column]) if tones_column and tones_column in row and pd.notna(row[tones_column]) else "-",
+                "Images": str(row[images_column]) if images_column and images_column in row and pd.notna(row[images_column]) else ""
+            }
+            
+            # إضافة الصف إذا كان يحتوي على بيانات
+            if result["Event"] != "-" or result["Correction"] != "-" or result["Date"] != "-":
+                results.append(result)
+        except Exception as e:
+            # تجاهل الصفوف التي بها أخطاء
+            continue
+    
+    return results
 
-def get_images_value(row):
-    """استخراج قيمة الصور من الصف"""
-    # قائمة بالأعمدة المحتملة للصور
-    images_columns = [
-        "Images", "images", "Pictures", "pictures", "Attachments", "attachments",
-        "صور", "الصور", "مرفقات", "المرفقات", "صور الحدث"
-    ]
+def check_dynamic_row_criteria(result, target_techs, target_dates, 
+                              search_terms, search_params):
+    """التحقق من مطابقة النتيجة لمعايير البحث"""
     
-    # البحث في الأعمدة المعروفة
-    for col in images_columns:
-        if col in row.index:
-            value = str(row[col]).strip()
-            if value and value.lower() not in ["nan", "none", ""]:
-                return value
+    # 1. التحقق من فني الخدمة
+    if target_techs:
+        row_tech = result.get("Servised by", "").lower()
+        if row_tech == "-" and not search_params["include_empty"]:
+            return False
+        
+        tech_match = False
+        if row_tech != "-":
+            for tech in target_techs:
+                if search_params["exact_match"]:
+                    if tech == row_tech:
+                        tech_match = True
+                        break
+                else:
+                    if tech in row_tech:
+                        tech_match = True
+                        break
+        
+        if not tech_match:
+            return False
     
-    # البحث في جميع الأعمدة التي قد تحتوي على صور
-    for col in row.index:
-        col_normalized = normalize_name(col)
-        if any(keyword in col_normalized for keyword in ["images", "pictures", "attachments", "صور", "مرفقات"]):
-            value = str(row[col]).strip()
-            if value and value.lower() not in ["nan", "none", ""]:
-                return value
+    # 2. التحقق من التاريخ
+    if target_dates:
+        row_date = str(result.get("Date", "")).lower()
+        if not row_date and not search_params["include_empty"]:
+            return False
+        
+        date_match = False
+        if row_date:
+            for date_term in target_dates:
+                if search_params["exact_match"]:
+                    if date_term == row_date:
+                        date_match = True
+                        break
+                else:
+                    if date_term in row_date:
+                        date_match = True
+                        break
+        
+        if not date_match:
+            return False
     
-    return ""
+    # 3. التحقق من نص البحث
+    if search_terms:
+        row_event = result.get("Event", "").lower()
+        row_correction = result.get("Correction", "").lower()
+        
+        if not row_event and not row_correction and not search_params["include_empty"]:
+            return False
+        
+        text_match = False
+        combined_text = f"{row_event} {row_correction}"
+        
+        for term in search_terms:
+            if search_params["exact_match"]:
+                if term == row_event or term == row_correction:
+                    text_match = True
+                    break
+            else:
+                if term in combined_text:
+                    text_match = True
+                    break
+        
+        if not text_match:
+            return False
+    
+    return True
 
-# -------------------------------
-# 🔧 دوال إدارة الشيتات والأعمدة
-# -------------------------------
-def create_new_sheet(sheets_dict, sheet_name, columns=None):
-    """إنشاء شيت جديد مع أعمدة محددة"""
-    if sheet_name in sheets_dict:
-        st.warning(f"⚠ الشيت '{sheet_name}' موجود بالفعل!")
-        return sheets_dict
+def parse_card_numbers(card_numbers_str):
+    """تحليل سلسلة أرقام الماكينات إلى قائمة أرقام"""
+    if not card_numbers_str:
+        return set()
     
-    # إذا لم يتم تحديد أعمدة، استخدم الأعمدة الافتراضية
-    if columns is None:
-        columns = APP_CONFIG["DEFAULT_COLUMNS"]
+    numbers = set()
     
-    # إنشاء DataFrame جديد بالأعمدة المحددة
-    new_df = pd.DataFrame(columns=columns)
+    try:
+        parts = card_numbers_str.split(',')
+        for part in parts:
+            part = part.strip()
+            if '-' in part:
+                try:
+                    start_str, end_str = part.split('-')
+                    start = int(start_str.strip())
+                    end = int(end_str.strip())
+                    numbers.update(range(start, end + 1))
+                except:
+                    continue
+            else:
+                try:
+                    num = int(part)
+                    numbers.add(num)
+                except:
+                    continue
+    except:
+        return set()
     
-    # إضافة الشيت الجديد إلى القاموس
-    sheets_dict[sheet_name] = new_df
-    
-    return sheets_dict
-
-def rename_column_in_sheet(sheets_dict, sheet_name, old_column_name, new_column_name):
-    """إعادة تسمية عمود في شيت معين"""
-    if sheet_name not in sheets_dict:
-        st.error(f"❌ الشيت '{sheet_name}' غير موجود!")
-        return sheets_dict
-    
-    df = sheets_dict[sheet_name]
-    
-    if old_column_name not in df.columns:
-        st.error(f"❌ العمود '{old_column_name}' غير موجود في الشيت '{sheet_name}'!")
-        return sheets_dict
-    
-    # إعادة تسمية العمود
-    df.rename(columns={old_column_name: new_column_name}, inplace=True)
-    
-    return sheets_dict
-
-def delete_column_from_sheet(sheets_dict, sheet_name, column_name):
-    """حذف عمود من شيت معين"""
-    if sheet_name not in sheets_dict:
-        st.error(f"❌ الشيت '{sheet_name}' غير موجود!")
-        return sheets_dict
-    
-    df = sheets_dict[sheet_name]
-    
-    if column_name not in df.columns:
-        st.error(f"❌ العمود '{column_name}' غير موجود في الشيت '{sheet_name}'!")
-        return sheets_dict
-    
-    # حذف العمود
-    df.drop(columns=[column_name], inplace=True)
-    
-    return sheets_dict
-
-def reorder_columns_in_sheet(sheets_dict, sheet_name, new_column_order):
-    """إعادة ترتيب الأعمدة في شيت معين"""
-    if sheet_name not in sheets_dict:
-        st.error(f"❌ الشيت '{sheet_name}' غير موجود!")
-        return sheets_dict
-    
-    df = sheets_dict[sheet_name]
-    
-    # التحقق من أن جميع الأعمدة المطلوبة موجودة
-    for col in new_column_order:
-        if col not in df.columns:
-            st.error(f"❌ العمود '{col}' غير موجود في الشيت '{sheet_name}'!")
-            return sheets_dict
-    
-    # إعادة ترتيب الأعمدة
-    df = df[new_column_order]
-    sheets_dict[sheet_name] = df
-    
-    return sheets_dict
-
-# -------------------------------
-# 🖥 دالة فحص الإيفينت والكوريكشن - مع خاصية حساب المدة وعرض الصور
-# -------------------------------
-def check_events_and_corrections(all_sheets):
-    """فحص الإيفينت والكوريكشن مع خاصية حساب المدة بين الأحداث"""
-    if not all_sheets:
-        st.error("❌ لم يتم تحميل أي شيتات.")
-        return
-    
-    # تهيئة session state
-    if "search_params" not in st.session_state:
-        st.session_state.search_params = {
-            "card_numbers": "",
-            "date_range": "",
-            "tech_names": "",
-            "search_text": "",
-            "exact_match": False,
-            "include_empty": True,
-            "sort_by": "رقم الماكينة",
-            "calculate_duration": False,
-            "duration_type": "أيام",
-            "duration_filter_min": 0,
-            "duration_filter_max": 365,
-            "group_by_type": False,
-            "show_images": True
-        }
-    
-    if "search_triggered" not in st.session_state:
-        st.session_state.search_triggered = False
-    
-    # قسم البحث - مع إضافة خيارات حساب المدة
-    with st.container():
-        st.markdown("### 🔍 بحث متعدد المعايير")
-        st.markdown("استخدم الحقول التالية للبحث المحدد. يمكنك ملء واحد أو أكثر من الحقول.")
-        
-        # تبويبات للبحث وخيارات المدة
-        main_tabs = st.tabs(["🔍 معايير البحث", "⏱️ خيارات المدة", "📊 تحليل زمني"])
-        
-        with main_tabs[0]:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # قسم أرقام الماكينات
-                with st.expander("🔢 **أرقام الماكينات**", expanded=True):
-                    st.caption("أدخل أرقام الماكينات (مفصولة بفواصل أو نطاقات)")
-                    card_numbers = st.text_input(
-                        "مثال: 1,3,5 أو 1-5 أو 2,4,7-10",
-                        value=st.session_state.search_params.get("card_numbers", ""),
-                        key="input_cards",
-                        placeholder="اتركه فارغاً للبحث في كل الماكينات"
-                    )
-                    
-                    # أزرار سريعة لأرقام الماكينات
-                    st.caption("أو اختر من:")
-                    quick_cards_col1, quick_cards_col2, quick_cards_col3 = st.columns(3)
-                    with quick_cards_col1:
-                        if st.button("🔟 أول 10 ماكينات", key="quick_10"):
-                            st.session_state.search_params["card_numbers"] = "1-10"
-                            st.session_state.search_triggered = True
-                            st.rerun()
-                    with quick_cards_col2:
-                        if st.button("🔟 ماكينات 11-20", key="quick_20"):
-                            st.session_state.search_params["card_numbers"] = "11-20"
-                            st.session_state.search_triggered = True
-                            st.rerun()
-                    with quick_cards_col3:
-                        if st.button("🗑 مسح", key="clear_cards"):
-                            st.session_state.search_params["card_numbers"] = ""
-                            st.rerun()
-                
-                # قسم التواريخ
-                with st.expander("📅 **التواريخ**", expanded=True):
-                    st.caption("ابحث بالتاريخ (سنة، شهر/سنة)")
-                    date_input = st.text_input(
-                        "مثال: 2024 أو 1/2024 أو 2024,2025",
-                        value=st.session_state.search_params.get("date_range", ""),
-                        key="input_date",
-                        placeholder="اتركه فارغاً للبحث في كل التواريخ"
-                    )
-            
-            with col2:
-                # قسم فنيي الخدمة
-                with st.expander("👨‍🔧 **فنيو الخدمة**", expanded=True):
-                    st.caption("ابحث بأسماء فنيي الخدمة")
-                    tech_names = st.text_input(
-                        "مثال: أحمد, محمد, علي",
-                        value=st.session_state.search_params.get("tech_names", ""),
-                        key="input_techs",
-                        placeholder="اتركه فارغاً للبحث في كل الفنيين"
-                    )
-                
-                # قسم نص البحث
-                with st.expander("📝 **نص البحث**", expanded=True):
-                    st.caption("ابحث في وصف الحدث أو التصحيح")
-                    search_text = st.text_input(
-                        "مثال: صيانة, إصلاح, تغيير",
-                        value=st.session_state.search_params.get("search_text", ""),
-                        key="input_text",
-                        placeholder="اتركه فارغاً للبحث في كل النصوص"
-                    )
-            
-            # قسم خيارات البحث المتقدمة
-            with st.expander("⚙ **خيارات متقدمة**", expanded=False):
-                col_adv1, col_adv2, col_adv3 = st.columns(3)
-                with col_adv1:
-                    search_mode = st.radio(
-                        "🔍 طريقة البحث:",
-                        ["بحث جزئي", "مطابقة كاملة"],
-                        index=0 if not st.session_state.search_params.get("exact_match") else 1,
-                        key="radio_search_mode",
-                        help="بحث جزئي: يبحث عن النص في أي مكان. مطابقة كاملة: يبحث عن النص مطابق تماماً"
-                    )
-                with col_adv2:
-                    include_empty = st.checkbox(
-                        "🔍 تضمين الحقول الفارغة",
-                        value=st.session_state.search_params.get("include_empty", True),
-                        key="checkbox_include_empty",
-                        help="تضمين النتائج التي تحتوي على حقول فارغة"
-                    )
-                with col_adv3:
-                    sort_by = st.selectbox(
-                        "📊 ترتيب النتائج:",
-                        ["رقم الماكينة", "التاريخ", "فني الخدمة", "مدة الحدث"],
-                        index=["رقم الماكينة", "التاريخ", "فني الخدمة", "مدة الحدث"].index(
-                            st.session_state.search_params.get("sort_by", "رقم الماكينة")
-                        ),
-                        key="select_sort_by"
-                    )
-        
-        with main_tabs[1]:
-            st.markdown("#### ⏱️ خيارات حساب المدة بين الأحداث")
-            
-            col_dur1, col_dur2 = st.columns(2)
-            
-            with col_dur1:
-                calculate_duration = st.checkbox(
-                    "📅 حساب المدة بين الأحداث",
-                    value=st.session_state.search_params.get("calculate_duration", False),
-                    key="checkbox_calculate_duration",
-                    help="حساب المدة بين الأحداث لنفس الماكينة"
-                )
-                
-                if calculate_duration:
-                    duration_type = st.selectbox(
-                        "وحدة حساب المدة:",
-                        ["أيام", "أسابيع", "أشهر"],
-                        index=["أيام", "أسابيع", "أشهر"].index(
-                            st.session_state.search_params.get("duration_type", "أيام")
-                        ),
-                        key="select_duration_type"
-                    )
-                    
-                    group_by_type = st.checkbox(
-                        "📊 تجميع حسب نوع الحدث",
-                        value=st.session_state.search_params.get("group_by_type", False),
-                        key="checkbox_group_by_type",
-                        help="فصل حساب المدة حسب نوع الحدث (حدث/تصحيح)"
-                    )
-            
-            with col_dur2:
-                if calculate_duration:
-                    st.markdown("#### 🔍 فلترة حسب المدة")
-                    
-                    duration_filter_min = st.number_input(
-                        "الحد الأدنى للمدة:",
-                        min_value=0,
-                        value=st.session_state.search_params.get("duration_filter_min", 0),
-                        step=1,
-                        key="input_duration_min"
-                    )
-                    
-                    duration_filter_max = st.number_input(
-                        "الحد الأقصى للمدة:",
-                        min_value=duration_filter_min,
-                        value=st.session_state.search_params.get("duration_filter_max", 365),
-                        step=1,
-                        key="input_duration_max"
-                    )
-                    
-                    st.caption(f"سيتم عرض الأحداث التي تتراوح مدتها بين {duration_filter_min} و {duration_filter_max} {duration_type}")
-        
-        with main_tabs[2]:
-            st.markdown("#### 📊 تحليل زمني متقدم")
-            
-            analysis_options = st.multiselect(
-                "اختر نوع التحليل:",
-                ["معدل تكرار الأحداث", "مقارنة المدة حسب الفني", "توزيع الأحداث زمنياً", "مقارنة بين الحدث والتصحيح"],
-                default=[],
-                key="select_analysis_options"
-            )
-            
-            if "معدل تكرار الأحداث" in analysis_options:
-                st.info("📈 سيتم حساب متوسط المدة بين الأحداث لكل ماكينة")
-            
-            if "مقارنة المدة حسب الفني" in analysis_options:
-                st.info("👨‍🔧 سيتم مقارنة متوسط المدة التي يستغرقها كل فني")
-            
-            if "توزيع الأحداث زمنياً" in analysis_options:
-                st.info("📅 سيتم تحليل توزيع الأحداث على مدار السنة")
-            
-            if "مقارنة بين الحدث والتصحيح" in analysis_options:
-                st.info("⚖️ سيتم مقارنة المدة بين الأحداث العادية والتصحيحات")
-        
-        # تحديث معايير البحث
-        st.session_state.search_params.update({
-            "card_numbers": card_numbers,
-            "date_range": date_input,
-            "tech_names": tech_names,
-            "search_text": search_text,
-            "exact_match": search_mode == "مطابقة كاملة",
-            "include_empty": include_empty,
-            "sort_by": sort_by,
-            "calculate_duration": calculate_duration,
-            "duration_type": duration_type if calculate_duration else "أيام",
-            "duration_filter_min": duration_filter_min if calculate_duration else 0,
-            "duration_filter_max": duration_filter_max if calculate_duration else 365,
-            "group_by_type": group_by_type if calculate_duration else False,
-            "analysis_options": analysis_options,
-            "show_images": True
-        })
-        
-        # زر البحث الرئيسي
-        st.markdown("---")
-        col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 1])
-        with col_btn1:
-            search_clicked = st.button(
-                "🔍 **بدء البحث والتحليل**",
-                type="primary",
-                use_container_width=True,
-                key="main_search_btn"
-            )
-        with col_btn2:
-            if st.button("🗑 **مسح الحقول**", use_container_width=True, key="clear_fields"):
-                st.session_state.search_params = {
-                    "card_numbers": "",
-                    "date_range": "",
-                    "tech_names": "",
-                    "search_text": "",
-                    "exact_match": False,
-                    "include_empty": True,
-                    "sort_by": "رقم الماكينة",
-                    "calculate_duration": False,
-                    "duration_type": "أيام",
-                    "duration_filter_min": 0,
-                    "duration_filter_max": 365,
-                    "group_by_type": False,
-                    "analysis_options": [],
-                    "show_images": True
-                }
-                st.session_state.search_triggered = False
-                st.rerun()
-        with col_btn3:
-            if st.button("📊 **عرض كل البيانات**", use_container_width=True, key="show_all"):
-                st.session_state.search_params = {
-                    "card_numbers": "",
-                    "date_range": "",
-                    "tech_names": "",
-                    "search_text": "",
-                    "exact_match": False,
-                    "include_empty": True,
-                    "sort_by": "رقم الماكينة",
-                    "calculate_duration": True,
-                    "duration_type": "أيام",
-                    "duration_filter_min": 0,
-                    "duration_filter_max": 365,
-                    "group_by_type": True,
-                    "analysis_options": ["معدل تكرار الأحداث", "توزيع الأحداث زمنياً"],
-                    "show_images": True
-                }
-                st.session_state.search_triggered = True
-                st.rerun()
-    
-    # معالجة البحث
-    if search_clicked or st.session_state.search_triggered:
-        st.session_state.search_triggered = True
-        
-        # جمع معايير البحث
-        search_params = st.session_state.search_params.copy()
-        
-        # عرض معايير البحث
-        show_search_params(search_params)
-        
-        # تنفيذ البحث
-        show_advanced_search_results_with_duration(search_params, all_sheets)
+    return numbers
 
 def calculate_durations_between_events(events_data, duration_type="أيام", group_by_type=False):
     """حساب المدة بين الأحداث لنفس الماكينة"""
@@ -1248,6 +1028,291 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
     
     return durations_data
 
+# ===============================
+# 🖥 دالة فحص الإيفينت والكوريكشن - ديناميكية
+# ===============================
+def check_events_and_corrections(all_sheets):
+    """فحص الإيفينت والكوريكشن مع خاصية حساب المدة بين الأحداث"""
+    if not all_sheets:
+        st.error("❌ لم يتم تحميل أي شيتات.")
+        return
+    
+    # تهيئة session state
+    if "search_params" not in st.session_state:
+        st.session_state.search_params = {
+            "card_numbers": "",
+            "date_range": "",
+            "tech_names": "",
+            "search_text": "",
+            "exact_match": False,
+            "include_empty": True,
+            "sort_by": "الشيت",
+            "calculate_duration": False,
+            "duration_type": "أيام",
+            "duration_filter_min": 0,
+            "duration_filter_max": 365,
+            "group_by_type": False,
+            "show_images": True
+        }
+    
+    if "search_triggered" not in st.session_state:
+        st.session_state.search_triggered = False
+    
+    # قسم البحث - مع إضافة خيارات حساب المدة
+    with st.container():
+        st.markdown("### 🔍 بحث متعدد المعايير")
+        st.markdown("استخدم الحقول التالية للبحث المحدد. يمكنك ملء واحد أو أكثر من الحقول.")
+        
+        # تبويبات للبحث وخيارات المدة
+        main_tabs = st.tabs(["🔍 معايير البحث", "⏱️ خيارات المدة", "📊 تحليل زمني"])
+        
+        with main_tabs[0]:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # قسم أرقام الماكينات
+                with st.expander("🔢 **أرقام الماكينات/الشيتات**", expanded=True):
+                    st.caption("أدخل أرقام الماكينات أو أسماء الشيتات (مفصولة بفواصل)")
+                    card_numbers = st.text_input(
+                        "مثال: 1,3,5 أو Card1,Card3 أو Machine,Service",
+                        value=st.session_state.search_params.get("card_numbers", ""),
+                        key="input_cards",
+                        placeholder="اتركه فارغاً للبحث في كل الشيتات"
+                    )
+                    
+                    # أزرار سريعة لأرقام الماكينات
+                    st.caption("أو اختر من:")
+                    quick_cards_col1, quick_cards_col2, quick_cards_col3 = st.columns(3)
+                    with quick_cards_col1:
+                        if st.button("🔟 شيتات Card", key="quick_cards"):
+                            st.session_state.search_params["card_numbers"] = "Card"
+                            st.session_state.search_triggered = True
+                            st.rerun()
+                    with quick_cards_col2:
+                        if st.button("📋 كل الشيتات", key="quick_all"):
+                            st.session_state.search_params["card_numbers"] = ""
+                            st.session_state.search_triggered = True
+                            st.rerun()
+                    with quick_cards_col3:
+                        if st.button("🗑 مسح", key="clear_cards"):
+                            st.session_state.search_params["card_numbers"] = ""
+                            st.rerun()
+                
+                # قسم التواريخ
+                with st.expander("📅 **التواريخ**", expanded=True):
+                    st.caption("ابحث بالتاريخ (سنة، شهر/سنة)")
+                    date_input = st.text_input(
+                        "مثال: 2024 أو 1/2024 أو 2024,2025",
+                        value=st.session_state.search_params.get("date_range", ""),
+                        key="input_date",
+                        placeholder="اتركه فارغاً للبحث في كل التواريخ"
+                    )
+            
+            with col2:
+                # قسم فنيي الخدمة
+                with st.expander("👨‍🔧 **فنيو الخدمة**", expanded=True):
+                    st.caption("ابحث بأسماء فنيي الخدمة")
+                    tech_names = st.text_input(
+                        "مثال: أحمد, محمد, علي",
+                        value=st.session_state.search_params.get("tech_names", ""),
+                        key="input_techs",
+                        placeholder="اتركه فارغاً للبحث في كل الفنيين"
+                    )
+                
+                # قسم نص البحث
+                with st.expander("📝 **نص البحث**", expanded=True):
+                    st.caption("ابحث في وصف الحدث أو التصحيح")
+                    search_text = st.text_input(
+                        "مثال: صيانة, إصلاح, تغيير",
+                        value=st.session_state.search_params.get("search_text", ""),
+                        key="input_text",
+                        placeholder="اتركه فارغاً للبحث في كل النصوص"
+                    )
+            
+            # قسم خيارات البحث المتقدمة
+            with st.expander("⚙ **خيارات متقدمة**", expanded=False):
+                col_adv1, col_adv2, col_adv3 = st.columns(3)
+                with col_adv1:
+                    search_mode = st.radio(
+                        "🔍 طريقة البحث:",
+                        ["بحث جزئي", "مطابقة كاملة"],
+                        index=0 if not st.session_state.search_params.get("exact_match") else 1,
+                        key="radio_search_mode",
+                        help="بحث جزئي: يبحث عن النص في أي مكان. مطابقة كاملة: يبحث عن النص مطابق تماماً"
+                    )
+                with col_adv2:
+                    include_empty = st.checkbox(
+                        "🔍 تضمين الحقول الفارغة",
+                        value=st.session_state.search_params.get("include_empty", True),
+                        key="checkbox_include_empty",
+                        help="تضمين النتائج التي تحتوي على حقول فارغة"
+                    )
+                with col_adv3:
+                    sort_by = st.selectbox(
+                        "📊 ترتيب النتائج:",
+                        ["الشيت", "التاريخ", "فني الخدمة", "مدة الحدث"],
+                        index=["الشيت", "التاريخ", "فني الخدمة", "مدة الحدث"].index(
+                            st.session_state.search_params.get("sort_by", "الشيت")
+                        ),
+                        key="select_sort_by"
+                    )
+        
+        with main_tabs[1]:
+            st.markdown("#### ⏱️ خيارات حساب المدة بين الأحداث")
+            
+            col_dur1, col_dur2 = st.columns(2)
+            
+            with col_dur1:
+                calculate_duration = st.checkbox(
+                    "📅 حساب المدة بين الأحداث",
+                    value=st.session_state.search_params.get("calculate_duration", False),
+                    key="checkbox_calculate_duration",
+                    help="حساب المدة بين الأحداث لنفس الماكينة"
+                )
+                
+                if calculate_duration:
+                    duration_type = st.selectbox(
+                        "وحدة حساب المدة:",
+                        ["أيام", "أسابيع", "أشهر"],
+                        index=["أيام", "أسابيع", "أشهر"].index(
+                            st.session_state.search_params.get("duration_type", "أيام")
+                        ),
+                        key="select_duration_type"
+                    )
+                    
+                    group_by_type = st.checkbox(
+                        "📊 تجميع حسب نوع الحدث",
+                        value=st.session_state.search_params.get("group_by_type", False),
+                        key="checkbox_group_by_type",
+                        help="فصل حساب المدة حسب نوع الحدث (حدث/تصحيح)"
+                    )
+            
+            with col_dur2:
+                if calculate_duration:
+                    st.markdown("#### 🔍 فلترة حسب المدة")
+                    
+                    duration_filter_min = st.number_input(
+                        "الحد الأدنى للمدة:",
+                        min_value=0,
+                        value=st.session_state.search_params.get("duration_filter_min", 0),
+                        step=1,
+                        key="input_duration_min"
+                    )
+                    
+                    duration_filter_max = st.number_input(
+                        "الحد الأقصى للمدة:",
+                        min_value=duration_filter_min,
+                        value=st.session_state.search_params.get("duration_filter_max", 365),
+                        step=1,
+                        key="input_duration_max"
+                    )
+                    
+                    st.caption(f"سيتم عرض الأحداث التي تتراوح مدتها بين {duration_filter_min} و {duration_filter_max} {duration_type}")
+        
+        with main_tabs[2]:
+            st.markdown("#### 📊 تحليل زمني متقدم")
+            
+            analysis_options = st.multiselect(
+                "اختر نوع التحليل:",
+                ["معدل تكرار الأحداث", "مقارنة المدة حسب الفني", "توزيع الأحداث زمنياً", "مقارنة بين الحدث والتصحيح"],
+                default=[],
+                key="select_analysis_options"
+            )
+            
+            if "معدل تكرار الأحداث" in analysis_options:
+                st.info("📈 سيتم حساب متوسط المدة بين الأحداث لكل ماكينة")
+            
+            if "مقارنة المدة حسب الفني" in analysis_options:
+                st.info("👨‍🔧 سيتم مقارنة متوسط المدة التي يستغرقها كل فني")
+            
+            if "توزيع الأحداث زمنياً" in analysis_options:
+                st.info("📅 سيتم تحليل توزيع الأحداث على مدار السنة")
+            
+            if "مقارنة بين الحدث والتصحيح" in analysis_options:
+                st.info("⚖️ سيتم مقارنة المدة بين الأحداث العادية والتصحيحات")
+        
+        # تحديث معايير البحث
+        st.session_state.search_params.update({
+            "card_numbers": card_numbers,
+            "date_range": date_input,
+            "tech_names": tech_names,
+            "search_text": search_text,
+            "exact_match": search_mode == "مطابقة كاملة",
+            "include_empty": include_empty,
+            "sort_by": sort_by,
+            "calculate_duration": calculate_duration,
+            "duration_type": duration_type if calculate_duration else "أيام",
+            "duration_filter_min": duration_filter_min if calculate_duration else 0,
+            "duration_filter_max": duration_filter_max if calculate_duration else 365,
+            "group_by_type": group_by_type if calculate_duration else False,
+            "analysis_options": analysis_options,
+            "show_images": True
+        })
+        
+        # زر البحث الرئيسي
+        st.markdown("---")
+        col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 1])
+        with col_btn1:
+            search_clicked = st.button(
+                "🔍 **بدء البحث والتحليل**",
+                type="primary",
+                use_container_width=True,
+                key="main_search_btn"
+            )
+        with col_btn2:
+            if st.button("🗑 **مسح الحقول**", use_container_width=True, key="clear_fields"):
+                st.session_state.search_params = {
+                    "card_numbers": "",
+                    "date_range": "",
+                    "tech_names": "",
+                    "search_text": "",
+                    "exact_match": False,
+                    "include_empty": True,
+                    "sort_by": "الشيت",
+                    "calculate_duration": False,
+                    "duration_type": "أيام",
+                    "duration_filter_min": 0,
+                    "duration_filter_max": 365,
+                    "group_by_type": False,
+                    "analysis_options": [],
+                    "show_images": True
+                }
+                st.session_state.search_triggered = False
+                st.rerun()
+        with col_btn3:
+            if st.button("📊 **عرض كل البيانات**", use_container_width=True, key="show_all"):
+                st.session_state.search_params = {
+                    "card_numbers": "",
+                    "date_range": "",
+                    "tech_names": "",
+                    "search_text": "",
+                    "exact_match": False,
+                    "include_empty": True,
+                    "sort_by": "الشيت",
+                    "calculate_duration": True,
+                    "duration_type": "أيام",
+                    "duration_filter_min": 0,
+                    "duration_filter_max": 365,
+                    "group_by_type": True,
+                    "analysis_options": ["معدل تكرار الأحداث", "توزيع الأحداث زمنياً"],
+                    "show_images": True
+                }
+                st.session_state.search_triggered = True
+                st.rerun()
+    
+    # معالجة البحث
+    if search_clicked or st.session_state.search_triggered:
+        st.session_state.search_triggered = True
+        
+        # جمع معايير البحث
+        search_params = st.session_state.search_params.copy()
+        
+        # عرض معايير البحث
+        show_search_params(search_params)
+        
+        # تنفيذ البحث
+        show_advanced_search_results_with_duration(search_params, all_sheets)
+
 def show_search_params(search_params):
     """عرض معايير البحث المستخدمة"""
     with st.container():
@@ -1255,7 +1320,7 @@ def show_search_params(search_params):
         
         params_display = []
         if search_params["card_numbers"]:
-            params_display.append(f"**🔢 أرقام الماكينات:** {search_params['card_numbers']}")
+            params_display.append(f"**🔢 أرقام الماكينات/الشيتات:** {search_params['card_numbers']}")
         if search_params["date_range"]:
             params_display.append(f"**📅 التواريخ:** {search_params['date_range']}")
         if search_params["tech_names"]:
@@ -1278,16 +1343,14 @@ def show_advanced_search_results_with_duration(search_params, all_sheets):
     
     # البحث في البيانات
     all_results = []
-    total_machines = 0
-    processed_machines = 0
+    total_sheets = len(all_sheets)
+    processed_sheets = 0
     
-    # حساب إجمالي عدد الماكينات
-    for sheet_name in all_sheets.keys():
-        if sheet_name != "ServicePlan" and sheet_name.startswith("Card"):
-            total_machines += 1
-    
-    # معالجة أرقام الماكينات المطلوبة
-    target_card_numbers = parse_card_numbers(search_params["card_numbers"])
+    # معالجة أرقام الماكينات/الشيتات المطلوبة
+    target_sheets = []
+    if search_params["card_numbers"]:
+        target_text = search_params["card_numbers"].lower()
+        target_sheets = [sheet_name for sheet_name in all_sheets.keys() if target_text in sheet_name.lower()]
     
     # معالجة أسماء الفنيين
     target_techs = []
@@ -1308,39 +1371,29 @@ def show_advanced_search_results_with_duration(search_params, all_sheets):
         search_terms = [term.strip().lower() for term in terms if term.strip()]
     
     # البحث في جميع الشيتات
-    for sheet_name in all_sheets.keys():
-        if sheet_name == "ServicePlan":
+    for sheet_name, df in all_sheets.items():
+        # التحقق من اسم الشيت إذا كان هناك تحديد
+        if target_sheets and sheet_name not in target_sheets:
             continue
         
-        # استخراج رقم الماكينة
-        card_num_match = re.search(r'Card(\d+)', sheet_name)
-        if not card_num_match:
-            continue
-            
-        card_num = int(card_num_match.group(1))
+        processed_sheets += 1
+        if total_sheets > 0:
+            progress_bar.progress(processed_sheets / total_sheets)
         
-        # التحقق من رقم الماكينة إذا كان هناك تحديد
-        if target_card_numbers and card_num not in target_card_numbers:
-            continue
+        status_text.text(f"🔍 جاري معالجة الشيت: {sheet_name}...")
         
-        processed_machines += 1
-        if total_machines > 0:
-            progress_bar.progress(processed_machines / total_machines)
-        status_text.text(f"🔍 جاري معالجة الماكينة {card_num}...")
+        # استخراج البيانات من الشيت
+        sheet_results = extract_sheet_data(df, sheet_name)
         
-        df = all_sheets[sheet_name].copy()
-        
-        # البحث في الصفوف
-        for _, row in df.iterrows():
+        # فلترة النتائج حسب معايير البحث
+        for result in sheet_results:
             # تطبيق معايير البحث
-            if not check_row_criteria(row, df, card_num, target_techs, target_dates, 
-                                     search_terms, search_params):
+            if not check_dynamic_row_criteria(result, target_techs, target_dates, 
+                                             search_terms, search_params):
                 continue
             
-            # استخراج البيانات
-            result = extract_row_data(row, df, card_num)
-            if result:
-                all_results.append(result)
+            # إضافة النتائج المطابقة
+            all_results.append(result)
     
     # إخفاء شريط التقدم
     progress_bar.empty()
@@ -1370,29 +1423,32 @@ def display_search_results_with_duration(results, search_params):
     # إنشاء نسخة للعرض مع معالجة الترتيب
     display_df = result_df.copy()
     
-    # تحويل رقم الماكينة إلى رقم صحيح للترتيب
-    display_df['Card_Number_Clean'] = pd.to_numeric(display_df['Card Number'], errors='coerce')
+    # محاولة تحويل رقم الماكينة إلى رقم صحيح للترتيب
+    try:
+        display_df['Card_Number_Clean'] = pd.to_numeric(display_df['Card Number'], errors='coerce')
+    except:
+        display_df['Card_Number_Clean'] = display_df['Card Number']
     
     # تحويل التواريخ لترتيب زمني
     display_df['Date_Clean'] = pd.to_datetime(display_df['Date'], errors='coerce', dayfirst=True)
     
-    # ترتيب النتائج حسب رقم الماكينة ثم التاريخ
+    # ترتيب النتائج حسب الشيت ثم التاريخ
     if search_params["sort_by"] == "التاريخ":
-        display_df = display_df.sort_values(by=['Date_Clean', 'Card_Number_Clean'], 
+        display_df = display_df.sort_values(by=['Date_Clean', 'Sheet Name'], 
                                           ascending=[False, True], na_position='last')
     elif search_params["sort_by"] == "فني الخدمة":
-        display_df = display_df.sort_values(by=['Servised by', 'Card_Number_Clean', 'Date_Clean'], 
+        display_df = display_df.sort_values(by=['Servised by', 'Sheet Name', 'Date_Clean'], 
                                           ascending=[True, True, False], na_position='last')
     elif search_params["sort_by"] == "مدة الحدث":
         # سنحتاج إلى حساب المدة أولاً
         pass
-    else:  # رقم الماكينة (الافتراضي)
-        display_df = display_df.sort_values(by=['Card_Number_Clean', 'Date_Clean'], 
+    else:  # الشيت (الافتراضي)
+        display_df = display_df.sort_values(by=['Sheet Name', 'Date_Clean'], 
                                           ascending=[True, False], na_position='last')
     
-    # إضافة ترتيب الأحداث لكل ماكينة
-    display_df['Event_Order'] = display_df.groupby('Card Number').cumcount() + 1
-    display_df['Total_Events'] = display_df.groupby('Card Number')['Card Number'].transform('count')
+    # إضافة ترتيب الأحداث لكل شيت
+    display_df['Event_Order'] = display_df.groupby('Sheet Name').cumcount() + 1
+    display_df['Total_Events'] = display_df.groupby('Sheet Name')['Sheet Name'].transform('count')
     
     # عرض الإحصائيات
     st.markdown("### 📈 إحصائيات النتائج")
@@ -1403,23 +1459,23 @@ def display_search_results_with_duration(results, search_params):
         st.metric("📋 عدد النتائج", len(display_df))
     
     with col2:
-        unique_machines = display_df["Card Number"].nunique()
-        st.metric("🔢 عدد الماكينات", unique_machines)
+        unique_sheets = display_df["Sheet Name"].nunique()
+        st.metric("📂 عدد الشيتات", unique_sheets)
     
     with col3:
-        # عدد الماكينات التي لديها أكثر من حدث
+        # عدد الشيتات التي لديها أكثر من حدث
         if not display_df.empty:
-            machine_counts = display_df.groupby('Card Number').size()
-            multi_event_machines = (machine_counts > 1).sum()
-            st.metric("🔢 مكن متعددة الأحداث", multi_event_machines)
+            sheet_counts = display_df.groupby('Sheet Name').size()
+            multi_event_sheets = (sheet_counts > 1).sum()
+            st.metric("📊 شيتات متعددة الأحداث", multi_event_sheets)
         else:
-            st.metric("🔢 مكن متعددة الأحداث", 0)
+            st.metric("📊 شيتات متعددة الأحداث", 0)
     
     with col4:
         # التحقق من وجود عمود الصور في display_df
         has_images_column = 'Images' in display_df.columns
         if has_images_column:
-            with_images = display_df[display_df["Images"].notna() & (display_df["Images"] != "-")].shape[0]
+            with_images = display_df[display_df["Images"].notna() & (display_df["Images"] != "") & (display_df["Images"] != "-")].shape[0]
             st.metric("📷 تحتوي على صور", with_images)
         else:
             st.metric("📷 تحتوي على صور", 0)
@@ -1513,11 +1569,11 @@ def display_search_results_with_duration(results, search_params):
     st.markdown("### 📋 النتائج التفصيلية")
     
     # استخدام تبويبات لعرض النتائج
-    display_tabs = st.tabs(["📊 عرض جدولي", "📋 عرض تفصيلي حسب الماكينة", "📷 عرض الصور"])
+    display_tabs = st.tabs(["📊 عرض جدولي", "📋 عرض تفصيلي حسب الشيت", "📷 عرض الصور"])
     
     with display_tabs[0]:
         # العرض الجدولي التقليدي
-        columns_to_show = ['Card Number', 'Event', 'Correction', 'Servised by', 'Tones', 'Date', 'Event_Order', 'Total_Events']
+        columns_to_show = ['Sheet Name', 'Card Number', 'Event', 'Correction', 'Servised by', 'Tones', 'Date', 'Event_Order', 'Total_Events']
         
         # إضافة عمود الصور إذا كان موجوداً في النتائج
         has_images_in_results = any('Images' in result for result in results)
@@ -1533,39 +1589,38 @@ def display_search_results_with_duration(results, search_params):
         )
     
     with display_tabs[1]:
-        # عرض تفصيلي لكل ماكينة بشكل منفصل
-        unique_machines = sorted(display_df['Card Number'].unique(), 
-                               key=lambda x: pd.to_numeric(x, errors='coerce') if str(x).isdigit() else float('inf'))
+        # عرض تفصيلي لكل شيت بشكل منفصل
+        unique_sheets = sorted(display_df['Sheet Name'].unique())
         
-        for machine in unique_machines:
-            machine_data = display_df[display_df['Card Number'] == machine].copy()
-            machine_data = machine_data.sort_values('Event_Order')
+        for sheet_name in unique_sheets:
+            sheet_data = display_df[display_df['Sheet Name'] == sheet_name].copy()
+            sheet_data = sheet_data.sort_values('Event_Order')
             
-            with st.expander(f"🔧 الماكينة {machine} - عدد الأحداث: {len(machine_data)}", expanded=len(unique_machines) <= 5):
+            with st.expander(f"📂 {sheet_name} - عدد الأحداث: {len(sheet_data)}", expanded=len(unique_sheets) <= 5):
                 
-                # عرض إحصائيات الماكينة
+                # عرض إحصائيات الشيت
                 col_stats1, col_stats2, col_stats3 = st.columns(3)
                 with col_stats1:
-                    if not machine_data.empty and 'Date' in machine_data.columns:
-                        first_date = machine_data['Date'].iloc[0]
+                    if not sheet_data.empty and 'Date' in sheet_data.columns:
+                        first_date = sheet_data['Date'].iloc[0]
                         st.metric("📅 أول حدث", first_date if first_date != "-" else "غير محدد")
                     else:
                         st.metric("📅 أول حدث", "-")
                 with col_stats2:
-                    if not machine_data.empty and 'Date' in machine_data.columns:
-                        last_date = machine_data['Date'].iloc[-1]
+                    if not sheet_data.empty and 'Date' in sheet_data.columns:
+                        last_date = sheet_data['Date'].iloc[-1]
                         st.metric("📅 آخر حدث", last_date if last_date != "-" else "غير محدد")
                     else:
                         st.metric("📅 آخر حدث", "-")
                 with col_stats3:
-                    if not machine_data.empty and 'Servised by' in machine_data.columns:
-                        tech_count = machine_data['Servised by'].nunique()
+                    if not sheet_data.empty and 'Servised by' in sheet_data.columns:
+                        tech_count = sheet_data['Servised by'].nunique()
                         st.metric("👨‍🔧 فنيين مختلفين", tech_count)
                     else:
                         st.metric("👨‍🔧 فنيين مختلفين", 0)
                 
-                # عرض أحداث الماكينة
-                for idx, row in machine_data.iterrows():
+                # عرض أحداث الشيت
+                for idx, row in sheet_data.iterrows():
                     st.markdown("---")
                     col_event1, col_event2 = st.columns([3, 2])
                     
@@ -1600,7 +1655,7 @@ def display_search_results_with_duration(results, search_params):
         
         for result in results:
             # التحقق من وجود الصور في كل نتيجة
-            if 'Images' in result and result['Images'] and result['Images'] != "-":
+            if 'Images' in result and result['Images'] and result['Images'] != "-" and result['Images'] != "":
                 # نسخ النتيجة وإضافة المعلومات اللازمة
                 event_with_images = result.copy()
                 event_with_images['has_images'] = True
@@ -1613,16 +1668,18 @@ def display_search_results_with_duration(results, search_params):
             images_df = pd.DataFrame(events_with_images)
             
             for idx, row in images_df.iterrows():
+                sheet_name = row.get('Sheet Name', 'غير معروف')
                 card_num = row.get('Card Number', 'غير معروف')
                 event_date = row.get('Date', 'غير معروف')
                 event_text = row.get('Event', 'لا يوجد')
                 
-                with st.expander(f"📸 صور للحدث - الماكينة {card_num} - {event_date}", expanded=False):
+                with st.expander(f"📸 صور للحدث - {sheet_name} - {card_num} - {event_date}", expanded=False):
                     # عرض تفاصيل الحدث
                     col_img1, col_img2 = st.columns([2, 3])
                     
                     with col_img1:
                         st.markdown("**تفاصيل الحدث:**")
+                        st.markdown(f"**الشيت:** {sheet_name}")
                         st.markdown(f"**رقم الماكينة:** {card_num}")
                         st.markdown(f"**التاريخ:** {event_date}")
                         st.markdown(f"**الحدث:** {event_text[:50]}{'...' if len(event_text) > 50 else ''}")
@@ -1651,15 +1708,15 @@ def display_search_results_with_duration(results, search_params):
             export_df = result_df.copy()
             
             # إضافة أعمدة التنظيف للترتيب
-            export_df['Card_Number_Clean_Export'] = pd.to_numeric(export_df['Card Number'], errors='coerce')
+            export_df['Sheet_Name_Clean'] = export_df['Sheet Name']
             export_df['Date_Clean_Export'] = pd.to_datetime(export_df['Date'], errors='coerce', dayfirst=True)
             
             # ترتيب البيانات
-            export_df = export_df.sort_values(by=['Card_Number_Clean_Export', 'Date_Clean_Export'], 
+            export_df = export_df.sort_values(by=['Sheet_Name_Clean', 'Date_Clean_Export'], 
                                              ascending=[True, False], na_position='last')
             
             # إزالة الأعمدة المؤقتة
-            export_df = export_df.drop(['Card_Number_Clean_Export', 'Date_Clean_Export'], axis=1, errors='ignore')
+            export_df = export_df.drop(['Sheet_Name_Clean', 'Date_Clean_Export'], axis=1, errors='ignore')
             
             # حفظ الملف
             export_df.to_excel(buffer_excel, index=False, engine="openpyxl")
@@ -1682,15 +1739,15 @@ def display_search_results_with_duration(results, search_params):
             export_csv = result_df.copy()
             
             # إضافة أعمدة التنظيف للترتيب
-            export_csv['Card_Number_Clean_Export'] = pd.to_numeric(export_csv['Card Number'], errors='coerce')
+            export_csv['Sheet_Name_Clean'] = export_csv['Sheet Name']
             export_csv['Date_Clean_Export'] = pd.to_datetime(export_csv['Date'], errors='coerce', dayfirst=True)
             
             # ترتيب البيانات
-            export_csv = export_csv.sort_values(by=['Card_Number_Clean_Export', 'Date_Clean_Export'], 
+            export_csv = export_csv.sort_values(by=['Sheet_Name_Clean', 'Date_Clean_Export'], 
                                                ascending=[True, False], na_position='last')
             
             # إزالة الأعمدة المؤقتة
-            export_csv = export_csv.drop(['Card_Number_Clean_Export', 'Date_Clean_Export'], axis=1, errors='ignore')
+            export_csv = export_csv.drop(['Sheet_Name_Clean', 'Date_Clean_Export'], axis=1, errors='ignore')
             
             # حفظ الملف
             export_csv.to_csv(buffer_csv, index=False, encoding='utf-8-sig')
@@ -1922,158 +1979,52 @@ def show_event_correction_comparison(durations_df):
     except ImportError:
         st.info("📊 لرؤية المخططات التفاعلية، قم بتثبيت مكتبة plotly")
 
-def check_row_criteria(row, df, card_num, target_techs, target_dates, 
-                      search_terms, search_params):
-    """التحقق من مطابقة الصف لمعايير البحث"""
+# ===============================
+# 🖥 دوال العرض والتعديل الديناميكية
+# ===============================
+def display_dynamic_sheets(sheets_edit):
+    """عرض جميع الشيتات بشكل ديناميكي"""
+    st.subheader("📂 جميع الشيتات")
     
-    # 1. التحقق من فني الخدمة
-    if target_techs:
-        row_tech = get_servised_by_value(row).lower()
-        if row_tech == "-" and not search_params["include_empty"]:
-            return False
-        
-        tech_match = False
-        if row_tech != "-":
-            for tech in target_techs:
-                if search_params["exact_match"]:
-                    if tech == row_tech:
-                        tech_match = True
-                        break
-                else:
-                    if tech in row_tech:
-                        tech_match = True
-                        break
-        
-        if not tech_match:
-            return False
+    if not sheets_edit:
+        st.warning("⚠ لا توجد شيتات متاحة")
+        return
     
-    # 2. التحقق من التاريخ
-    if target_dates:
-        row_date = str(row.get("Date", "")).strip().lower() if pd.notna(row.get("Date")) else ""
-        if not row_date and not search_params["include_empty"]:
-            return False
-        
-        date_match = False
-        if row_date:
-            for date_term in target_dates:
-                if search_params["exact_match"]:
-                    if date_term == row_date:
-                        date_match = True
-                        break
-                else:
-                    if date_term in row_date:
-                        date_match = True
-                        break
-        
-        if not date_match:
-            return False
+    # إنشاء تبويبات لكل شيت
+    sheet_tabs = st.tabs(list(sheets_edit.keys()))
     
-    # 3. التحقق من نص البحث
-    if search_terms:
-        row_event, row_correction = extract_event_correction(row, df)
-        row_event_lower = row_event.lower()
-        row_correction_lower = row_correction.lower()
-        
-        if not row_event and not row_correction and not search_params["include_empty"]:
-            return False
-        
-        text_match = False
-        combined_text = f"{row_event_lower} {row_correction_lower}"
-        
-        for term in search_terms:
-            if search_params["exact_match"]:
-                if term == row_event_lower or term == row_correction_lower:
-                    text_match = True
-                    break
+    for i, (sheet_name, df) in enumerate(sheets_edit.items()):
+        with sheet_tabs[i]:
+            st.markdown(f"### 📋 {sheet_name}")
+            st.info(f"الصفوف: {len(df)} | الأعمدة: {len(df.columns)}")
+            
+            # عرض جميع الأعمدة
+            if st.checkbox(f"عرض جميع الأعمدة", key=f"show_all_{sheet_name}"):
+                st.dataframe(df, use_container_width=True)
             else:
-                if term in combined_text:
-                    text_match = True
-                    break
-        
-        if not text_match:
-            return False
-    
-    return True
-
-def extract_event_correction(row, df):
-    """استخراج الحدث والتصحيح من الصف"""
-    event_value = "-"
-    correction_value = "-"
-    
-    for col in df.columns:
-        col_normalized = normalize_name(col)
-        if "event" in col_normalized or "الحدث" in col_normalized:
-            if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
-                event_value = str(row[col]).strip()
-        
-        if "correction" in col_normalized or "تصحيح" in col_normalized:
-            if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
-                correction_value = str(row[col]).strip()
-    
-    return event_value, correction_value
-
-def extract_row_data(row, df, card_num):
-    """استخراج بيانات الصف"""
-    card_num_value = str(row.get("card", "")).strip() if pd.notna(row.get("card")) else str(card_num)
-    date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
-    tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
-    
-    event_value, correction_value = extract_event_correction(row, df)
-    
-    # استخراج الصور
-    images_value = get_images_value(row)
-    
-    # إذا كانت كل الحقول فارغة، نتجاهل الصف
-    if (event_value == "-" and correction_value == "-" and 
-        date == "-" and tones == "-" and not images_value):
-        return None
-    
-    servised_by_value = get_servised_by_value(row)
-    
-    result = {
-        "Card Number": card_num_value,
-        "Event": event_value,
-        "Correction": correction_value,
-        "Servised by": servised_by_value,
-        "Tones": tones,
-        "Date": date
-    }
-    
-    # إضافة الصور إذا كانت موجودة
-    if images_value and images_value.strip():
-        result["Images"] = images_value.strip()
-    
-    return result
-
-def parse_card_numbers(card_numbers_str):
-    """تحليل سلسلة أرقام الماكينات إلى قائمة أرقام"""
-    if not card_numbers_str:
-        return set()
-    
-    numbers = set()
-    
-    try:
-        parts = card_numbers_str.split(',')
-        for part in parts:
-            part = part.strip()
-            if '-' in part:
-                try:
-                    start_str, end_str = part.split('-')
-                    start = int(start_str.strip())
-                    end = int(end_str.strip())
-                    numbers.update(range(start, end + 1))
-                except:
-                    continue
-            else:
-                try:
-                    num = int(part)
-                    numbers.add(num)
-                except:
-                    continue
-    except:
-        return set()
-    
-    return numbers
+                # عرض الأعمدة الرئيسية فقط
+                display_cols = []
+                for col in df.columns:
+                    col_lower = str(col).lower()
+                    if any(keyword in col_lower for keyword in ['card', 'date', 'event', 'correction', 'servised', 'serviced', 'images', 'صور', 'technician', 'فني']):
+                        display_cols.append(col)
+                
+                if display_cols:
+                    st.dataframe(df[display_cols], use_container_width=True)
+                else:
+                    st.dataframe(df.head(10), use_container_width=True)
+            
+            # عرض إحصائيات
+            with st.expander("📊 إحصائيات الشيت", expanded=False):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("عدد الصفوف", len(df))
+                with col2:
+                    st.metric("عدد الأعمدة", len(df.columns))
+                with col3:
+                    non_empty = df.notna().sum().sum()
+                    total_cells = len(df) * len(df.columns)
+                    st.metric("خلايا غير فارغة", f"{non_empty}/{total_cells}")
 
 # -------------------------------
 # 🖥 دالة إضافة إيفينت جديد - مع خاصية رفع الصور
@@ -2089,7 +2040,7 @@ def add_new_event(sheets_edit):
     
     col1, col2 = st.columns(2)
     with col1:
-        card_num = st.text_input("رقم الماكينة:", key="new_event_card")
+        card_num = st.text_input("رقم الماكينة/المعرف:", key="new_event_card")
         event_text = st.text_area("الحدث:", key="new_event_text")
     with col2:
         correction_text = st.text_area("التصحيح:", key="new_correction_text")
@@ -2135,56 +2086,26 @@ def add_new_event(sheets_edit):
         # إنشاء صف جديد
         new_row = {}
         
-        # إضافة البيانات الأساسية للأحداث
+        # إضافة البيانات الأساسية
         new_row["card"] = card_num.strip()
         if event_date.strip():
             new_row["Date"] = event_date.strip()
         
-        # إضافة بيانات الإيفينت والكوريكشن
-        event_columns = [col for col in df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
-        if event_columns and event_text.strip():
-            new_row[event_columns[0]] = event_text.strip()
-        elif not event_columns and event_text.strip():
-            new_row["Event"] = event_text.strip()
-        
-        correction_columns = [col for col in df.columns if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
-        if correction_columns and correction_text.strip():
-            new_row[correction_columns[0]] = correction_text.strip()
-        elif not correction_columns and correction_text.strip():
-            new_row["Correction"] = correction_text.strip()
-        
-        # البحث عن عمود Servised by
-        servised_col = None
-        servised_columns = [col for col in df.columns if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]]
-        if servised_columns:
-            servised_col = servised_columns[0]
-        else:
-            for col in df.columns:
-                if "servis" in normalize_name(col) or "service" in normalize_name(col) or "فني" in col:
-                    servised_col = col
-                    break
-            if not servised_col:
-                servised_col = "Servised by"
-        
-        if serviced_by.strip():
-            new_row[servised_col] = serviced_by.strip()
-        
-        # إضافة الصور إذا كانت موجودة
-        if saved_images:
-            # البحث عن عمود الصور أو إنشاؤه
-            images_col = None
-            images_columns = [col for col in df.columns if normalize_name(col) in ["images", "pictures", "attachments", "صور", "مرفقات"]]
-            
-            if images_columns:
-                images_col = images_columns[0]
-            else:
-                # إنشاء عمود جديد للصور
-                images_col = "Images"
-                if images_col not in df.columns:
-                    df[images_col] = ""
-            
-            # حفظ أسماء الملفات كسلسلة مفصولة بفواصل
-            new_row[images_col] = ", ".join(saved_images)
+        # البحث عن أعمدة الحدث والتصحيح والفني
+        for col in df.columns:
+            col_lower = str(col).lower()
+            if "event" in col_lower or "حدث" in col_lower:
+                if event_text.strip():
+                    new_row[col] = event_text.strip()
+            elif "correction" in col_lower or "تصحيح" in col_lower:
+                if correction_text.strip():
+                    new_row[col] = correction_text.strip()
+            elif "servis" in col_lower or "service" in col_lower or "فني" in col_lower:
+                if serviced_by.strip():
+                    new_row[col] = serviced_by.strip()
+            elif "images" in col_lower or "صور" in col_lower:
+                if saved_images:
+                    new_row[col] = ", ".join(saved_images)
         
         # إضافة الصف الجديد
         new_row_df = pd.DataFrame([new_row]).astype(str)
@@ -2215,33 +2136,26 @@ def add_new_event(sheets_edit):
 # 🖥 دالة تعديل الإيفينت والكوريكشن - مع خاصية إدارة الصور
 # -------------------------------
 def edit_events_and_corrections(sheets_edit):
-    """تعديل الإيفينت والكوريكشن مع إدارة الصور"""
+    """تعديل الحدث والتصحيح والصور"""
     st.subheader("✏ تعديل الحدث والتصحيح والصور")
     
     sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_events_sheet")
     df = sheets_edit[sheet_name].astype(str)
     
     # عرض البيانات الحالية
-    st.markdown("### 📋 البيانات الحالية (الحدث والتصحيح والصور)")
+    st.markdown("### 📋 البيانات الحالية")
     
     # استخراج الأعمدة المطلوبة
-    display_columns = ["card", "Date"]
+    display_columns = []
     
-    event_columns = [col for col in df.columns if normalize_name(col) in ["event", "events", "الحدث", "الأحداث"]]
-    if event_columns:
-        display_columns.append(event_columns[0])
+    for col in df.columns:
+        col_lower = str(col).lower()
+        if any(keyword in col_lower for keyword in ['card', 'date', 'event', 'correction', 'servis', 'service', 'فني', 'images', 'صور']):
+            display_columns.append(col)
     
-    correction_columns = [col for col in df.columns if normalize_name(col) in ["correction", "correct", "تصحيح", "تصويب"]]
-    if correction_columns:
-        display_columns.append(correction_columns[0])
-    
-    servised_columns = [col for col in df.columns if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]]
-    if servised_columns:
-        display_columns.append(servised_columns[0])
-    
-    images_columns = [col for col in df.columns if normalize_name(col) in ["images", "pictures", "attachments", "صور", "مرفقات"]]
-    if images_columns:
-        display_columns.append(images_columns[0])
+    # إذا لم نجد أعمدة واضحة، نعرض أول 5 أعمدة
+    if not display_columns and len(df.columns) > 0:
+        display_columns = list(df.columns[:5])
     
     # عرض البيانات
     display_df = df[display_columns].copy()
@@ -2260,24 +2174,41 @@ def edit_events_and_corrections(sheets_edit):
         editing_data = st.session_state["editing_data"]
         
         st.markdown("### تعديل البيانات")
-        col1, col2 = st.columns(2)
-        with col1:
-            new_card = st.text_input("رقم الماكينة:", value=editing_data.get("card", ""), key="edit_card")
-            new_date = st.text_input("التاريخ:", value=editing_data.get("Date", ""), key="edit_date")
-        with col2:
-            new_serviced_by = st.text_input("فني الخدمة:", value=editing_data.get("Servised by", ""), key="edit_serviced_by")
         
-        # حقول الإيفينت والكوريكشن
+        # البحث عن الأعمدة الرئيسية
+        card_col = None
+        date_col = None
         event_col = None
         correction_col = None
+        tech_col = None
+        images_col = None
         
         for col in df.columns:
-            col_norm = normalize_name(col)
-            if col_norm in ["event", "events", "الحدث", "الأحداث"]:
+            col_lower = str(col).lower()
+            if "card" in col_lower or "رقم" in col_lower:
+                card_col = col
+            elif "date" in col_lower or "تاريخ" in col_lower:
+                date_col = col
+            elif "event" in col_lower or "حدث" in col_lower:
                 event_col = col
-            elif col_norm in ["correction", "correct", "تصحيح", "تصويب"]:
+            elif "correction" in col_lower or "تصحيح" in col_lower:
                 correction_col = col
+            elif "servis" in col_lower or "service" in col_lower or "فني" in col_lower:
+                tech_col = col
+            elif "images" in col_lower or "صور" in col_lower:
+                images_col = col
         
+        col1, col2 = st.columns(2)
+        with col1:
+            if card_col:
+                new_card = st.text_input("رقم الماكينة:", value=editing_data.get(card_col, ""), key="edit_card")
+            if date_col:
+                new_date = st.text_input("التاريخ:", value=editing_data.get(date_col, ""), key="edit_date")
+        with col2:
+            if tech_col:
+                new_serviced_by = st.text_input("فني الخدمة:", value=editing_data.get(tech_col, ""), key="edit_serviced_by")
+        
+        # حقول الإيفينت والكوريكشن
         if event_col:
             new_event = st.text_area("الحدث:", value=editing_data.get(event_col, ""), key="edit_event")
         if correction_col:
@@ -2286,14 +2217,6 @@ def edit_events_and_corrections(sheets_edit):
         # قسم إدارة الصور
         st.markdown("---")
         st.markdown("### 📷 إدارة صور الحدث")
-        
-        # البحث عن عمود الصور
-        images_col = None
-        for col in df.columns:
-            col_norm = normalize_name(col)
-            if col_norm in ["images", "pictures", "attachments", "صور", "مرفقات"]:
-                images_col = col
-                break
         
         existing_images = []
         if images_col and images_col in editing_data:
@@ -2331,23 +2254,16 @@ def edit_events_and_corrections(sheets_edit):
         
         if st.button("💾 حفظ التعديلات والصور", key="save_edits_btn"):
             # تحديث البيانات
-            df.at[row_index, "card"] = new_card
-            df.at[row_index, "Date"] = new_date
-            
+            if card_col:
+                df.at[row_index, card_col] = new_card
+            if date_col:
+                df.at[row_index, date_col] = new_date
             if event_col:
                 df.at[row_index, event_col] = new_event
             if correction_col:
                 df.at[row_index, correction_col] = new_correction
-            
-            # البحث عن عمود Servised by
-            servised_col = None
-            for col in df.columns:
-                if normalize_name(col) in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]:
-                    servised_col = col
-                    break
-            
-            if servised_col and new_serviced_by.strip():
-                df.at[row_index, servised_col] = new_serviced_by.strip()
+            if tech_col:
+                df.at[row_index, tech_col] = new_serviced_by.strip()
             
             # تحديث الصور
             if images_col:
@@ -2355,11 +2271,6 @@ def edit_events_and_corrections(sheets_edit):
                     df.at[row_index, images_col] = ", ".join(all_images)
                 else:
                     df.at[row_index, images_col] = ""
-            elif all_images:
-                # إنشاء عمود جديد للصور
-                images_col = "Images"
-                df[images_col] = ""
-                df.at[row_index, images_col] = ", ".join(all_images)
             
             sheets_edit[sheet_name] = df.astype(object)
             
@@ -2449,7 +2360,8 @@ def manage_sheets_and_columns(sheets_edit):
                 columns_to_use = [col.strip() for col in custom_columns.split(',') if col.strip()]
             
             # إنشاء الشيت الجديد
-            sheets_edit = create_new_sheet(sheets_edit, new_sheet_name, columns_to_use)
+            new_df = pd.DataFrame(columns=columns_to_use)
+            sheets_edit[new_sheet_name] = new_df
             
             # إضافة الصفوف الأولية إذا طلب
             if initial_rows > 0:
@@ -2518,7 +2430,8 @@ def manage_sheets_and_columns(sheets_edit):
                 
                 if st.button("✏️ إعادة تسمية", key="rename_column_btn"):
                     if old_column_name and new_column_name and old_column_name != new_column_name:
-                        sheets_edit = rename_column_in_sheet(sheets_edit, selected_sheet, old_column_name, new_column_name)
+                        df.rename(columns={old_column_name: new_column_name}, inplace=True)
+                        sheets_edit[selected_sheet] = df
                         
                         new_sheets = auto_save_to_github(
                             sheets_edit,
@@ -2572,7 +2485,8 @@ def manage_sheets_and_columns(sheets_edit):
                         confirm = st.checkbox(f"هل أنت متأكد من حذف العمود '{column_to_delete}'؟")
                         
                         if confirm:
-                            sheets_edit = delete_column_from_sheet(sheets_edit, selected_sheet, column_to_delete)
+                            df.drop(columns=[column_to_delete], inplace=True)
+                            sheets_edit[selected_sheet] = df
                             
                             new_sheets = auto_save_to_github(
                                 sheets_edit,
@@ -2599,7 +2513,8 @@ def manage_sheets_and_columns(sheets_edit):
                 
                 if st.button("🔄 تطبيق الترتيب الجديد", key="apply_column_order_btn"):
                     if len(column_order) == len(columns):
-                        sheets_edit = reorder_columns_in_sheet(sheets_edit, selected_sheet, column_order)
+                        df = df[column_order]
+                        sheets_edit[selected_sheet] = df
                         
                         new_sheets = auto_save_to_github(
                             sheets_edit,
@@ -2864,6 +2779,22 @@ user_role = st.session_state.get("user_role", "viewer")
 user_permissions = st.session_state.get("user_permissions", ["view"])
 permissions = get_user_permissions(user_role, user_permissions)
 
+# عرض جميع الشيتات المتاحة
+if all_sheets:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📂 الشيتات المتاحة")
+    
+    sheet_list = list(all_sheets.keys())
+    selected_sheet_info = st.sidebar.selectbox("عرض معلومات شيت:", sheet_list)
+    
+    if selected_sheet_info in all_sheets:
+        df_info = all_sheets[selected_sheet_info]
+        st.sidebar.info(f"**{selected_sheet_info}:** {len(df_info)} صف × {len(df_info.columns)} عمود")
+        
+        # عرض عينة من البيانات
+        if st.sidebar.checkbox("عرض عينة من البيانات"):
+            st.sidebar.dataframe(df_info.head(3), use_container_width=True)
+
 # تحديد التبويبات بناءً على الصلاحيات
 if permissions["can_manage_users"]:  # admin
     tabs = st.tabs(APP_CONFIG["CUSTOM_TABS"])
@@ -2899,6 +2830,9 @@ if permissions["can_edit"] and len(tabs) > 1:
         if sheets_edit is None:
             st.warning("❗ الملف المحلي غير موجود. اضغط تحديث من GitHub في الشريط الجانبي أولًا.")
         else:
+            # عرض جميع الشيتات أولاً
+            display_dynamic_sheets(sheets_edit)
+            
             # تبويبات متعددة للإدارة
             tab_names = [
                 "عرض وتعديل شيت",
@@ -3072,3 +3006,71 @@ if permissions["can_edit"] and len(tabs) > 1:
                         st.info("ℹ️ لا توجد صور مخزنة بعد")
                 else:
                     st.warning(f"⚠ مجلد الصور {IMAGES_FOLDER} غير موجود")
+
+# -------------------------------
+# Tab: تحليلات متقدمة - للمسؤولين فقط
+# -------------------------------
+if permissions["can_manage_users"] and len(tabs) > 2:
+    with tabs[2]:
+        st.header("📊 تحليلات متقدمة")
+        
+        if all_sheets is None:
+            st.warning("❗ الملف المحلي غير موجود.")
+        else:
+            st.markdown("### 📈 تحليلات شاملة")
+            
+            # إحصائيات عامة
+            total_sheets = len(all_sheets)
+            total_rows = sum(len(df) for df in all_sheets.values())
+            total_columns = sum(len(df.columns) for df in all_sheets.values())
+            
+            col_stat1, col_stat2, col_stat3 = st.columns(3)
+            with col_stat1:
+                st.metric("📂 عدد الشيتات", total_sheets)
+            with col_stat2:
+                st.metric("📊 عدد الصفوف", total_rows)
+            with col_stat3:
+                st.metric("📋 عدد الأعمدة", total_columns)
+            
+            # تحليل الشيتات
+            st.markdown("### 📊 تحليل الشيتات")
+            
+            sheets_analysis = []
+            for sheet_name, df in all_sheets.items():
+                non_empty = df.notna().sum().sum()
+                total_cells = len(df) * len(df.columns)
+                fill_rate = (non_empty / total_cells * 100) if total_cells > 0 else 0
+                
+                sheets_analysis.append({
+                    "اسم الشيت": sheet_name,
+                    "عدد الصفوف": len(df),
+                    "عدد الأعمدة": len(df.columns),
+                    "معدل التعبئة %": round(fill_rate, 2),
+                    "الأعمدة الفريدة": ", ".join(df.columns[:3]) + ("..." if len(df.columns) > 3 else "")
+                })
+            
+            analysis_df = pd.DataFrame(sheets_analysis)
+            st.dataframe(analysis_df, use_container_width=True)
+            
+            # توزيع البيانات حسب الشيتات
+            st.markdown("### 📈 توزيع البيانات")
+            
+            chart_data = pd.DataFrame({
+                "الشيت": list(all_sheets.keys()),
+                "عدد الصفوف": [len(df) for df in all_sheets.values()],
+                "عدد الأعمدة": [len(df.columns) for df in all_sheets.values()]
+            })
+            
+            try:
+                import plotly.express as px
+                
+                fig1 = px.bar(chart_data, x='الشيت', y='عدد الصفوف', 
+                            title='توزيع عدد الصفوف حسب الشيت')
+                st.plotly_chart(fig1, use_container_width=True)
+                
+                fig2 = px.bar(chart_data, x='الشيت', y='عدد الأعمدة',
+                            title='توزيع عدد الأعمدة حسب الشيت')
+                st.plotly_chart(fig2, use_container_width=True)
+                
+            except ImportError:
+                st.info("📊 لرؤية المخططات التفاعلية، قم بتثبيت مكتبة plotly")
