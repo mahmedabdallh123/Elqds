@@ -151,7 +151,7 @@ def display_images(image_filenames, caption="الصور المرفقة"):
                     image_path = get_image_url(image_filename)
                     if image_path and os.path.exists(image_path):
                         try:
-                            st.image(image_path, caption=image_filename, use_column_width=True)
+                            st.image(image_path, caption=image_filename, use_container_width=True)
                         except:
                             st.write(f"📷 {image_filename}")
                     else:
@@ -1027,6 +1027,128 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
                         durations_data.append(duration_info)
     
     return durations_data
+
+# ===============================
+# 🖥 دوال ديناميكية للتعامل مع أي شيت وأي أعمدة
+# ===============================
+def get_all_columns_from_sheets(sheets_dict):
+    """الحصول على جميع الأعمدة من جميع الشيتات"""
+    all_columns = set()
+    for sheet_name, df in sheets_dict.items():
+        all_columns.update(df.columns.tolist())
+    return sorted(list(all_columns))
+
+def get_sheet_columns(sheets_dict, sheet_name):
+    """الحصول على أعمدة شيت معين"""
+    if sheet_name in sheets_dict:
+        return sheets_dict[sheet_name].columns.tolist()
+    return []
+
+def find_column_by_keywords(df, keywords):
+    """البحث عن عمود بناءً على كلمات مفتاحية"""
+    for col in df.columns:
+        col_lower = str(col).lower()
+        if any(keyword in col_lower for keyword in keywords):
+            return col
+    return None
+
+def create_dynamic_event_form(df, prefix="", default_values=None):
+    """إنشاء نموذج ديناميكي لإدخال بيانات الحدث بناءً على أعمدة الشيت"""
+    if default_values is None:
+        default_values = {}
+    
+    # الحصول على جميع الأعمدة
+    columns = df.columns.tolist()
+    
+    # تصنيف الأعمدة
+    text_columns = []
+    date_columns = []
+    number_columns = []
+    image_columns = []
+    other_columns = []
+    
+    for col in columns:
+        col_lower = str(col).lower()
+        
+        if any(keyword in col_lower for keyword in ['image', 'صور', 'picture', 'صورة', 'مرفق']):
+            image_columns.append(col)
+        elif any(keyword in col_lower for keyword in ['date', 'تاريخ', 'time', 'وقت']):
+            date_columns.append(col)
+        elif any(keyword in col_lower for keyword in ['ton', 'طن', 'عدد', 'quantity', 'qty']):
+            number_columns.append(col)
+        elif any(keyword in col_lower for keyword in ['event', 'حدث', 'correction', 'تصحيح', 'notes', 'ملاحظات']):
+            text_columns.append(col)
+        else:
+            other_columns.append(col)
+    
+    # إنشاء الحقول حسب النوع
+    form_data = {}
+    
+    # أولاً: عرض الحقول النصية المهمة
+    st.markdown("#### 📝 البيانات الأساسية")
+    col1, col2 = st.columns(2)
+    
+    for i, col in enumerate(text_columns):
+        with col1 if i % 2 == 0 else col2:
+            default = default_values.get(col, "")
+            form_data[col] = st.text_area(f"{col}:", value=default, key=f"{prefix}_{col}_text", height=100)
+    
+    # ثانياً: حقول التاريخ
+    if date_columns:
+        st.markdown("#### 📅 التواريخ")
+        date_cols = st.columns(min(3, len(date_columns)))
+        for i, col in enumerate(date_columns):
+            with date_cols[i % 3]:
+                default = default_values.get(col, "")
+                form_data[col] = st.text_input(f"{col}:", value=default, key=f"{prefix}_{col}_date", placeholder="مثال: 20/5/2025")
+    
+    # ثالثاً: الحقول الرقمية
+    if number_columns:
+        st.markdown("#### 🔢 القيم الرقمية")
+        num_cols = st.columns(min(3, len(number_columns)))
+        for i, col in enumerate(number_columns):
+            with num_cols[i % 3]:
+                default = default_values.get(col, "")
+                form_data[col] = st.text_input(f"{col}:", value=default, key=f"{prefix}_{col}_num")
+    
+    # رابعاً: باقي الحقول
+    if other_columns:
+        st.markdown("#### 📋 حقول إضافية")
+        other_cols = st.columns(3)
+        for i, col in enumerate(other_columns):
+            with other_cols[i % 3]:
+                default = default_values.get(col, "")
+                form_data[col] = st.text_input(f"{col}:", value=default, key=f"{prefix}_{col}_other")
+    
+    # خامساً: حقول الصور
+    if image_columns:
+        st.markdown("#### 📷 الصور المرفقة")
+        for col in image_columns:
+            st.markdown(f"**{col}:**")
+            default_images = default_values.get(col, "")
+            if default_images:
+                st.info(f"الصور الحالية: {default_images}")
+                if st.checkbox(f"🗑️ حذف الصور الحالية لـ {col}", key=f"{prefix}_delete_{col}"):
+                    default_images = ""
+            
+            uploaded_files = st.file_uploader(
+                f"اختر الصور لـ {col}:",
+                type=APP_CONFIG["ALLOWED_IMAGE_TYPES"],
+                accept_multiple_files=True,
+                key=f"{prefix}_{col}_uploader"
+            )
+            
+            if uploaded_files:
+                saved_images = save_uploaded_images(uploaded_files)
+                if saved_images:
+                    if default_images:
+                        form_data[col] = default_images + "," + ",".join(saved_images)
+                    else:
+                        form_data[col] = ",".join(saved_images)
+            else:
+                form_data[col] = default_images
+    
+    return form_data
 
 # ===============================
 # 🖥 دالة فحص الإيفينت والكوريكشن - ديناميكية
@@ -2027,272 +2149,155 @@ def display_dynamic_sheets(sheets_edit):
                     st.metric("خلايا غير فارغة", f"{non_empty}/{total_cells}")
 
 # -------------------------------
-# 🖥 دالة إضافة إيفينت جديد - مع خاصية رفع الصور
+# 🖥 دالة إضافة إيفينت جديد - ديناميكية بالكامل
 # -------------------------------
-def add_new_event(sheets_edit):
-    """إضافة إيفينت جديد في شيت منفصل مع خاصية رفع الصور"""
-    st.subheader("➕ إضافة حدث جديد مع صور")
+def add_new_event_dynamic(sheets_edit):
+    """إضافة إيفينت جديد في أي شيت مع أي أعمدة"""
+    st.subheader("➕ إضافة حدث جديد (ديناميكي)")
     
-    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="add_event_sheet")
-    df = sheets_edit[sheet_name].astype(str)
+    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="add_event_sheet_dynamic")
+    df = sheets_edit[sheet_name].copy()
     
-    st.markdown("أدخل بيانات الحدث الجديد:")
+    st.markdown(f"### 📝 إضافة حدث جديد في شيت: {sheet_name}")
+    st.info(f"الأعمدة المتاحة: {', '.join(df.columns.tolist())}")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        card_num = st.text_input("رقم الماكينة/المعرف:", key="new_event_card")
-        event_text = st.text_area("الحدث:", key="new_event_text")
-    with col2:
-        correction_text = st.text_area("التصحيح:", key="new_correction_text")
-        serviced_by = st.text_input("فني الخدمة:", key="new_serviced_by")
+    # إنشاء النموذج الديناميكي
+    form_data = create_dynamic_event_form(df, prefix=f"add_{sheet_name}")
     
-    event_date = st.text_input("التاريخ (مثال: 20/5/2025):", key="new_event_date")
-    
-    # قسم رفع الصور
-    st.markdown("---")
-    st.markdown("### 📷 رفع صور للحدث (اختياري)")
-    
-    # خيارات رفع الصور
-    uploaded_files = st.file_uploader(
-        "اختر الصور المرفقة للحدث:",
-        type=APP_CONFIG["ALLOWED_IMAGE_TYPES"],
-        accept_multiple_files=True,
-        key="event_images_uploader"
-    )
-    
-    if uploaded_files:
-        st.info(f"📁 تم اختيار {len(uploaded_files)} صورة")
-        # عرض معاينة للصور المختارة
-        preview_cols = st.columns(min(3, len(uploaded_files)))
-        for idx, uploaded_file in enumerate(uploaded_files):
-            with preview_cols[idx % 3]:
-                try:
-                    st.image(uploaded_file, caption=uploaded_file.name, use_column_width=True)
-                except:
-                    st.write(f"📷 {uploaded_file.name}")
-    
-    if st.button("💾 إضافة الحدث الجديد مع الصور", key="add_new_event_btn"):
-        if not card_num.strip():
-            st.warning("⚠ الرجاء إدخال رقم الماكينة.")
+    if st.button("💾 إضافة الحدث الجديد", key=f"add_dynamic_event_btn_{sheet_name}"):
+        if not form_data:
+            st.warning("⚠ لم يتم إدخال أي بيانات")
             return
-        
-        # حفظ الصور المرفوعة
-        saved_images = []
-        if uploaded_files:
-            saved_images = save_uploaded_images(uploaded_files)
-            if saved_images:
-                st.success(f"✅ تم حفظ {len(saved_images)} صورة بنجاح")
         
         # إنشاء صف جديد
         new_row = {}
-        
-        # إضافة البيانات الأساسية
-        new_row["card"] = card_num.strip()
-        if event_date.strip():
-            new_row["Date"] = event_date.strip()
-        
-        # البحث عن أعمدة الحدث والتصحيح والفني
         for col in df.columns:
-            col_lower = str(col).lower()
-            if "event" in col_lower or "حدث" in col_lower:
-                if event_text.strip():
-                    new_row[col] = event_text.strip()
-            elif "correction" in col_lower or "تصحيح" in col_lower:
-                if correction_text.strip():
-                    new_row[col] = correction_text.strip()
-            elif "servis" in col_lower or "service" in col_lower or "فني" in col_lower:
-                if serviced_by.strip():
-                    new_row[col] = serviced_by.strip()
-            elif "images" in col_lower or "صور" in col_lower:
-                if saved_images:
-                    new_row[col] = ", ".join(saved_images)
+            if col in form_data and form_data[col]:
+                new_row[col] = form_data[col]
+            else:
+                new_row[col] = ""
         
         # إضافة الصف الجديد
-        new_row_df = pd.DataFrame([new_row]).astype(str)
+        new_row_df = pd.DataFrame([new_row])
         df_new = pd.concat([df, new_row_df], ignore_index=True)
         
-        sheets_edit[sheet_name] = df_new.astype(object)
+        sheets_edit[sheet_name] = df_new
         
         # حفظ تلقائي في GitHub
         new_sheets = auto_save_to_github(
             sheets_edit,
-            f"إضافة حدث جديد في {sheet_name}" + (f" مع {len(saved_images)} صورة" if saved_images else "")
+            f"إضافة حدث جديد في {sheet_name} (ديناميكي)"
         )
         if new_sheets is not None:
             sheets_edit = new_sheets
             st.success("✅ تم إضافة الحدث الجديد بنجاح!")
             
             # عرض ملخص
-            with st.expander("📋 ملخص الحدث المضافة", expanded=True):
-                st.markdown(f"**رقم الماكينة:** {card_num}")
-                st.markdown(f"**الحدث:** {event_text[:100]}{'...' if len(event_text) > 100 else ''}")
-                if saved_images:
-                    st.markdown(f"**عدد الصور المرفقة:** {len(saved_images)}")
-                    display_images(saved_images, "الصور المحفوظة")
+            with st.expander("📋 ملخص البيانات المضافة", expanded=True):
+                for col, val in new_row.items():
+                    if val:
+                        st.markdown(f"**{col}:** {val[:100]}{'...' if len(str(val)) > 100 else ''}")
             
             st.rerun()
 
 # -------------------------------
-# 🖥 دالة تعديل الإيفينت والكوريكشن - مع خاصية إدارة الصور
+# 🖥 دالة تعديل الإيفينت والكوريكشن - ديناميكية
 # -------------------------------
-def edit_events_and_corrections(sheets_edit):
-    """تعديل الحدث والتصحيح والصور"""
-    st.subheader("✏ تعديل الحدث والتصحيح والصور")
+def edit_event_dynamic(sheets_edit):
+    """تعديل حدث في أي شيت مع أي أعمدة"""
+    st.subheader("✏ تعديل حدث (ديناميكي)")
     
-    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_events_sheet")
-    df = sheets_edit[sheet_name].astype(str)
+    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_event_sheet_dynamic")
+    df = sheets_edit[sheet_name].copy()
     
-    # عرض البيانات الحالية
-    st.markdown("### 📋 البيانات الحالية")
+    st.markdown(f"### 📋 البيانات الحالية في شيت: {sheet_name}")
     
-    # استخراج الأعمدة المطلوبة
-    display_columns = []
+    # عرض البيانات للاختيار
+    display_df = df.copy()
+    for col in display_df.columns:
+        display_df[col] = display_df[col].astype(str).str[:50] + "..." * (display_df[col].astype(str).str.len() > 50)
     
-    for col in df.columns:
-        col_lower = str(col).lower()
-        if any(keyword in col_lower for keyword in ['card', 'date', 'event', 'correction', 'servis', 'service', 'فني', 'images', 'صور']):
-            display_columns.append(col)
-    
-    # إذا لم نجد أعمدة واضحة، نعرض أول 5 أعمدة
-    if not display_columns and len(df.columns) > 0:
-        display_columns = list(df.columns[:5])
-    
-    # عرض البيانات
-    display_df = df[display_columns].copy()
-    st.dataframe(display_df, use_container_width=True)
+    st.dataframe(display_df.head(20), use_container_width=True)
     
     # اختيار الصف للتعديل
-    st.markdown("### ✏ اختر الصف للتعديل")
-    row_index = st.number_input("رقم الصف (ابدأ من 0):", min_value=0, max_value=len(df)-1, step=1, key="edit_row_index")
+    st.markdown("### 🔍 اختيار الصف للتعديل")
     
-    if st.button("تحميل بيانات الصف", key="load_row_data"):
-        if 0 <= row_index < len(df):
-            st.session_state["editing_row"] = row_index
-            st.session_state["editing_data"] = df.iloc[row_index].to_dict()
+    # البحث عن الصف
+    search_col = st.selectbox("ابحث في عمود:", df.columns.tolist(), key="search_col_dynamic")
+    search_value = st.text_input("قيمة البحث:", key="search_val_dynamic")
     
-    if "editing_data" in st.session_state:
-        editing_data = st.session_state["editing_data"]
+    if search_value:
+        mask = df[search_col].astype(str).str.contains(search_value, case=False, na=False)
+        matching_rows = df[mask]
         
-        st.markdown("### تعديل البيانات")
-        
-        # البحث عن الأعمدة الرئيسية
-        card_col = None
-        date_col = None
-        event_col = None
-        correction_col = None
-        tech_col = None
-        images_col = None
-        
-        for col in df.columns:
-            col_lower = str(col).lower()
-            if "card" in col_lower or "رقم" in col_lower:
-                card_col = col
-            elif "date" in col_lower or "تاريخ" in col_lower:
-                date_col = col
-            elif "event" in col_lower or "حدث" in col_lower:
-                event_col = col
-            elif "correction" in col_lower or "تصحيح" in col_lower:
-                correction_col = col
-            elif "servis" in col_lower or "service" in col_lower or "فني" in col_lower:
-                tech_col = col
-            elif "images" in col_lower or "صور" in col_lower:
-                images_col = col
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if card_col:
-                new_card = st.text_input("رقم الماكينة:", value=editing_data.get(card_col, ""), key="edit_card")
-            if date_col:
-                new_date = st.text_input("التاريخ:", value=editing_data.get(date_col, ""), key="edit_date")
-        with col2:
-            if tech_col:
-                new_serviced_by = st.text_input("فني الخدمة:", value=editing_data.get(tech_col, ""), key="edit_serviced_by")
-        
-        # حقول الإيفينت والكوريكشن
-        if event_col:
-            new_event = st.text_area("الحدث:", value=editing_data.get(event_col, ""), key="edit_event")
-        if correction_col:
-            new_correction = st.text_area("التصحيح:", value=editing_data.get(correction_col, ""), key="edit_correction")
-        
-        # قسم إدارة الصور
-        st.markdown("---")
-        st.markdown("### 📷 إدارة صور الحدث")
-        
-        existing_images = []
-        if images_col and images_col in editing_data:
-            existing_images_str = editing_data.get(images_col, "")
-            if existing_images_str and existing_images_str != "-":
-                existing_images = [img.strip() for img in existing_images_str.split(",") if img.strip()]
-        
-        # عرض الصور الحالية
-        if existing_images:
-            st.markdown("**الصور الحالية:**")
-            display_images(existing_images, "")
+        if not matching_rows.empty:
+            st.success(f"✅ تم العثور على {len(matching_rows)} صف")
             
-            # خيار حذف الصور
-            if st.checkbox("🗑️ حذف كل الصور الحالية", key="delete_existing_images"):
-                existing_images = []
-        
-        # إضافة صور جديدة
-        st.markdown("**إضافة صور جديدة:**")
-        new_uploaded_files = st.file_uploader(
-            "اختر صور جديدة لإضافتها:",
-            type=APP_CONFIG["ALLOWED_IMAGE_TYPES"],
-            accept_multiple_files=True,
-            key="edit_images_uploader"
-        )
-        
-        all_images = existing_images.copy()
-        
-        if new_uploaded_files:
-            st.info(f"📁 تم اختيار {len(new_uploaded_files)} صورة جديدة")
-            # حفظ الصور الجديدة
-            new_saved_images = save_uploaded_images(new_uploaded_files)
-            if new_saved_images:
-                all_images.extend(new_saved_images)
-                st.success(f"✅ تم حفظ {len(new_saved_images)} صورة جديدة")
-        
-        if st.button("💾 حفظ التعديلات والصور", key="save_edits_btn"):
-            # تحديث البيانات
-            if card_col:
-                df.at[row_index, card_col] = new_card
-            if date_col:
-                df.at[row_index, date_col] = new_date
-            if event_col:
-                df.at[row_index, event_col] = new_event
-            if correction_col:
-                df.at[row_index, correction_col] = new_correction
-            if tech_col:
-                df.at[row_index, tech_col] = new_serviced_by.strip()
+            # عرض الصفوف المطابقة
+            matching_display = matching_rows.copy()
+            for col in matching_display.columns:
+                matching_display[col] = matching_display[col].astype(str).str[:50] + "..." * (matching_display[col].astype(str).str.len() > 50)
             
-            # تحديث الصور
-            if images_col:
-                if all_images:
-                    df.at[row_index, images_col] = ", ".join(all_images)
-                else:
-                    df.at[row_index, images_col] = ""
+            st.dataframe(matching_display, use_container_width=True)
             
-            sheets_edit[sheet_name] = df.astype(object)
-            
-            # حفظ تلقائي في GitHub
-            new_sheets = auto_save_to_github(
-                sheets_edit,
-                f"تعديل حدث في {sheet_name} - الصف {row_index}" + (f" مع تحديث الصور" if all_images else "")
+            # اختيار الصف المحدد
+            row_indices = matching_rows.index.tolist()
+            selected_idx = st.selectbox(
+                "اختر رقم الصف للتعديل:",
+                row_indices,
+                format_func=lambda x: f"الصف {x}: {matching_rows.loc[x, search_col][:50]}"
             )
-            if new_sheets is not None:
-                sheets_edit = new_sheets
-                st.success("✅ تم حفظ التعديلات بنجاح!")
+            
+            if st.button("تحميل بيانات الصف", key="load_dynamic_row"):
+                st.session_state["editing_dynamic_row"] = selected_idx
+                st.session_state["editing_dynamic_sheet"] = sheet_name
+                st.session_state["editing_dynamic_data"] = df.loc[selected_idx].to_dict()
+                st.rerun()
+        else:
+            st.warning("⚠ لا توجد نتائج مطابقة")
+    
+    # عرض وتعديل الصف المختار
+    if "editing_dynamic_row" in st.session_state and st.session_state.get("editing_dynamic_sheet") == sheet_name:
+        row_idx = st.session_state["editing_dynamic_row"]
+        original_data = st.session_state["editing_dynamic_data"]
+        
+        st.markdown(f"### ✏ تعديل الصف رقم {row_idx}")
+        
+        # إنشاء النموذج الديناميكي مع البيانات الحالية
+        form_data = create_dynamic_event_form(df, prefix=f"edit_{sheet_name}_{row_idx}", default_values=original_data)
+        
+        col_edit1, col_edit2 = st.columns(2)
+        
+        with col_edit1:
+            if st.button("💾 حفظ التعديلات", key=f"save_dynamic_edit_{row_idx}", type="primary"):
+                # تحديث البيانات
+                for col in df.columns:
+                    if col in form_data:
+                        df.at[row_idx, col] = form_data[col]
                 
-                # عرض ملخص
-                if all_images:
-                    st.info(f"📷 العدد النهائي للصور: {len(all_images)}")
-                    display_images(all_images, "الصور المحفوظة")
+                sheets_edit[sheet_name] = df
                 
-                # مسح بيانات الجلسة
-                if "editing_row" in st.session_state:
-                    del st.session_state["editing_row"]
-                if "editing_data" in st.session_state:
-                    del st.session_state["editing_data"]
+                # حفظ تلقائي في GitHub
+                new_sheets = auto_save_to_github(
+                    sheets_edit,
+                    f"تعديل حدث في {sheet_name} - الصف {row_idx} (ديناميكي)"
+                )
+                
+                if new_sheets is not None:
+                    sheets_edit = new_sheets
+                    st.success("✅ تم حفظ التعديلات بنجاح!")
+                    
+                    # مسح بيانات الجلسة
+                    del st.session_state["editing_dynamic_row"]
+                    del st.session_state["editing_dynamic_sheet"]
+                    del st.session_state["editing_dynamic_data"]
+                    st.rerun()
+        
+        with col_edit2:
+            if st.button("↩️ إلغاء", key=f"cancel_dynamic_edit_{row_idx}"):
+                del st.session_state["editing_dynamic_row"]
+                del st.session_state["editing_dynamic_sheet"]
+                del st.session_state["editing_dynamic_data"]
                 st.rerun()
 
 # -------------------------------
@@ -2821,7 +2826,7 @@ with tabs[0]:
 # -------------------------------
 if permissions["can_edit"] and len(tabs) > 1:
     with tabs[1]:
-        st.header("🛠 تعديل وإدارة البيانات")
+        st.header("🛠 تعديل وإدارة البيانات (ديناميكي)")
 
         # تحقق صلاحية الرفع
         token_exists = bool(st.secrets.get("github", {}).get("token", None))
@@ -2833,13 +2838,11 @@ if permissions["can_edit"] and len(tabs) > 1:
             # عرض جميع الشيتات أولاً
             display_dynamic_sheets(sheets_edit)
             
-            # تبويبات متعددة للإدارة
+            # تبويبات متعددة للإدارة الديناميكية
             tab_names = [
                 "عرض وتعديل شيت",
-                "إضافة صف جديد", 
-                "إضافة عمود جديد",
-                "➕ إضافة حدث جديد مع صور",
-                "✏ تعديل الحدث والصور",
+                "➕ إضافة حدث جديد (ديناميكي)",
+                "✏ تعديل حدث (ديناميكي)",
                 "🗂 إدارة الشيتات والأعمدة",
                 "📷 إدارة الصور"
             ]
@@ -2857,86 +2860,20 @@ if permissions["can_edit"] and len(tabs) > 1:
                 # استخدام دالة التعديل مع زر الحفظ
                 sheets_edit = edit_sheet_with_save_button(sheets_edit)
 
-            # Tab 2: إضافة صف جديد
+            # Tab 2: إضافة حدث جديد (ديناميكي)
             with tabs_edit[1]:
-                st.subheader("➕ إضافة صف جديد")
-                sheet_name_add = st.selectbox("اختر الشيت لإضافة صف:", list(sheets_edit.keys()), key="add_sheet")
-                df_add = sheets_edit[sheet_name_add].astype(str).reset_index(drop=True)
-                
-                st.markdown("أدخل بيانات الصف الجديد:")
+                add_new_event_dynamic(sheets_edit)
 
-                new_data = {}
-                cols = st.columns(3)
-                for i, col in enumerate(df_add.columns):
-                    with cols[i % 3]:
-                        new_data[col] = st.text_input(f"{col}", key=f"add_{sheet_name_add}_{col}")
-
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.button("💾 إضافة الصف الجديد", key=f"add_row_{sheet_name_add}", type="primary"):
-                        new_row_df = pd.DataFrame([new_data]).astype(str)
-                        df_new = pd.concat([df_add, new_row_df], ignore_index=True)
-                        
-                        sheets_edit[sheet_name_add] = df_new.astype(object)
-
-                        new_sheets = auto_save_to_github(
-                            sheets_edit,
-                            f"إضافة صف جديد في {sheet_name_add}"
-                        )
-                        if new_sheets is not None:
-                            sheets_edit = new_sheets
-                            st.success("✅ تم إضافة الصف الجديد بنجاح!")
-                            st.rerun()
-                
-                with col_btn2:
-                    if st.button("🗑 مسح الحقول", key=f"clear_{sheet_name_add}"):
-                        st.rerun()
-
-            # Tab 3: إضافة عمود جديد
+            # Tab 3: تعديل حدث (ديناميكي)
             with tabs_edit[2]:
-                st.subheader("🆕 إضافة عمود جديد")
-                sheet_name_col = st.selectbox("اختر الشيت لإضافة عمود:", list(sheets_edit.keys()), key="add_col_sheet")
-                df_col = sheets_edit[sheet_name_col].astype(str)
-                
-                new_col_name = st.text_input("اسم العمود الجديد:", key="new_col_name")
-                default_value = st.text_input("القيمة الافتراضية لكل الصفوف (اختياري):", "", key="default_value")
-
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.button("💾 إضافة العمود الجديد", key=f"add_col_{sheet_name_col}", type="primary"):
-                        if new_col_name:
-                            df_col[new_col_name] = default_value
-                            sheets_edit[sheet_name_col] = df_col.astype(object)
-                            
-                            new_sheets = auto_save_to_github(
-                                sheets_edit,
-                                f"إضافة عمود جديد '{new_col_name}' إلى {sheet_name_col}"
-                            )
-                            if new_sheets is not None:
-                                sheets_edit = new_sheets
-                                st.success("✅ تم إضافة العمود الجديد بنجاح!")
-                                st.rerun()
-                        else:
-                            st.warning("⚠ الرجاء إدخال اسم العمود الجديد.")
-                
-                with col_btn2:
-                    if st.button("🗑 مسح", key=f"clear_col_{sheet_name_col}"):
-                        st.rerun()
-
-            # Tab 4: إضافة إيفينت جديد مع صور
-            with tabs_edit[3]:
-                add_new_event(sheets_edit)
-
-            # Tab 5: تعديل الإيفينت والكوريكشن والصور
-            with tabs_edit[4]:
-                edit_events_and_corrections(sheets_edit)
+                edit_event_dynamic(sheets_edit)
             
-            # Tab 6: إدارة الشيتات والأعمدة
-            with tabs_edit[5]:
+            # Tab 4: إدارة الشيتات والأعمدة
+            with tabs_edit[3]:
                 sheets_edit = manage_sheets_and_columns(sheets_edit)
             
-            # Tab 7: إدارة الصور
-            with tabs_edit[6]:
+            # Tab 5: إدارة الصور
+            with tabs_edit[4]:
                 st.subheader("📷 إدارة الصور المخزنة")
                 
                 if os.path.exists(IMAGES_FOLDER):
