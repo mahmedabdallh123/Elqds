@@ -2201,7 +2201,7 @@ def add_new_event_dynamic(sheets_edit):
             st.rerun()
 
 # -------------------------------
-# 🖥 دالة تعديل الإيفينت والكوريكشن - ديناميكية
+# 🖥 دالة تعديل الإيفينت والكوريكشن - ديناميكية (معدلة لإصلاح الخطأ)
 # -------------------------------
 def edit_event_dynamic(sheets_edit):
     """تعديل حدث في أي شيت مع أي أعمدة"""
@@ -2212,10 +2212,11 @@ def edit_event_dynamic(sheets_edit):
     
     st.markdown(f"### 📋 البيانات الحالية في شيت: {sheet_name}")
     
-    # عرض البيانات للاختيار
+    # عرض البيانات للاختيار - تم إصلاح الخطأ هنا
     display_df = df.copy()
     for col in display_df.columns:
-        display_df[col] = display_df[col].astype(str).str[:50] + "..." * (display_df[col].astype(str).str.len() > 50)
+        # تحويل القيم إلى نص واختصارها بدون عمليات حسابية معقدة
+        display_df[col] = display_df[col].astype(str).apply(lambda x: x[:50] + "..." if len(x) > 50 else x)
     
     st.dataframe(display_df.head(20), use_container_width=True)
     
@@ -2236,7 +2237,7 @@ def edit_event_dynamic(sheets_edit):
             # عرض الصفوف المطابقة
             matching_display = matching_rows.copy()
             for col in matching_display.columns:
-                matching_display[col] = matching_display[col].astype(str).str[:50] + "..." * (matching_display[col].astype(str).str.len() > 50)
+                matching_display[col] = matching_display[col].astype(str).apply(lambda x: x[:50] + "..." if len(x) > 50 else x)
             
             st.dataframe(matching_display, use_container_width=True)
             
@@ -2245,7 +2246,7 @@ def edit_event_dynamic(sheets_edit):
             selected_idx = st.selectbox(
                 "اختر رقم الصف للتعديل:",
                 row_indices,
-                format_func=lambda x: f"الصف {x}: {matching_rows.loc[x, search_col][:50]}"
+                format_func=lambda x: f"الصف {x}: {str(matching_rows.loc[x, search_col])[:50]}"
             )
             
             if st.button("تحميل بيانات الصف", key="load_dynamic_row"):
@@ -2864,7 +2865,7 @@ if permissions["can_edit"] and len(tabs) > 1:
             with tabs_edit[1]:
                 add_new_event_dynamic(sheets_edit)
 
-            # Tab 3: تعديل حدث (ديناميكي)
+            # Tab 3: تعديل حدث (ديناميكي) - تم إصلاح الخطأ
             with tabs_edit[2]:
                 edit_event_dynamic(sheets_edit)
             
@@ -2927,7 +2928,7 @@ if permissions["can_edit"] and len(tabs) > 1:
                                             img_path = os.path.join(IMAGES_FOLDER, img_file)
                                             
                                             try:
-                                                st.image(img_path, caption=img_file, use_column_width=True)
+                                                st.image(img_path, caption=img_file, use_container_width=True)
                                                 
                                                 # زر حذف الصورة
                                                 if st.button(f"🗑 حذف", key=f"delete_{img_file}"):
