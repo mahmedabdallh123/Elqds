@@ -26,7 +26,7 @@ APP_CONFIG = {
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
-    "REPO_NAME": "mahmedabdallh123/Elqds",
+    "REPO_NAME": "mahmedabdallh123/blow-room",
     "BRANCH": "main",
     "FILE_PATH": "l1.xlsx",
     "LOCAL_FILE": "l1.xlsx",
@@ -935,6 +935,28 @@ def get_category_stats(all_sheets):
         }
     
     return stats
+
+def add_sheet_to_category(category_name, sheet_name):
+    """إضافة شيت إلى تصنيف معين في الإعدادات"""
+    if category_name not in APP_CONFIG["SHEET_CATEGORIES"]:
+        return False
+    
+    # التحقق من أن الشيت ليس مضافاً بالفعل
+    if sheet_name not in APP_CONFIG["SHEET_CATEGORIES"][category_name]:
+        APP_CONFIG["SHEET_CATEGORIES"][category_name].append(sheet_name)
+        return True
+    return False
+
+def add_new_category(category_name, patterns=None):
+    """إضافة تصنيف جديد إلى الإعدادات"""
+    if category_name in APP_CONFIG["SHEET_CATEGORIES"]:
+        return False
+    
+    if patterns is None:
+        patterns = []
+    
+    APP_CONFIG["SHEET_CATEGORIES"][category_name] = patterns
+    return True
 
 # ===============================
 # 🔧 دوال استخراج البيانات الديناميكية (معدلة للبحث مع تصنيف الشيتات)
@@ -2359,9 +2381,9 @@ def edit_event_dynamic(sheets_edit):
                 del st.session_state["editing_dynamic_data"]
                 st.rerun()
 
-# -------------------------------
-# 🖥 دالة إدارة الشيتات والأعمدة
-# -------------------------------
+# ===============================
+# 🖥 دالة إدارة الشيتات والأعمدة - معدلة لإضافة اختيار القسم عند إنشاء شيت جديد
+# ===============================
 def manage_sheets_and_columns(sheets_edit):
     """إدارة الشيتات والأعمدة"""
     st.subheader("🗂 إدارة الشيتات والأعمدة")
@@ -2379,16 +2401,42 @@ def manage_sheets_and_columns(sheets_edit):
         col1, col2 = st.columns(2)
         
         with col1:
-            new_sheet_name = st.text_input("اسم الشيت الجديد:", placeholder="مثال: Card10", key="new_sheet_name")
+            # اختيار القسم أولاً
+            categories = get_sheet_categories()
+            # إزالة "جميع الأقسام" من قائمة الأقسام المتاحة للإضافة
+            available_categories = [cat for cat in categories if cat != "جميع الأقسام"]
             
-            # اختيار نموذج الأعمدة
-            column_template = st.selectbox(
-                "نموذج الأعمدة:",
-                ["استخدام الأعمدة الافتراضية", "نسخ أعمدة من شيت موجود", "تحديد أعمدة مخصصة"],
-                key="column_template"
+            selected_category = st.selectbox(
+                "🏭 اختر القسم:",
+                available_categories,
+                key="new_sheet_category"
+            )
+            
+            new_sheet_name = st.text_input(
+                "اسم الشيت الجديد:", 
+                placeholder="مثال: Card10", 
+                key="new_sheet_name",
+                help="أدخل اسم الشيت كما سيظهر في الملف"
+            )
+            
+            # إضافة أنماط بحث إضافية
+            st.markdown("#### 🔍 أنماط البحث الإضافية")
+            st.caption("أضف كلمات مفتاحية إضافية للتعرف على هذا الشيت في المستقبل (مفصولة بفواصل)")
+            additional_patterns = st.text_input(
+                "أنماط إضافية:",
+                placeholder="مثال: ماكينة10, M10, Machine10",
+                key="additional_patterns"
             )
         
         with col2:
+            # اختيار نموذج الأعمدة
+            st.markdown("#### 📋 نموذج الأعمدة")
+            column_template = st.selectbox(
+                "اختر نموذج الأعمدة:",
+                ["استخدام الأعمدة الافتراضية", "نسخ أعمدة من شيت موجود", "تحديد أعمدة مخصصة"],
+                key="column_template"
+            )
+            
             if column_template == "نسخ أعمدة من شيت موجود":
                 source_sheet = st.selectbox(
                     "اختر الشيت لنسخ أعمدة منه:",
@@ -2401,9 +2449,22 @@ def manage_sheets_and_columns(sheets_edit):
                     placeholder="مثال: card, Date, Event, Correction, Servised by",
                     key="custom_columns"
                 )
+            
+            # خيارات إضافية
+            initial_rows = st.number_input("عدد الصفوف الأولية:", min_value=0, max_value=100, value=0, step=1, key="initial_rows")
         
-        # خيارات إضافية
-        initial_rows = st.number_input("عدد الصفوف الأولية:", min_value=0, max_value=100, value=0, step=1, key="initial_rows")
+        # عرض ملخص
+        st.markdown("---")
+        st.markdown("#### 📋 ملخص الشيت الجديد")
+        col_sum1, col_sum2, col_sum3 = st.columns(3)
+        with col_sum1:
+            st.info(f"**القسم:** {selected_category if 'selected_category' in locals() else 'غير محدد'}")
+        with col_sum2:
+            st.info(f"**اسم الشيت:** {new_sheet_name if new_sheet_name else 'غير محدد'}")
+        with col_sum3:
+            if additional_patterns:
+                patterns_count = len([p for p in additional_patterns.split(',') if p.strip()])
+                st.info(f"**أنماط إضافية:** {patterns_count}")
         
         if st.button("🚀 إنشاء الشيت الجديد", key="create_new_sheet_btn", type="primary"):
             if not new_sheet_name.strip():
@@ -2432,15 +2493,30 @@ def manage_sheets_and_columns(sheets_edit):
                 empty_data = {col: [""] * initial_rows for col in columns_to_use}
                 sheets_edit[new_sheet_name] = pd.DataFrame(empty_data)
             
+            # إضافة الشيت إلى القسم المختار
+            if selected_category and selected_category in APP_CONFIG["SHEET_CATEGORIES"]:
+                # إضافة اسم الشيت الأساسي
+                if new_sheet_name not in APP_CONFIG["SHEET_CATEGORIES"][selected_category]:
+                    APP_CONFIG["SHEET_CATEGORIES"][selected_category].append(new_sheet_name)
+                
+                # إضافة الأنماط الإضافية
+                if additional_patterns:
+                    patterns = [p.strip() for p in additional_patterns.split(',') if p.strip()]
+                    for pattern in patterns:
+                        if pattern not in APP_CONFIG["SHEET_CATEGORIES"][selected_category]:
+                            APP_CONFIG["SHEET_CATEGORIES"][selected_category].append(pattern)
+            
             # حفظ في GitHub
             new_sheets = auto_save_to_github(
                 sheets_edit,
-                f"إنشاء شيت جديد '{new_sheet_name}'"
+                f"إنشاء شيت جديد '{new_sheet_name}' في قسم {selected_category}"
             )
             
             if new_sheets is not None:
                 sheets_edit = new_sheets
-                st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' بنجاح!")
+                st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' في قسم '{selected_category}' بنجاح!")
+                if additional_patterns:
+                    st.info(f"ℹ️ تم إضافة أنماط البحث: {additional_patterns}")
                 st.rerun()
     
     with manage_tabs[1]:
@@ -2585,6 +2661,11 @@ def manage_sheets_and_columns(sheets_edit):
                     # حذف الشيت
                     del sheets_edit[sheet_to_delete]
                     
+                    # حذف الشيت من التصنيفات
+                    for category in APP_CONFIG["SHEET_CATEGORIES"]:
+                        if sheet_to_delete in APP_CONFIG["SHEET_CATEGORIES"][category]:
+                            APP_CONFIG["SHEET_CATEGORIES"][category].remove(sheet_to_delete)
+                    
                     new_sheets = auto_save_to_github(
                         sheets_edit,
                         f"حذف شيت '{sheet_to_delete}'"
@@ -2615,6 +2696,30 @@ def manage_sheets_and_columns(sheets_edit):
         
         categories_df = pd.DataFrame(categories_data)
         st.dataframe(categories_df, use_container_width=True)
+        
+        # إضافة تصنيف جديد
+        with st.expander("➕ إضافة تصنيف جديد", expanded=False):
+            new_category_name = st.text_input("اسم التصنيف الجديد:", key="new_category_name")
+            initial_patterns = st.text_input(
+                "أنماط أولية (اختياري، مفصولة بفواصل):", 
+                placeholder="مثال: Card100, Card101, قسم جديد",
+                key="initial_patterns"
+            )
+            
+            if st.button("إضافة تصنيف", key="add_category_btn"):
+                if new_category_name:
+                    if new_category_name not in APP_CONFIG["SHEET_CATEGORIES"]:
+                        patterns_list = []
+                        if initial_patterns:
+                            patterns_list = [p.strip() for p in initial_patterns.split(',') if p.strip()]
+                        
+                        APP_CONFIG["SHEET_CATEGORIES"][new_category_name] = patterns_list
+                        st.success(f"✅ تم إضافة التصنيف '{new_category_name}' بنجاح!")
+                        st.rerun()
+                    else:
+                        st.warning(f"⚠ التصنيف '{new_category_name}' موجود بالفعل!")
+                else:
+                    st.warning("⚠ الرجاء إدخال اسم للتصنيف الجديد")
     
     return sheets_edit
 
@@ -2858,7 +2963,7 @@ if permissions["can_edit"] and len(tabs) > 1:
             with tabs_edit[2]:
                 edit_event_dynamic(sheets_edit)
             
-            # Tab 4: إدارة الشيتات والأعمدة
+            # Tab 4: إدارة الشيتات والأعمدة - المعدلة
             with tabs_edit[3]:
                 sheets_edit = manage_sheets_and_columns(sheets_edit)
             
