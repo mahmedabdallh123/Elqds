@@ -58,70 +58,6 @@ APP_CONFIG = {
         "servised_by": ["servised", "serviced", "service", "technician", "فني", "تم بواسطة", "Servised by", "Serviced by", "Technician", "الفني", "المشغل", "اسم الفني", "القائم بالعمل"],
         "tones": ["tones", "طن", "أطنان", "ton", "tone", "Tones", "TON", "الطن", "الوزن", "الإنتاج", "الكمية"],
         "images": ["images", "pictures", "صور", "مرفقات", "Images", "الصور", "المرفقات", "صورة", "رفق"]
-    },
-    
-    # ===============================
-    # 🏭 إعدادات تصنيف الشيتات (المجالس/الأقسام) - يمكن تعديلها بسهولة
-    # ===============================
-    "SHEET_CATEGORIES": {
-        "جميع الأقسام": ["*"],  # علامة * تعني كل الشيتات
-        
-        "قسم الحلج": [
-            "Card1", "Card2", "Card3", "Card4", "Card5",
-            "Card6", "Card7", "Card8", "Card9", "Card10",
-            "حلج1", "حلج2", "حلج3", "حلج4", "حلج5"
-        ],
-        
-        "قسم التمشيط": [
-            "Card11", "Card12", "Card13", "Card14", "Card15",
-            "تمشيط1", "تمشيط2", "تمشيط3", "تمشيط4", "تمشيط5"
-        ],
-        
-        "قسم السحب": [
-            "Card16", "Card17", "Card18", "Card19", "Card20",
-            "سحب1", "سحب2", "سحب3", "سحب4", "سحب5"
-        ],
-        
-        "قسم البرم": [
-            "Card21", "Card22", "Card23", "Card24", "Card25",
-            "برم1", "برم2", "برم3", "برم4", "برم5"
-        ],
-        
-        "قسم النسيج": [
-            "Card26", "Card27", "Card28", "Card29", "Card30",
-            "نسيج1", "نسيج2", "نسيج3", "نسيج4", "نسيج5",
-            "تريكو1", "تريكو2"
-        ],
-        
-        "قسم الصباغة": [
-            "Card31", "Card32", "Card33", "Card34", "Card35",
-            "صباغة1", "صباغة2", "صباغة3"
-        ],
-        
-        "قسم التشطيب": [
-            "Card36", "Card37", "Card38", "Card39", "Card40",
-            "تشطيب1", "تشطيب2", "تشطيب3"
-        ],
-        
-        "قسم التعبئة": [
-            "Card41", "Card42", "Card43", "Card44", "Card45",
-            "تعبئة1", "تعبئة2", "تعبئة3"
-        ],
-        
-        "قسم الصيانة": [
-            "صيانة1", "صيانة2", "صيانة3", "صيانة4", "صيانة5",
-            "Maintenance1", "Maintenance2"
-        ],
-        
-        "قسم الكهرباء": [
-            "كهرباء1", "كهرباء2", "كهرباء3",
-            "Electric1", "Electric2"
-        ],
-        
-        "قسم الميكانيكا": [
-            "ميكانيكا1", "ميكانيكا2", "ميكانيكا3",
-            "Mechanical1", "Mechanical2"
-        ]
     }
 }
 
@@ -130,6 +66,7 @@ APP_CONFIG = {
 # ===============================
 USERS_FILE = "users.json"
 STATE_FILE = "state.json"
+CATEGORIES_FILE = "categories.json"  # ملف لحفظ الأقسام
 SESSION_DURATION = timedelta(minutes=APP_CONFIG["SESSION_DURATION_MINUTES"])
 MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
@@ -728,6 +665,134 @@ def auto_save_to_github(sheets_dict, operation_description):
         return sheets_dict
 
 # -------------------------------
+# 📁 دوال إدارة الأقسام الديناميكية
+# -------------------------------
+def load_categories():
+    """تحميل الأقسام من ملف JSON"""
+    categories_file = "categories.json"
+    
+    if os.path.exists(categories_file):
+        try:
+            with open(categories_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
+    else:
+        # إنشاء ملف الأقسام إذا لم يكن موجوداً
+        default_categories = {
+            "جميع الأقسام": ["*"]  # القسم الافتراضي للبحث في كل الشيتات
+        }
+        save_categories(default_categories)
+        return default_categories
+
+def save_categories(categories):
+    """حفظ الأقسام إلى ملف JSON"""
+    try:
+        with open("categories.json", "w", encoding="utf-8") as f:
+            json.dump(categories, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        st.error(f"❌ خطأ في حفظ الأقسام: {e}")
+        return False
+
+def add_category(category_name):
+    """إضافة قسم جديد"""
+    categories = load_categories()
+    
+    if category_name not in categories:
+        categories[category_name] = []
+        save_categories(categories)
+        return True
+    return False
+
+def delete_category(category_name):
+    """حذف قسم"""
+    if category_name == "جميع الأقسام":
+        return False  # لا يمكن حذف القسم الافتراضي
+    
+    categories = load_categories()
+    if category_name in categories:
+        del categories[category_name]
+        save_categories(categories)
+        return True
+    return False
+
+def add_sheet_to_category(category_name, sheet_name, additional_patterns=None):
+    """إضافة شيت إلى قسم معين"""
+    categories = load_categories()
+    
+    if category_name in categories:
+        # إضافة اسم الشيت إذا لم يكن موجوداً
+        if sheet_name not in categories[category_name]:
+            categories[category_name].append(sheet_name)
+        
+        # إضافة الأنماط الإضافية
+        if additional_patterns:
+            patterns = [p.strip() for p in additional_patterns.split(',') if p.strip()]
+            for pattern in patterns:
+                if pattern not in categories[category_name]:
+                    categories[category_name].append(pattern)
+        
+        save_categories(categories)
+        return True
+    return False
+
+def remove_sheet_from_category(category_name, sheet_name):
+    """إزالة شيت من قسم"""
+    categories = load_categories()
+    
+    if category_name in categories:
+        if sheet_name in categories[category_name]:
+            categories[category_name].remove(sheet_name)
+            save_categories(categories)
+            return True
+    return False
+
+def get_sheets_in_category(category_name, all_sheets):
+    """الحصول على أسماء الشيتات في قسم معين"""
+    categories = load_categories()
+    
+    if category_name not in categories:
+        return []
+    
+    category_patterns = categories[category_name]
+    
+    # إذا كان هناك "*" في القائمة، أرجع كل الشيتات
+    if "*" in category_patterns:
+        return list(all_sheets.keys())
+    
+    matched_sheets = []
+    for sheet_name in all_sheets.keys():
+        sheet_lower = sheet_name.lower()
+        for pattern in category_patterns:
+            pattern_lower = pattern.lower()
+            # البحث الجزئي (إذا كان النموذج موجوداً في اسم الشيت)
+            if pattern_lower in sheet_lower:
+                matched_sheets.append(sheet_name)
+                break
+            # البحث بالمطابقة التامة
+            elif sheet_lower == pattern_lower:
+                matched_sheets.append(sheet_name)
+                break
+    
+    return matched_sheets
+
+def get_category_stats(all_sheets):
+    """الحصول على إحصائيات الأقسام"""
+    categories = load_categories()
+    stats = {}
+    
+    for category_name in categories.keys():
+        sheets_in_cat = get_sheets_in_category(category_name, all_sheets)
+        stats[category_name] = {
+            "count": len(sheets_in_cat),
+            "sheets": sheets_in_cat,
+            "patterns": categories[category_name]
+        }
+    
+    return stats
+
+# -------------------------------
 # 🧰 دوال مساعدة للمعالجة والنصوص
 # -------------------------------
 def normalize_name(s):
@@ -858,52 +923,8 @@ def get_all_detected_columns(all_sheets):
     return detected
 
 # ===============================
-# 🏭 دوال جديدة لتصنيف الشيتات والبحث في أسمائها
+# 🏭 دوال لاستخراج معلومات الشيت
 # ===============================
-def get_sheet_categories():
-    """الحصول على قائمة التصنيفات المتاحة"""
-    return list(APP_CONFIG["SHEET_CATEGORIES"].keys())
-
-def get_sheets_in_category(category_name, all_sheets):
-    """الحصول على أسماء الشيتات في تصنيف معين"""
-    if category_name not in APP_CONFIG["SHEET_CATEGORIES"]:
-        return []
-    
-    category_patterns = APP_CONFIG["SHEET_CATEGORIES"][category_name]
-    
-    # إذا كان هناك "*" في القائمة، أرجع كل الشيتات
-    if "*" in category_patterns:
-        return list(all_sheets.keys())
-    
-    matched_sheets = []
-    for sheet_name in all_sheets.keys():
-        sheet_lower = sheet_name.lower()
-        for pattern in category_patterns:
-            pattern_lower = pattern.lower()
-            # البحث الجزئي (إذا كان النموذج موجوداً في اسم الشيت)
-            if pattern_lower in sheet_lower:
-                matched_sheets.append(sheet_name)
-                break
-            # البحث بالمطابقة التامة
-            elif sheet_lower == pattern_lower:
-                matched_sheets.append(sheet_name)
-                break
-    
-    return matched_sheets
-
-def filter_sheets_by_search(sheets_list, search_term):
-    """تصفية الشيتات بناءً على كلمة البحث في أسمائها"""
-    if not search_term or search_term.strip() == "":
-        return sheets_list
-    
-    search_term = search_term.lower().strip()
-    filtered = []
-    for sheet_name in sheets_list:
-        if search_term in sheet_name.lower():
-            filtered.append(sheet_name)
-    
-    return filtered
-
 def get_sheet_info(sheet_name):
     """استخراج معلومات من اسم الشيت (مثل الرقم)"""
     # محاولة استخراج الأرقام من اسم الشيت
@@ -923,43 +944,8 @@ def get_sheet_info(sheet_name):
             "first_number": None
         }
 
-def get_category_stats(all_sheets):
-    """الحصول على إحصائيات التصنيفات"""
-    stats = {}
-    
-    for category_name in APP_CONFIG["SHEET_CATEGORIES"].keys():
-        sheets_in_cat = get_sheets_in_category(category_name, all_sheets)
-        stats[category_name] = {
-            "count": len(sheets_in_cat),
-            "sheets": sheets_in_cat
-        }
-    
-    return stats
-
-def add_sheet_to_category(category_name, sheet_name):
-    """إضافة شيت إلى تصنيف معين في الإعدادات"""
-    if category_name not in APP_CONFIG["SHEET_CATEGORIES"]:
-        return False
-    
-    # التحقق من أن الشيت ليس مضافاً بالفعل
-    if sheet_name not in APP_CONFIG["SHEET_CATEGORIES"][category_name]:
-        APP_CONFIG["SHEET_CATEGORIES"][category_name].append(sheet_name)
-        return True
-    return False
-
-def add_new_category(category_name, patterns=None):
-    """إضافة تصنيف جديد إلى الإعدادات"""
-    if category_name in APP_CONFIG["SHEET_CATEGORIES"]:
-        return False
-    
-    if patterns is None:
-        patterns = []
-    
-    APP_CONFIG["SHEET_CATEGORIES"][category_name] = patterns
-    return True
-
 # ===============================
-# 🔧 دوال استخراج البيانات الديناميكية (معدلة للبحث مع تصنيف الشيتات)
+# 🔧 دوال استخراج البيانات الديناميكية
 # ===============================
 def extract_sheet_data(df, sheet_name):
     """استخراج البيانات من أي شيت بشكل ديناميكي"""
@@ -977,7 +963,7 @@ def extract_sheet_data(df, sheet_name):
             result = {
                 "Sheet Name": sheet_name,
                 "Row Index": idx,
-                "Sheet Info": get_sheet_info(sheet_name)  # إضافة معلومات الشيت
+                "Sheet Info": get_sheet_info(sheet_name)
             }
             
             # إضافة البيانات من الأعمدة المهمة إذا وجدت
@@ -1018,9 +1004,9 @@ def extract_sheet_data(df, sheet_name):
     return results
 
 def check_row_criteria(result, search_params, col_mapping):
-    """التحقق من مطابقة الصف لمعايير البحث (معدلة مع إضافة البحث في اسم الشيت)"""
+    """التحقق من مطابقة الصف لمعايير البحث"""
     
-    # 0. البحث في اسم الشيت (جديد)
+    # 0. البحث في اسم الشيت
     if search_params.get("sheet_name_search") and search_params["sheet_name_search"].strip():
         sheet_name = result.get("Sheet Name", "").lower()
         search_terms = [term.strip().lower() for term in search_params["sheet_name_search"].split(',') if term.strip()]
@@ -1511,15 +1497,17 @@ def check_events_and_corrections(all_sheets):
         # قسم جديد: تصنيف الشيتات والبحث في أسمائها
         # ===============================
         with st.expander("🏭 **تصنيف الشيتات والبحث في أسمائها**", expanded=True):
+            categories = load_categories()
+            category_list = list(categories.keys())
+            
             col_cat1, col_cat2, col_cat3 = st.columns([2, 2, 1])
             
             with col_cat1:
                 # اختيار التصنيف
-                categories = get_sheet_categories()
                 selected_category = st.selectbox(
                     "اختر القسم:",
-                    categories,
-                    index=categories.index(st.session_state.search_params.get("selected_category", "جميع الأقسام")) if st.session_state.search_params.get("selected_category") in categories else 0,
+                    category_list,
+                    index=category_list.index(st.session_state.search_params.get("selected_category", "جميع الأقسام")) if st.session_state.search_params.get("selected_category") in category_list else 0,
                     key="select_category"
                 )
             
@@ -1555,7 +1543,8 @@ def check_events_and_corrections(all_sheets):
                     stats_data.append({
                         "التصنيف": cat_name,
                         "عدد الشيتات": cat_stat["count"],
-                        "نسبة من الإجمالي": f"{cat_stat['count']/len(all_sheets)*100:.1f}%" if len(all_sheets) > 0 else "0%"
+                        "نسبة من الإجمالي": f"{cat_stat['count']/len(all_sheets)*100:.1f}%" if len(all_sheets) > 0 else "0%",
+                        "أنماط البحث": ", ".join(cat_stat["patterns"][:5]) + ("..." if len(cat_stat["patterns"]) > 5 else "")
                     })
                 
                 stats_df = pd.DataFrame(stats_data)
@@ -2382,18 +2371,21 @@ def edit_event_dynamic(sheets_edit):
                 st.rerun()
 
 # ===============================
-# 🖥 دالة إدارة الشيتات والأعمدة - معدلة لإضافة اختيار القسم عند إنشاء شيت جديد
+# 🖥 دالة إدارة الشيتات والأعمدة - معدلة بالكامل للأقسام الديناميكية
 # ===============================
 def manage_sheets_and_columns(sheets_edit):
-    """إدارة الشيتات والأعمدة"""
+    """إدارة الشيتات والأعمدة مع أقسام ديناميكية"""
     st.subheader("🗂 إدارة الشيتات والأعمدة")
     
     if not sheets_edit:
         st.warning("⚠ لا توجد بيانات متاحة")
         return sheets_edit
     
+    # تحميل الأقسام الحالية
+    categories = load_categories()
+    
     # تبويبات للإدارة
-    manage_tabs = st.tabs(["➕ إنشاء شيت جديد", "✏ إدارة أعمدة شيت", "🗑 حذف شيت", "🏭 إدارة التصنيفات"])
+    manage_tabs = st.tabs(["➕ إنشاء شيت جديد", "✏ إدارة أعمدة شيت", "🗑 حذف شيت", "🏭 إدارة الأقسام"])
     
     with manage_tabs[0]:
         st.markdown("### ➕ إنشاء شيت جديد")
@@ -2401,16 +2393,48 @@ def manage_sheets_and_columns(sheets_edit):
         col1, col2 = st.columns(2)
         
         with col1:
-            # اختيار القسم أولاً
-            categories = get_sheet_categories()
-            # إزالة "جميع الأقسام" من قائمة الأقسام المتاحة للإضافة
-            available_categories = [cat for cat in categories if cat != "جميع الأقسام"]
+            st.markdown("#### 🏭 معلومات القسم")
             
-            selected_category = st.selectbox(
-                "🏭 اختر القسم:",
-                available_categories,
-                key="new_sheet_category"
+            # خيار إضافة قسم جديد أو اختيار من الموجود
+            category_option = st.radio(
+                "خيارات القسم:",
+                ["اختيار من الأقسام الموجودة", "إضافة قسم جديد"],
+                key="category_option"
             )
+            
+            if category_option == "اختيار من الأقسام الموجودة":
+                # استثناء "جميع الأقسام" من قائمة الاختيار
+                available_categories = [cat for cat in categories.keys() if cat != "جميع الأقسام"]
+                
+                if available_categories:
+                    selected_category = st.selectbox(
+                        "اختر القسم:",
+                        available_categories,
+                        key="existing_category"
+                    )
+                else:
+                    st.info("ℹ️ لا توجد أقسام بعد. اختر 'إضافة قسم جديد'")
+                    selected_category = None
+            else:
+                st.markdown("##### إضافة قسم جديد")
+                new_category = st.text_input(
+                    "اسم القسم الجديد:",
+                    placeholder="مثال: قسم الإنتاج",
+                    key="new_category"
+                )
+                
+                if new_category:
+                    # إضافة القسم الجديد
+                    if new_category not in categories:
+                        add_category(new_category)
+                        categories = load_categories()  # إعادة تحميل
+                        st.success(f"✅ تم إضافة قسم '{new_category}'")
+                    selected_category = new_category
+                else:
+                    selected_category = None
+        
+        with col2:
+            st.markdown("#### 📋 معلومات الشيت")
             
             new_sheet_name = st.text_input(
                 "اسم الشيت الجديد:", 
@@ -2420,17 +2444,16 @@ def manage_sheets_and_columns(sheets_edit):
             )
             
             # إضافة أنماط بحث إضافية
-            st.markdown("#### 🔍 أنماط البحث الإضافية")
-            st.caption("أضف كلمات مفتاحية إضافية للتعرف على هذا الشيت في المستقبل (مفصولة بفواصل)")
+            st.markdown("##### 🔍 أنماط البحث الإضافية")
+            st.caption("كلمات مفتاحية إضافية للتعرف على هذا الشيت")
             additional_patterns = st.text_input(
-                "أنماط إضافية:",
+                "أنماط إضافية (مفصولة بفواصل):",
                 placeholder="مثال: ماكينة10, M10, Machine10",
                 key="additional_patterns"
             )
-        
-        with col2:
+            
             # اختيار نموذج الأعمدة
-            st.markdown("#### 📋 نموذج الأعمدة")
+            st.markdown("##### 📋 نموذج الأعمدة")
             column_template = st.selectbox(
                 "اختر نموذج الأعمدة:",
                 ["استخدام الأعمدة الافتراضية", "نسخ أعمدة من شيت موجود", "تحديد أعمدة مخصصة"],
@@ -2454,70 +2477,59 @@ def manage_sheets_and_columns(sheets_edit):
             initial_rows = st.number_input("عدد الصفوف الأولية:", min_value=0, max_value=100, value=0, step=1, key="initial_rows")
         
         # عرض ملخص
-        st.markdown("---")
-        st.markdown("#### 📋 ملخص الشيت الجديد")
-        col_sum1, col_sum2, col_sum3 = st.columns(3)
-        with col_sum1:
-            st.info(f"**القسم:** {selected_category if 'selected_category' in locals() else 'غير محدد'}")
-        with col_sum2:
-            st.info(f"**اسم الشيت:** {new_sheet_name if new_sheet_name else 'غير محدد'}")
-        with col_sum3:
-            if additional_patterns:
-                patterns_count = len([p for p in additional_patterns.split(',') if p.strip()])
-                st.info(f"**أنماط إضافية:** {patterns_count}")
-        
-        if st.button("🚀 إنشاء الشيت الجديد", key="create_new_sheet_btn", type="primary"):
-            if not new_sheet_name.strip():
-                st.warning("⚠ الرجاء إدخال اسم للشيت الجديد")
-                return sheets_edit
+        if selected_category and new_sheet_name:
+            st.markdown("---")
+            st.markdown("#### 📋 ملخص الشيت الجديد")
+            col_sum1, col_sum2, col_sum3 = st.columns(3)
+            with col_sum1:
+                st.info(f"**القسم:** {selected_category}")
+            with col_sum2:
+                st.info(f"**اسم الشيت:** {new_sheet_name}")
+            with col_sum3:
+                if additional_patterns:
+                    patterns_count = len([p for p in additional_patterns.split(',') if p.strip()])
+                    st.info(f"**أنماط إضافية:** {patterns_count}")
             
-            if new_sheet_name in sheets_edit:
-                st.warning(f"⚠ الشيت '{new_sheet_name}' موجود بالفعل!")
-                return sheets_edit
-            
-            # تحديد الأعمدة
-            columns_to_use = APP_CONFIG["DEFAULT_COLUMNS"]
-            
-            if column_template == "نسخ أعمدة من شيت موجود" and source_sheet in sheets_edit:
-                columns_to_use = list(sheets_edit[source_sheet].columns)
-            
-            elif column_template == "تحديد أعمدة مخصصة" and custom_columns.strip():
-                columns_to_use = [col.strip() for col in custom_columns.split(',') if col.strip()]
-            
-            # إنشاء الشيت الجديد
-            new_df = pd.DataFrame(columns=columns_to_use)
-            sheets_edit[new_sheet_name] = new_df
-            
-            # إضافة الصفوف الأولية إذا طلب
-            if initial_rows > 0:
-                empty_data = {col: [""] * initial_rows for col in columns_to_use}
-                sheets_edit[new_sheet_name] = pd.DataFrame(empty_data)
-            
-            # إضافة الشيت إلى القسم المختار
-            if selected_category and selected_category in APP_CONFIG["SHEET_CATEGORIES"]:
-                # إضافة اسم الشيت الأساسي
-                if new_sheet_name not in APP_CONFIG["SHEET_CATEGORIES"][selected_category]:
-                    APP_CONFIG["SHEET_CATEGORIES"][selected_category].append(new_sheet_name)
+            if st.button("🚀 إنشاء الشيت الجديد", key="create_new_sheet_btn", type="primary"):
+                if new_sheet_name in sheets_edit:
+                    st.warning(f"⚠ الشيت '{new_sheet_name}' موجود بالفعل!")
+                    return sheets_edit
                 
-                # إضافة الأنماط الإضافية
-                if additional_patterns:
-                    patterns = [p.strip() for p in additional_patterns.split(',') if p.strip()]
-                    for pattern in patterns:
-                        if pattern not in APP_CONFIG["SHEET_CATEGORIES"][selected_category]:
-                            APP_CONFIG["SHEET_CATEGORIES"][selected_category].append(pattern)
-            
-            # حفظ في GitHub
-            new_sheets = auto_save_to_github(
-                sheets_edit,
-                f"إنشاء شيت جديد '{new_sheet_name}' في قسم {selected_category}"
-            )
-            
-            if new_sheets is not None:
-                sheets_edit = new_sheets
-                st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' في قسم '{selected_category}' بنجاح!")
-                if additional_patterns:
-                    st.info(f"ℹ️ تم إضافة أنماط البحث: {additional_patterns}")
-                st.rerun()
+                # تحديد الأعمدة
+                columns_to_use = APP_CONFIG["DEFAULT_COLUMNS"]
+                
+                if column_template == "نسخ أعمدة من شيت موجود" and source_sheet in sheets_edit:
+                    columns_to_use = list(sheets_edit[source_sheet].columns)
+                
+                elif column_template == "تحديد أعمدة مخصصة" and custom_columns.strip():
+                    columns_to_use = [col.strip() for col in custom_columns.split(',') if col.strip()]
+                
+                # إنشاء الشيت الجديد
+                new_df = pd.DataFrame(columns=columns_to_use)
+                sheets_edit[new_sheet_name] = new_df
+                
+                # إضافة الصفوف الأولية إذا طلب
+                if initial_rows > 0:
+                    empty_data = {col: [""] * initial_rows for col in columns_to_use}
+                    sheets_edit[new_sheet_name] = pd.DataFrame(empty_data)
+                
+                # إضافة الشيت إلى القسم
+                add_sheet_to_category(selected_category, new_sheet_name, additional_patterns)
+                
+                # حفظ في GitHub
+                new_sheets = auto_save_to_github(
+                    sheets_edit,
+                    f"إنشاء شيت جديد '{new_sheet_name}' في قسم {selected_category}"
+                )
+                
+                if new_sheets is not None:
+                    sheets_edit = new_sheets
+                    st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' في قسم '{selected_category}' بنجاح!")
+                    if additional_patterns:
+                        st.info(f"ℹ️ تم إضافة أنماط البحث: {additional_patterns}")
+                    st.rerun()
+        else:
+            st.warning("⚠ الرجاء اختيار قسم وإدخال اسم للشيت")
     
     with manage_tabs[1]:
         st.markdown("### ✏ إدارة أعمدة شيت")
@@ -2654,17 +2666,25 @@ def manage_sheets_and_columns(sheets_edit):
                 df_to_delete = sheets_edit[sheet_to_delete]
                 st.info(f"الشيت يحتوي على: {len(df_to_delete)} صف و {len(df_to_delete.columns)} عمود")
             
+            # معرفة الأقسام التي تحتوي على هذا الشيت
+            categories_with_sheet = []
+            for cat_name, cat_patterns in categories.items():
+                if sheet_to_delete in cat_patterns:
+                    categories_with_sheet.append(cat_name)
+            
+            if categories_with_sheet:
+                st.info(f"هذا الشيت موجود في الأقسام: {', '.join(categories_with_sheet)}")
+            
             confirm_delete = st.checkbox(f"أنا أدرك أن حذف الشيت لا يمكن التراجع عنه", key="confirm_sheet_delete")
             
             if st.button("🗑️ حذف الشيت نهائياً", key="delete_sheet_btn", disabled=not confirm_delete, type="secondary"):
                 if confirm_delete:
+                    # حذف الشيت من جميع الأقسام
+                    for cat_name in categories_with_sheet:
+                        remove_sheet_from_category(cat_name, sheet_to_delete)
+                    
                     # حذف الشيت
                     del sheets_edit[sheet_to_delete]
-                    
-                    # حذف الشيت من التصنيفات
-                    for category in APP_CONFIG["SHEET_CATEGORIES"]:
-                        if sheet_to_delete in APP_CONFIG["SHEET_CATEGORIES"][category]:
-                            APP_CONFIG["SHEET_CATEGORIES"][category].remove(sheet_to_delete)
                     
                     new_sheets = auto_save_to_github(
                         sheets_edit,
@@ -2677,49 +2697,87 @@ def manage_sheets_and_columns(sheets_edit):
                         st.rerun()
     
     with manage_tabs[3]:
-        st.markdown("### 🏭 إدارة التصنيفات")
-        st.info("يمكن تعديل التصنيفات في ملف الإعدادات APP_CONFIG['SHEET_CATEGORIES']")
+        st.markdown("### 🏭 إدارة الأقسام")
         
-        # عرض التصنيفات الحالية
-        st.markdown("#### التصنيفات الحالية:")
+        # عرض الأقسام الحالية
+        st.markdown("#### الأقسام الحالية:")
         
-        categories_data = []
-        for cat_name, cat_patterns in APP_CONFIG["SHEET_CATEGORIES"].items():
-            # حساب عدد الشيتات المطابقة
-            matched_sheets = get_sheets_in_category(cat_name, sheets_edit)
-            categories_data.append({
-                "التصنيف": cat_name,
-                "أنماط البحث": ", ".join(cat_patterns[:5]) + ("..." if len(cat_patterns) > 5 else ""),
-                "عدد الشيتات المطابقة": len(matched_sheets),
-                "نسبة التغطية": f"{len(matched_sheets)/len(sheets_edit)*100:.1f}%" if sheets_edit else "0%"
-            })
-        
-        categories_df = pd.DataFrame(categories_data)
-        st.dataframe(categories_df, use_container_width=True)
-        
-        # إضافة تصنيف جديد
-        with st.expander("➕ إضافة تصنيف جديد", expanded=False):
-            new_category_name = st.text_input("اسم التصنيف الجديد:", key="new_category_name")
-            initial_patterns = st.text_input(
-                "أنماط أولية (اختياري، مفصولة بفواصل):", 
-                placeholder="مثال: Card100, Card101, قسم جديد",
-                key="initial_patterns"
-            )
+        if categories:
+            categories_data = []
+            for cat_name, cat_patterns in categories.items():
+                # حساب عدد الشيتات المطابقة
+                matched_sheets = get_sheets_in_category(cat_name, sheets_edit)
+                categories_data.append({
+                    "القسم": cat_name,
+                    "أنماط البحث": ", ".join(cat_patterns[:5]) + ("..." if len(cat_patterns) > 5 else ""),
+                    "عدد الشيتات المطابقة": len(matched_sheets),
+                    "نسبة التغطية": f"{len(matched_sheets)/len(sheets_edit)*100:.1f}%" if sheets_edit else "0%"
+                })
             
-            if st.button("إضافة تصنيف", key="add_category_btn"):
-                if new_category_name:
-                    if new_category_name not in APP_CONFIG["SHEET_CATEGORIES"]:
-                        patterns_list = []
-                        if initial_patterns:
-                            patterns_list = [p.strip() for p in initial_patterns.split(',') if p.strip()]
-                        
-                        APP_CONFIG["SHEET_CATEGORIES"][new_category_name] = patterns_list
-                        st.success(f"✅ تم إضافة التصنيف '{new_category_name}' بنجاح!")
-                        st.rerun()
+            categories_df = pd.DataFrame(categories_data)
+            st.dataframe(categories_df, use_container_width=True)
+            
+            # إضافة قسم جديد
+            with st.expander("➕ إضافة قسم جديد", expanded=False):
+                new_category_name = st.text_input("اسم القسم الجديد:", key="new_category_name_manage")
+                initial_patterns = st.text_input(
+                    "أنماط أولية (اختياري، مفصولة بفواصل):", 
+                    placeholder="مثال: Card100, Card101",
+                    key="initial_patterns_manage"
+                )
+                
+                if st.button("إضافة قسم", key="add_category_btn"):
+                    if new_category_name:
+                        if new_category_name not in categories:
+                            patterns_list = []
+                            if initial_patterns:
+                                patterns_list = [p.strip() for p in initial_patterns.split(',') if p.strip()]
+                            
+                            # إضافة القسم الجديد
+                            categories[new_category_name] = patterns_list
+                            save_categories(categories)
+                            st.success(f"✅ تم إضافة القسم '{new_category_name}' بنجاح!")
+                            st.rerun()
+                        else:
+                            st.warning(f"⚠ القسم '{new_category_name}' موجود بالفعل!")
                     else:
-                        st.warning(f"⚠ التصنيف '{new_category_name}' موجود بالفعل!")
+                        st.warning("⚠ الرجاء إدخال اسم للقسم الجديد")
+            
+            # حذف قسم
+            with st.expander("🗑️ حذف قسم", expanded=False):
+                categories_to_delete = [cat for cat in categories.keys() if cat != "جميع الأقسام"]
+                
+                if categories_to_delete:
+                    category_to_delete = st.selectbox(
+                        "اختر القسم للحذف:",
+                        categories_to_delete,
+                        key="category_to_delete"
+                    )
+                    
+                    if category_to_delete:
+                        st.warning(f"⚠ سيتم حذف قسم '{category_to_delete}' بشكل دائم!")
+                        
+                        # عرض معلومات القسم
+                        patterns_in_cat = categories[category_to_delete]
+                        if patterns_in_cat:
+                            st.info(f"أنماط البحث في هذا القسم: {', '.join(patterns_in_cat[:10])}")
+                        
+                        matched_sheets = get_sheets_in_category(category_to_delete, sheets_edit)
+                        if matched_sheets:
+                            st.info(f"هذا القسم يحتوي على {len(matched_sheets)} شيتات: {', '.join(matched_sheets[:5])}")
+                        
+                        confirm_delete_cat = st.checkbox("أنا متأكد من حذف هذا القسم", key="confirm_category_delete")
+                        
+                        if st.button("🗑️ حذف القسم", key="delete_category_btn", disabled=not confirm_delete_cat):
+                            if delete_category(category_to_delete):
+                                st.success(f"✅ تم حذف القسم '{category_to_delete}' بنجاح!")
+                                st.rerun()
+                            else:
+                                st.error("❌ لا يمكن حذف القسم الافتراضي")
                 else:
-                    st.warning("⚠ الرجاء إدخال اسم للتصنيف الجديد")
+                    st.info("ℹ️ لا توجد أقسام للحذف غير القسم الافتراضي")
+        else:
+            st.info("ℹ️ لا توجد أقسام بعد")
     
     return sheets_edit
 
@@ -2945,7 +3003,7 @@ if permissions["can_edit"] and len(tabs) > 1:
                 "عرض وتعديل شيت",
                 "➕ إضافة حدث جديد",
                 "✏ تعديل حدث",
-                "🗂 إدارة الشيتات والأعمدة",
+                "🗂 إدارة الشيتات والأقسام",
                 "📷 إدارة الصور"
             ]
             
@@ -2963,7 +3021,7 @@ if permissions["can_edit"] and len(tabs) > 1:
             with tabs_edit[2]:
                 edit_event_dynamic(sheets_edit)
             
-            # Tab 4: إدارة الشيتات والأعمدة - المعدلة
+            # Tab 4: إدارة الشيتات والأقسام - المعدلة
             with tabs_edit[3]:
                 sheets_edit = manage_sheets_and_columns(sheets_edit)
             
@@ -3096,14 +3154,14 @@ if permissions["can_manage_users"] and len(tabs) > 2:
             st.dataframe(analysis_df, use_container_width=True)
             
             # تحليل التصنيفات
-            st.markdown("### 🏭 تحليل التصنيفات")
+            st.markdown("### 🏭 تحليل الأقسام")
             
             category_stats = get_category_stats(all_sheets)
             cat_analysis = []
             for cat_name, cat_stat in category_stats.items():
                 if cat_name != "جميع الأقسام":
                     cat_analysis.append({
-                        "التصنيف": cat_name,
+                        "القسم": cat_name,
                         "عدد الشيتات": cat_stat["count"],
                         "نسبة من الإجمالي": f"{cat_stat['count']/total_sheets*100:.1f}%" if total_sheets > 0 else "0%",
                         "الشيتات": ", ".join(cat_stat["sheets"][:5]) + ("..." if len(cat_stat["sheets"]) > 5 else "")
