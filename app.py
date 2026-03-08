@@ -28,8 +28,8 @@ APP_CONFIG = {
     # إعدادات GitHub
     "REPO_NAME": "mahmedabdallh123/Elqds",
     "BRANCH": "main",
-    "FILE_PATH": "l7.xlsx",
-    "LOCAL_FILE": "l7.xlsx",
+    "FILE_PATH": "l1.xlsx",
+    "LOCAL_FILE": "l1.xlsx",
     
     # إعدادات الأمان
     "MAX_ACTIVE_USERS": 5,
@@ -58,6 +58,70 @@ APP_CONFIG = {
         "servised_by": ["servised", "serviced", "service", "technician", "فني", "تم بواسطة", "Servised by", "Serviced by", "Technician", "الفني", "المشغل", "اسم الفني", "القائم بالعمل"],
         "tones": ["tones", "طن", "أطنان", "ton", "tone", "Tones", "TON", "الطن", "الوزن", "الإنتاج", "الكمية"],
         "images": ["images", "pictures", "صور", "مرفقات", "Images", "الصور", "المرفقات", "صورة", "رفق"]
+    },
+    
+    # ===============================
+    # 🏭 إعدادات تصنيف الشيتات (المجالس/الأقسام) - يمكن تعديلها بسهولة
+    # ===============================
+    "SHEET_CATEGORIES": {
+        "جميع الأقسام": ["*"],  # علامة * تعني كل الشيتات
+        
+        "قسم الحلج": [
+            "Card1", "Card2", "Card3", "Card4", "Card5",
+            "Card6", "Card7", "Card8", "Card9", "Card10",
+            "حلج1", "حلج2", "حلج3", "حلج4", "حلج5"
+        ],
+        
+        "قسم التمشيط": [
+            "Card11", "Card12", "Card13", "Card14", "Card15",
+            "تمشيط1", "تمشيط2", "تمشيط3", "تمشيط4", "تمشيط5"
+        ],
+        
+        "قسم السحب": [
+            "Card16", "Card17", "Card18", "Card19", "Card20",
+            "سحب1", "سحب2", "سحب3", "سحب4", "سحب5"
+        ],
+        
+        "قسم البرم": [
+            "Card21", "Card22", "Card23", "Card24", "Card25",
+            "برم1", "برم2", "برم3", "برم4", "برم5"
+        ],
+        
+        "قسم النسيج": [
+            "Card26", "Card27", "Card28", "Card29", "Card30",
+            "نسيج1", "نسيج2", "نسيج3", "نسيج4", "نسيج5",
+            "تريكو1", "تريكو2"
+        ],
+        
+        "قسم الصباغة": [
+            "Card31", "Card32", "Card33", "Card34", "Card35",
+            "صباغة1", "صباغة2", "صباغة3"
+        ],
+        
+        "قسم التشطيب": [
+            "Card36", "Card37", "Card38", "Card39", "Card40",
+            "تشطيب1", "تشطيب2", "تشطيب3"
+        ],
+        
+        "قسم التعبئة": [
+            "Card41", "Card42", "Card43", "Card44", "Card45",
+            "تعبئة1", "تعبئة2", "تعبئة3"
+        ],
+        
+        "قسم الصيانة": [
+            "صيانة1", "صيانة2", "صيانة3", "صيانة4", "صيانة5",
+            "Maintenance1", "Maintenance2"
+        ],
+        
+        "قسم الكهرباء": [
+            "كهرباء1", "كهرباء2", "كهرباء3",
+            "Electric1", "Electric2"
+        ],
+        
+        "قسم الميكانيكا": [
+            "ميكانيكا1", "ميكانيكا2", "ميكانيكا3",
+            "Mechanical1", "Mechanical2"
+        ]
     }
 }
 
@@ -731,7 +795,7 @@ def get_user_permissions(user_role, user_permissions):
         }
 
 # ===============================
-# 🔧 دوال مساعدة للعثور على الأعمدة بناءً على الكلمات المفتاحية (معدلة)
+# 🔧 دوال مساعدة للعثور على الأعمدة بناءً على الكلمات المفتاحية
 # ===============================
 def find_column_by_keywords(df, keywords_list):
     """البحث عن عمود في DataFrame بناءً على قائمة كلمات مفتاحية"""
@@ -794,7 +858,86 @@ def get_all_detected_columns(all_sheets):
     return detected
 
 # ===============================
-# 🔧 دوال استخراج البيانات الديناميكية (معدلة للبحث)
+# 🏭 دوال جديدة لتصنيف الشيتات والبحث في أسمائها
+# ===============================
+def get_sheet_categories():
+    """الحصول على قائمة التصنيفات المتاحة"""
+    return list(APP_CONFIG["SHEET_CATEGORIES"].keys())
+
+def get_sheets_in_category(category_name, all_sheets):
+    """الحصول على أسماء الشيتات في تصنيف معين"""
+    if category_name not in APP_CONFIG["SHEET_CATEGORIES"]:
+        return []
+    
+    category_patterns = APP_CONFIG["SHEET_CATEGORIES"][category_name]
+    
+    # إذا كان هناك "*" في القائمة، أرجع كل الشيتات
+    if "*" in category_patterns:
+        return list(all_sheets.keys())
+    
+    matched_sheets = []
+    for sheet_name in all_sheets.keys():
+        sheet_lower = sheet_name.lower()
+        for pattern in category_patterns:
+            pattern_lower = pattern.lower()
+            # البحث الجزئي (إذا كان النموذج موجوداً في اسم الشيت)
+            if pattern_lower in sheet_lower:
+                matched_sheets.append(sheet_name)
+                break
+            # البحث بالمطابقة التامة
+            elif sheet_lower == pattern_lower:
+                matched_sheets.append(sheet_name)
+                break
+    
+    return matched_sheets
+
+def filter_sheets_by_search(sheets_list, search_term):
+    """تصفية الشيتات بناءً على كلمة البحث في أسمائها"""
+    if not search_term or search_term.strip() == "":
+        return sheets_list
+    
+    search_term = search_term.lower().strip()
+    filtered = []
+    for sheet_name in sheets_list:
+        if search_term in sheet_name.lower():
+            filtered.append(sheet_name)
+    
+    return filtered
+
+def get_sheet_info(sheet_name):
+    """استخراج معلومات من اسم الشيت (مثل الرقم)"""
+    # محاولة استخراج الأرقام من اسم الشيت
+    numbers = re.findall(r'\d+', sheet_name)
+    if numbers:
+        return {
+            "name": sheet_name,
+            "has_number": True,
+            "numbers": numbers,
+            "first_number": int(numbers[0]) if numbers else None
+        }
+    else:
+        return {
+            "name": sheet_name,
+            "has_number": False,
+            "numbers": [],
+            "first_number": None
+        }
+
+def get_category_stats(all_sheets):
+    """الحصول على إحصائيات التصنيفات"""
+    stats = {}
+    
+    for category_name in APP_CONFIG["SHEET_CATEGORIES"].keys():
+        sheets_in_cat = get_sheets_in_category(category_name, all_sheets)
+        stats[category_name] = {
+            "count": len(sheets_in_cat),
+            "sheets": sheets_in_cat
+        }
+    
+    return stats
+
+# ===============================
+# 🔧 دوال استخراج البيانات الديناميكية (معدلة للبحث مع تصنيف الشيتات)
 # ===============================
 def extract_sheet_data(df, sheet_name):
     """استخراج البيانات من أي شيت بشكل ديناميكي"""
@@ -812,6 +955,7 @@ def extract_sheet_data(df, sheet_name):
             result = {
                 "Sheet Name": sheet_name,
                 "Row Index": idx,
+                "Sheet Info": get_sheet_info(sheet_name)  # إضافة معلومات الشيت
             }
             
             # إضافة البيانات من الأعمدة المهمة إذا وجدت
@@ -842,7 +986,7 @@ def extract_sheet_data(df, sheet_name):
                     result[col_name] = value
             
             # إضافة الصف إذا كان يحتوي على أي بيانات غير فارغة
-            has_data = any(v != "" for k, v in result.items() if k not in ["Sheet Name", "Row Index"])
+            has_data = any(v != "" for k, v in result.items() if k not in ["Sheet Name", "Row Index", "Sheet Info"])
             if has_data:
                 results.append(result)
         except Exception as e:
@@ -852,7 +996,26 @@ def extract_sheet_data(df, sheet_name):
     return results
 
 def check_row_criteria(result, search_params, col_mapping):
-    """التحقق من مطابقة الصف لمعايير البحث (معدلة للديناميكية)"""
+    """التحقق من مطابقة الصف لمعايير البحث (معدلة مع إضافة البحث في اسم الشيت)"""
+    
+    # 0. البحث في اسم الشيت (جديد)
+    if search_params.get("sheet_name_search") and search_params["sheet_name_search"].strip():
+        sheet_name = result.get("Sheet Name", "").lower()
+        search_terms = [term.strip().lower() for term in search_params["sheet_name_search"].split(',') if term.strip()]
+        
+        match_found = False
+        for term in search_terms:
+            if search_params.get("exact_match", False):
+                if term == sheet_name:
+                    match_found = True
+                    break
+            else:
+                if term in sheet_name:
+                    match_found = True
+                    break
+        
+        if not match_found:
+            return False
     
     # 1. البحث في رقم الماكينة/الكارد
     if search_params.get("card_numbers") and search_params["card_numbers"].strip():
@@ -875,7 +1038,6 @@ def check_row_criteria(result, search_params, col_mapping):
             if not match_found:
                 return False
         elif not search_params.get("include_empty", True):
-            # إذا لم يوجد العمود ونريد تضمين الفارغ فقط
             return False
     
     # 2. البحث في التاريخ
@@ -1266,10 +1428,10 @@ def create_dynamic_event_form(df, prefix="", default_values=None):
     return form_data
 
 # ===============================
-# 🖥 دالة فحص الإيفينت والكوريكشن - معدلة بالكامل للديناميكية
+# 🖥 دالة فحص الإيفينت والكوريكشن - معدلة بالكامل مع تصنيف الشيتات والبحث في أسمائها
 # ===============================
 def check_events_and_corrections(all_sheets):
-    """فحص الإيفينت والكوريكشن مع البحث الديناميكي في الأعمدة الموجودة"""
+    """فحص الإيفينت والكوريكشن مع البحث الديناميكي في الأعمدة الموجودة وتصنيف الشيتات"""
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
@@ -1297,6 +1459,8 @@ def check_events_and_corrections(all_sheets):
     # تهيئة session state
     if "search_params" not in st.session_state:
         st.session_state.search_params = {
+            "selected_category": "جميع الأقسام",
+            "sheet_name_search": "",
             "card_numbers": "",
             "date_range": "",
             "tech_names": "",
@@ -1313,13 +1477,70 @@ def check_events_and_corrections(all_sheets):
     if "search_triggered" not in st.session_state:
         st.session_state.search_triggered = False
     
+    # إحصائيات التصنيفات
+    category_stats = get_category_stats(all_sheets)
+    
     # قسم البحث
     with st.container():
         st.markdown("### 🔍 بحث ديناميكي في الإيفينت والكوريكشن")
         st.markdown("يتم البحث تلقائياً في الأعمدة المكتشفة حسب الكلمات المفتاحية")
         
+        # ===============================
+        # قسم جديد: تصنيف الشيتات والبحث في أسمائها
+        # ===============================
+        with st.expander("🏭 **تصنيف الشيتات والبحث في أسمائها**", expanded=True):
+            col_cat1, col_cat2, col_cat3 = st.columns([2, 2, 1])
+            
+            with col_cat1:
+                # اختيار التصنيف
+                categories = get_sheet_categories()
+                selected_category = st.selectbox(
+                    "اختر القسم:",
+                    categories,
+                    index=categories.index(st.session_state.search_params.get("selected_category", "جميع الأقسام")) if st.session_state.search_params.get("selected_category") in categories else 0,
+                    key="select_category"
+                )
+            
+            with col_cat2:
+                # البحث في اسم الشيت
+                sheet_name_search = st.text_input(
+                    "🔍 بحث في اسم/رقم الشيت:",
+                    value=st.session_state.search_params.get("sheet_name_search", ""),
+                    key="input_sheet_name",
+                    placeholder="مثال: Card1, 101, قسم الحلج"
+                )
+            
+            with col_cat3:
+                st.markdown("####")
+                if st.button("🔄 عرض الإحصائيات", key="show_cat_stats"):
+                    st.session_state.show_stats = True
+            
+            # عرض إحصائيات سريعة
+            if selected_category in category_stats:
+                sheets_in_cat = category_stats[selected_category]["sheets"]
+                st.info(f"📊 **{selected_category}** يحتوي على **{len(sheets_in_cat)}** شيت")
+                
+                # عرض عينة من الشيتات في هذا التصنيف
+                if len(sheets_in_cat) > 0:
+                    sample_sheets = sheets_in_cat[:min(5, len(sheets_in_cat))]
+                    st.caption(f"نماذج من الشيتات: {', '.join(sample_sheets)}")
+        
+        # عرض إحصائيات كاملة إذا طلب
+        if st.session_state.get("show_stats", False):
+            with st.expander("📊 إحصائيات تفصيلية للتصنيفات", expanded=True):
+                stats_data = []
+                for cat_name, cat_stat in category_stats.items():
+                    stats_data.append({
+                        "التصنيف": cat_name,
+                        "عدد الشيتات": cat_stat["count"],
+                        "نسبة من الإجمالي": f"{cat_stat['count']/len(all_sheets)*100:.1f}%" if len(all_sheets) > 0 else "0%"
+                    })
+                
+                stats_df = pd.DataFrame(stats_data)
+                st.dataframe(stats_df, use_container_width=True)
+        
         # تبويبات للبحث وخيارات المدة
-        main_tabs = st.tabs(["🔍 معايير البحث", "⏱️ خيارات المدة"])
+        main_tabs = st.tabs(["🔍 معايير البحث في البيانات", "⏱️ خيارات المدة"])
         
         with main_tabs[0]:
             col1, col2 = st.columns(2)
@@ -1471,6 +1692,8 @@ def check_events_and_corrections(all_sheets):
         
         # تحديث معايير البحث مع التحقق من وجود المتغيرات
         search_params_update = {
+            "selected_category": selected_category if 'selected_category' in locals() else "جميع الأقسام",
+            "sheet_name_search": sheet_name_search if 'sheet_name_search' in locals() else "",
             "exact_match": search_mode == "مطابقة كاملة" if 'search_mode' in locals() else False,
             "include_empty": include_empty if 'include_empty' in locals() else True,
             "calculate_duration": calculate_duration if 'calculate_duration' in locals() else False,
@@ -1509,6 +1732,8 @@ def check_events_and_corrections(all_sheets):
         with col_btn2:
             if st.button("🗑 **مسح الحقول**", use_container_width=True, key="clear_fields"):
                 st.session_state.search_params = {
+                    "selected_category": "جميع الأقسام",
+                    "sheet_name_search": "",
                     "card_numbers": "",
                     "date_range": "",
                     "tech_names": "",
@@ -1526,6 +1751,8 @@ def check_events_and_corrections(all_sheets):
         with col_btn3:
             if st.button("📊 **عرض كل البيانات**", use_container_width=True, key="show_all"):
                 st.session_state.search_params = {
+                    "selected_category": "جميع الأقسام",
+                    "sheet_name_search": "",
                     "card_numbers": "",
                     "date_range": "",
                     "tech_names": "",
@@ -1551,8 +1778,8 @@ def check_events_and_corrections(all_sheets):
         # عرض معايير البحث
         show_search_params(search_params)
         
-        # تنفيذ البحث
-        show_search_results(search_params, all_sheets, detected_columns)
+        # تنفيذ البحث مع مراعاة التصنيف والبحث في أسماء الشيتات
+        show_search_results(search_params, all_sheets, detected_columns, category_stats)
 
 def show_search_params(search_params):
     """عرض معايير البحث المستخدمة"""
@@ -1560,6 +1787,15 @@ def show_search_params(search_params):
         st.markdown("### ⚙ معايير البحث المستخدمة")
         
         params_display = []
+        
+        # عرض التصنيف
+        if search_params.get("selected_category"):
+            params_display.append(f"**🏭 القسم:** {search_params['selected_category']}")
+        
+        # عرض البحث في اسم الشيت
+        if search_params.get("sheet_name_search"):
+            params_display.append(f"**📄 اسم/رقم الشيت:** {search_params['sheet_name_search']}")
+        
         if search_params.get("card_numbers"):
             params_display.append(f"**🔢 رقم الماكينة:** {search_params['card_numbers']}")
         if search_params.get("date_range"):
@@ -1574,9 +1810,28 @@ def show_search_params(search_params):
         else:
             st.info("🔍 **بحث في كل البيانات**")
 
-def show_search_results(search_params, all_sheets, detected_columns):
-    """عرض نتائج البحث بشكل منظم"""
+def show_search_results(search_params, all_sheets, detected_columns, category_stats):
+    """عرض نتائج البحث بشكل منظم مع مراعاة التصنيف"""
     st.markdown("### 📊 نتائج البحث")
+    
+    # تحديد الشيتات المطلوب البحث فيها بناءً على التصنيف
+    selected_category = search_params.get("selected_category", "جميع الأقسام")
+    
+    if selected_category in category_stats:
+        sheets_to_search = category_stats[selected_category]["sheets"]
+    else:
+        sheets_to_search = list(all_sheets.keys())
+    
+    # تطبيق البحث الإضافي في أسماء الشيتات
+    sheet_name_search = search_params.get("sheet_name_search", "")
+    if sheet_name_search:
+        sheets_to_search = filter_sheets_by_search(sheets_to_search, sheet_name_search)
+    
+    st.info(f"🔍 جاري البحث في **{len(sheets_to_search)}** شيت من تصنيف **{selected_category}**")
+    
+    if not sheets_to_search:
+        st.warning("⚠ لا توجد شيتات تطابق معايير البحث في التصنيف")
+        return
     
     # شريط التقدم
     progress_bar = st.progress(0)
@@ -1584,11 +1839,15 @@ def show_search_results(search_params, all_sheets, detected_columns):
     
     # البحث في البيانات
     all_results = []
-    total_sheets = len(all_sheets)
+    total_sheets = len(sheets_to_search)
     processed_sheets = 0
     
-    # البحث في جميع الشيتات
-    for sheet_name, df in all_sheets.items():
+    # البحث في الشيتات المحددة فقط
+    for sheet_name in sheets_to_search:
+        if sheet_name not in all_sheets:
+            continue
+            
+        df = all_sheets[sheet_name]
         processed_sheets += 1
         if total_sheets > 0:
             progress_bar.progress(processed_sheets / total_sheets)
@@ -1622,13 +1881,22 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
     # تحويل النتائج إلى DataFrame
     result_df = pd.DataFrame(results)
     
+    # إضافة عمود معلومات الشيت للعرض
+    if "Sheet Info" in result_df.columns:
+        result_df["رقم الشيت"] = result_df["Sheet Info"].apply(
+            lambda x: x.get("first_number") if isinstance(x, dict) and x.get("first_number") else "-"
+        )
+    
     # الحصول على تعيين الأعمدة من أول شيت (للعرض)
     first_sheet = list(all_sheets.keys())[0]
     col_mapping = get_column_mapping(all_sheets[first_sheet])
     
     # تحديد الأعمدة الرئيسية للعرض
-    main_columns = []
-    display_names = {}
+    main_columns = ["Sheet Name", "رقم الشيت"]  # إضافة أعمدة الشيت
+    display_names = {
+        "Sheet Name": "اسم الشيت",
+        "رقم الشيت": "رقم الشيت"
+    }
     
     # إضافة الأعمدة حسب ما تم اكتشافه
     if detected_columns["card"]:
@@ -1674,7 +1942,7 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
                 break
     
     # إضافة أعمدة أخرى غير موجودة في القائمة الرئيسية
-    other_columns = [col for col in result_df.columns if col not in main_columns and col not in ["Sheet Name", "Row Index"]]
+    other_columns = [col for col in result_df.columns if col not in main_columns and col not in ["Sheet Name", "Row Index", "Sheet Info", "رقم الشيت"]]
     
     # عرض الإحصائيات
     st.markdown("### 📈 إحصائيات النتائج")
@@ -1736,12 +2004,12 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
         selected_columns = st.multiselect(
             "اختر الأعمدة للعرض:",
             all_display_columns,
-            default=main_columns[:min(5, len(main_columns))],
+            default=main_columns[:min(6, len(main_columns))],
             key="select_columns_display"
         )
         
         if not selected_columns:
-            selected_columns = main_columns[:min(5, len(main_columns))]
+            selected_columns = main_columns[:min(6, len(main_columns))]
         
         # إعادة تسمية الأعمدة للعرض
         display_df = result_df[selected_columns].copy()
@@ -1865,6 +2133,8 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
             export_df = result_df.copy()
             if 'Row Index' in export_df.columns:
                 export_df = export_df.drop(columns=['Row Index'])
+            if 'Sheet Info' in export_df.columns:
+                export_df = export_df.drop(columns=['Sheet Info'])
             
             export_df.to_excel(buffer_excel, index=False, engine="openpyxl")
             
@@ -1884,6 +2154,8 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
             export_csv = result_df.copy()
             if 'Row Index' in export_csv.columns:
                 export_csv = export_csv.drop(columns=['Row Index'])
+            if 'Sheet Info' in export_csv.columns:
+                export_csv = export_csv.drop(columns=['Sheet Info'])
             
             export_csv.to_csv(buffer_csv, index=False, encoding='utf-8-sig')
             
@@ -2099,7 +2371,7 @@ def manage_sheets_and_columns(sheets_edit):
         return sheets_edit
     
     # تبويبات للإدارة
-    manage_tabs = st.tabs(["➕ إنشاء شيت جديد", "✏ إدارة أعمدة شيت", "🗑 حذف شيت"])
+    manage_tabs = st.tabs(["➕ إنشاء شيت جديد", "✏ إدارة أعمدة شيت", "🗑 حذف شيت", "🏭 إدارة التصنيفات"])
     
     with manage_tabs[0]:
         st.markdown("### ➕ إنشاء شيت جديد")
@@ -2323,6 +2595,27 @@ def manage_sheets_and_columns(sheets_edit):
                         st.success(f"✅ تم حذف الشيت بنجاح!")
                         st.rerun()
     
+    with manage_tabs[3]:
+        st.markdown("### 🏭 إدارة التصنيفات")
+        st.info("يمكن تعديل التصنيفات في ملف الإعدادات APP_CONFIG['SHEET_CATEGORIES']")
+        
+        # عرض التصنيفات الحالية
+        st.markdown("#### التصنيفات الحالية:")
+        
+        categories_data = []
+        for cat_name, cat_patterns in APP_CONFIG["SHEET_CATEGORIES"].items():
+            # حساب عدد الشيتات المطابقة
+            matched_sheets = get_sheets_in_category(cat_name, sheets_edit)
+            categories_data.append({
+                "التصنيف": cat_name,
+                "أنماط البحث": ", ".join(cat_patterns[:5]) + ("..." if len(cat_patterns) > 5 else ""),
+                "عدد الشيتات المطابقة": len(matched_sheets),
+                "نسبة التغطية": f"{len(matched_sheets)/len(sheets_edit)*100:.1f}%" if sheets_edit else "0%"
+            })
+        
+        categories_df = pd.DataFrame(categories_data)
+        st.dataframe(categories_df, use_container_width=True)
+    
     return sheets_edit
 
 # -------------------------------
@@ -2518,15 +2811,15 @@ else:  # viewer
     tabs = st.tabs(["📋 فحص الإيفينت والكوريكشن"])
 
 # -------------------------------
-# Tab: فحص الإيفينت والكوريكشن (لجميع المستخدمين) - المعدل بالكامل
+# Tab: فحص الإيفينت والكوريكشن (لجميع المستخدمين) - المعدل بالكامل مع تصنيف الشيتات
 # -------------------------------
 with tabs[0]:
-    st.header("📋 فحص الإيفينت والكوريكشن - بحث ديناميكي")
+    st.header("📋 فحص الإيفينت والكوريكشن - بحث ديناميكي مع تصنيف الشيتات")
     
     if all_sheets is None:
         st.warning("❗ الملف المحلي غير موجود. استخدم زر التحديث في الشريط الجانبي لتحميل الملف من GitHub.")
     else:
-        # واجهة بحث ديناميكي متعدد المعايير
+        # واجهة بحث ديناميكي متعدد المعايير مع تصنيف الشيتات
         check_events_and_corrections(all_sheets)
 
 # -------------------------------
@@ -2678,8 +2971,12 @@ if permissions["can_manage_users"] and len(tabs) > 2:
                 # الحصول على تعيين الأعمدة
                 col_mapping = get_column_mapping(df)
                 
+                # استخراج الرقم من اسم الشيت
+                sheet_info = get_sheet_info(sheet_name)
+                
                 sheets_analysis.append({
                     "اسم الشيت": sheet_name,
+                    "الرقم": sheet_info["first_number"] if sheet_info["first_number"] else "-",
                     "عدد الصفوف": len(df),
                     "عدد الأعمدة": len(df.columns),
                     "معدل التعبئة %": round(fill_rate, 2),
@@ -2692,3 +2989,21 @@ if permissions["can_manage_users"] and len(tabs) > 2:
             
             analysis_df = pd.DataFrame(sheets_analysis)
             st.dataframe(analysis_df, use_container_width=True)
+            
+            # تحليل التصنيفات
+            st.markdown("### 🏭 تحليل التصنيفات")
+            
+            category_stats = get_category_stats(all_sheets)
+            cat_analysis = []
+            for cat_name, cat_stat in category_stats.items():
+                if cat_name != "جميع الأقسام":
+                    cat_analysis.append({
+                        "التصنيف": cat_name,
+                        "عدد الشيتات": cat_stat["count"],
+                        "نسبة من الإجمالي": f"{cat_stat['count']/total_sheets*100:.1f}%" if total_sheets > 0 else "0%",
+                        "الشيتات": ", ".join(cat_stat["sheets"][:5]) + ("..." if len(cat_stat["sheets"]) > 5 else "")
+                    })
+            
+            if cat_analysis:
+                cat_df = pd.DataFrame(cat_analysis)
+                st.dataframe(cat_df, use_container_width=True)
