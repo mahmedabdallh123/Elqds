@@ -1436,10 +1436,10 @@ def create_dynamic_event_form(df, prefix="", default_values=None):
     return form_data
 
 # ===============================
-# 🖥 دالة فحص الإيفينت والكوريكشن - معدلة بالكامل مع تصنيف الشيتات والبحث في أسمائها
+# 🖥 دالة فحص الإيفينت والكوريكشن - معدلة بالكامل مع محركات بحث متعددة
 # ===============================
 def check_events_and_corrections(all_sheets):
-    """فحص الإيفينت والكوريكشن مع البحث الديناميكي في الأعمدة الموجودة وتصنيف الشيتات"""
+    """فحص الإيفينت والكوريكشن مع محركات بحث متعددة"""
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
@@ -1488,296 +1488,360 @@ def check_events_and_corrections(all_sheets):
     # إحصائيات التصنيفات
     category_stats = get_category_stats(all_sheets)
     
-    # قسم البحث
+    # قسم اختيار القسم
+    st.markdown("### 🔍 فحص الإيفينت والكوريكشن")
+    
+    # ===============================
+    # قسم اختيار القسم
+    # ===============================
     with st.container():
-        st.markdown("### 🔍 بحث ديناميكي في الإيفينت والكوريكشن")
-        st.markdown("يتم البحث تلقائياً في الأعمدة المكتشفة حسب الكلمات المفتاحية")
+        col_cat1, col_cat2, col_cat3 = st.columns([3, 2, 1])
         
-        # ===============================
-        # قسم جديد: تصنيف الشيتات والبحث في أسمائها
-        # ===============================
-        with st.expander("🏭 **تصنيف الشيتات والبحث في أسمائها**", expanded=True):
+        with col_cat1:
             categories = load_categories()
             category_list = list(categories.keys())
             
-            col_cat1, col_cat2, col_cat3 = st.columns([2, 2, 1])
+            selected_category = st.selectbox(
+                "🏭 اختر القسم الذي تريد البحث فيه:",
+                category_list,
+                index=category_list.index(st.session_state.search_params.get("selected_category", "جميع الأقسام")) if st.session_state.search_params.get("selected_category") in category_list else 0,
+                key="select_category_main"
+            )
             
-            with col_cat1:
-                # اختيار التصنيف
-                selected_category = st.selectbox(
-                    "اختر القسم:",
-                    category_list,
-                    index=category_list.index(st.session_state.search_params.get("selected_category", "جميع الأقسام")) if st.session_state.search_params.get("selected_category") in category_list else 0,
-                    key="select_category"
-                )
-            
-            with col_cat2:
-                # البحث في اسم الشيت
-                sheet_name_search = st.text_input(
-                    "🔍 بحث في اسم/رقم الشيت:",
-                    value=st.session_state.search_params.get("sheet_name_search", ""),
-                    key="input_sheet_name",
-                    placeholder="مثال: Card1, 101, قسم الحلج"
-                )
-            
-            with col_cat3:
-                st.markdown("####")
-                if st.button("🔄 عرض الإحصائيات", key="show_cat_stats"):
-                    st.session_state.show_stats = True
-            
-            # عرض إحصائيات سريعة
+            # تحديث المعايير
+            st.session_state.search_params["selected_category"] = selected_category
+        
+        with col_cat2:
+            # عرض عدد الشيتات في القسم المختار
             if selected_category in category_stats:
-                sheets_in_cat = category_stats[selected_category]["sheets"]
-                st.info(f"📊 **{selected_category}** يحتوي على **{len(sheets_in_cat)}** شيت")
-                
-                # عرض عينة من الشيتات في هذا التصنيف
-                if len(sheets_in_cat) > 0:
-                    sample_sheets = sheets_in_cat[:min(5, len(sheets_in_cat))]
-                    st.caption(f"نماذج من الشيتات: {', '.join(sample_sheets)}")
+                sheets_count = len(category_stats[selected_category]["sheets"])
+                st.metric("📊 عدد الشيتات في هذا القسم", sheets_count)
         
-        # عرض إحصائيات كاملة إذا طلب
-        if st.session_state.get("show_stats", False):
-            with st.expander("📊 إحصائيات تفصيلية للتصنيفات", expanded=True):
-                stats_data = []
-                for cat_name, cat_stat in category_stats.items():
-                    stats_data.append({
-                        "التصنيف": cat_name,
-                        "عدد الشيتات": cat_stat["count"],
-                        "نسبة من الإجمالي": f"{cat_stat['count']/len(all_sheets)*100:.1f}%" if len(all_sheets) > 0 else "0%",
-                        "أنماط البحث": ", ".join(cat_stat["patterns"][:5]) + ("..." if len(cat_stat["patterns"]) > 5 else "")
-                    })
-                
-                stats_df = pd.DataFrame(stats_data)
-                st.dataframe(stats_df, use_container_width=True)
-        
-        # تبويبات للبحث وخيارات المدة
-        main_tabs = st.tabs(["🔍 معايير البحث في البيانات", "⏱️ خيارات المدة"])
-        
-        with main_tabs[0]:
-            col1, col2 = st.columns(2)
+        with col_cat3:
+            st.markdown("####")
+            if st.button("🔄 عرض الإحصائيات", key="show_stats_btn"):
+                st.session_state.show_stats = not st.session_state.get("show_stats", False)
+    
+    # عرض إحصائيات القسم
+    if st.session_state.get("show_stats", False) and selected_category in category_stats:
+        with st.expander("📊 تفاصيل القسم المختار", expanded=True):
+            cat_stat = category_stats[selected_category]
+            st.info(f"**{selected_category}**")
+            st.write(f"**أنماط البحث:** {', '.join(cat_stat['patterns'])}")
             
-            with col1:
-                # قسم رقم الماكينة (يظهر فقط إذا كان العمود موجوداً)
-                if detected_columns["card"]:
-                    with st.expander("🔢 **رقم الماكينة/الكارد**", expanded=True):
-                        st.caption(f"الأعمدة المكتشفة: {', '.join(detected_columns['card'])}")
-                        card_numbers = st.text_input(
-                            "أدخل الأرقام (مثال: 1,3,5 أو Card1,Card3)",
-                            value=st.session_state.search_params.get("card_numbers", ""),
-                            key="input_cards",
-                            placeholder="اتركه فارغاً للبحث في كل الماكينات"
-                        )
-                        
-                        # أزرار سريعة
-                        quick_cards_col1, quick_cards_col2 = st.columns(2)
-                        with quick_cards_col1:
-                            if st.button("📋 الكل", key="quick_all"):
-                                st.session_state.search_params["card_numbers"] = ""
-                                st.session_state.search_triggered = True
-                                st.rerun()
-                        with quick_cards_col2:
-                            if st.button("🗑 مسح", key="clear_cards"):
-                                st.session_state.search_params["card_numbers"] = ""
-                                st.rerun()
-                else:
-                    card_numbers = ""
-                    st.info("ℹ️ لم يتم العثور على أعمدة أرقام ماكينات")
+            if cat_stat["sheets"]:
+                st.write(f"**الشيتات في هذا القسم ({len(cat_stat['sheets'])}):**")
+                # عرض الشيتات في أعمدة
+                sheet_cols = st.columns(3)
+                for i, sheet in enumerate(cat_stat["sheets"]):
+                    with sheet_cols[i % 3]:
+                        st.write(f"- {sheet}")
+    
+    st.markdown("---")
+    
+    # ===============================
+    # محركات البحث المتعددة
+    # ===============================
+    with st.container():
+        st.markdown("### 🔍 محركات البحث")
+        st.markdown("يمكنك استخدام محرك بحث واحد أو أكثر من المحركات التالية:")
+        
+        # تبويبات لمحركات البحث المختلفة
+        search_tabs = st.tabs([
+            "🔢 محرك بحث رقم الماكينة", 
+            "📅 محرك بحث التاريخ", 
+            "👨‍🔧 محرك بحث فني الخدمة",
+            "📝 محرك بحث النص",
+            "📄 محرك بحث اسم الشيت"
+        ])
+        
+        # محرك بحث رقم الماكينة
+        with search_tabs[0]:
+            if detected_columns["card"]:
+                st.markdown("#### 🔢 محرك بحث رقم الماكينة/الكارد")
+                st.caption(f"الأعمدة المكتشفة: {', '.join(detected_columns['card'])}")
                 
-                # قسم التاريخ (يظهر فقط إذا كان العمود موجوداً)
-                if detected_columns["date"]:
-                    with st.expander("📅 **التاريخ**", expanded=True):
-                        st.caption(f"الأعمدة المكتشفة: {', '.join(detected_columns['date'])}")
-                        date_input = st.text_input(
-                            "أدخل التاريخ (مثال: 2024 أو 1/2024)",
-                            value=st.session_state.search_params.get("date_range", ""),
-                            key="input_date",
-                            placeholder="اتركه فارغاً للبحث في كل التواريخ"
-                        )
-                else:
-                    date_input = ""
-                    st.info("ℹ️ لم يتم العثور على أعمدة تاريخ")
-            
-            with col2:
-                # قسم فني الخدمة (يظهر فقط إذا كان العمود موجوداً)
-                if detected_columns["servised_by"]:
-                    with st.expander("👨‍🔧 **فني الخدمة**", expanded=True):
-                        st.caption(f"الأعمدة المكتشفة: {', '.join(detected_columns['servised_by'])}")
-                        tech_names = st.text_input(
-                            "أدخل أسماء الفنيين (مثال: أحمد, محمد)",
-                            value=st.session_state.search_params.get("tech_names", ""),
-                            key="input_techs",
-                            placeholder="اتركه فارغاً للبحث في كل الفنيين"
-                        )
-                else:
-                    tech_names = ""
-                    st.info("ℹ️ لم يتم العثور على أعمدة فنيين")
+                col_card1, col_card2, col_card3 = st.columns([3, 1, 1])
                 
-                # قسم نص البحث (يظهر دائماً)
-                with st.expander("📝 **نص البحث**", expanded=True):
-                    st.caption("يبحث في أعمدة الحدث والتصحيح إذا وجدت")
-                    search_text = st.text_input(
-                        "أدخل النص للبحث (مثال: صيانة, إصلاح)",
-                        value=st.session_state.search_params.get("search_text", ""),
-                        key="input_text",
-                        placeholder="اتركه فارغاً للبحث في كل النصوص"
+                with col_card1:
+                    card_numbers = st.text_input(
+                        "أدخل أرقام الماكينات (مثال: 1,3,5 أو Card1,Card3 أو 1-10):",
+                        value=st.session_state.search_params.get("card_numbers", ""),
+                        key="input_cards_main",
+                        placeholder="اتركه فارغاً للبحث في كل الماكينات",
+                        help="يمكنك إدخال أرقام مفصولة بفواصل، أو نطاق مثل 1-10"
                     )
-            
-            # قسم خيارات البحث المتقدمة
-            with st.expander("⚙ **خيارات متقدمة**", expanded=False):
-                col_adv1, col_adv2 = st.columns(2)
-                with col_adv1:
-                    search_mode = st.radio(
-                        "🔍 طريقة البحث:",
-                        ["بحث جزئي", "مطابقة كاملة"],
-                        index=0 if not st.session_state.search_params.get("exact_match") else 1,
-                        key="radio_search_mode",
-                        help="بحث جزئي: يبحث عن النص في أي مكان. مطابقة كاملة: يبحث عن النص مطابق تماماً"
-                    )
-                with col_adv2:
-                    include_empty = st.checkbox(
-                        "🔍 تضمين الحقول الفارغة",
-                        value=st.session_state.search_params.get("include_empty", True),
-                        key="checkbox_include_empty",
-                        help="تضمين النتائج التي تحتوي على حقول فارغة"
-                    )
-        
-        with main_tabs[1]:
-            st.markdown("#### ⏱️ خيارات حساب المدة بين الأحداث")
-            st.markdown("يتطلب وجود أعمدة تاريخ وأرقام ماكينات")
-            
-            col_dur1, col_dur2 = st.columns(2)
-            
-            with col_dur1:
-                # تفعيل حساب المدة فقط إذا توفرت الأعمدة المطلوبة
-                can_calculate = detected_columns["date"] and (detected_columns["card"] or True)
                 
-                calculate_duration = st.checkbox(
-                    "📅 حساب المدة بين الأحداث",
-                    value=st.session_state.search_params.get("calculate_duration", False) and can_calculate,
-                    key="checkbox_calculate_duration",
-                    disabled=not can_calculate,
-                    help="حساب المدة بين الأحداث لنفس الماكينة (يتطلب وجود أعمدة تاريخ وأرقام ماكينات)"
+                with col_card2:
+                    card_exact = st.checkbox(
+                        "مطابقة تامة",
+                        value=st.session_state.search_params.get("exact_match", False),
+                        key="card_exact_match"
+                    )
+                
+                with col_card3:
+                    if st.button("🗑 مسح", key="clear_cards"):
+                        card_numbers = ""
+                        st.rerun()
+                
+                # تحديث المعايير
+                st.session_state.search_params["card_numbers"] = card_numbers
+                st.session_state.search_params["exact_match"] = card_exact
+            else:
+                st.info("ℹ️ لم يتم العثور على أعمدة أرقام ماكينات في البيانات")
+        
+        # محرك بحث التاريخ
+        with search_tabs[1]:
+            if detected_columns["date"]:
+                st.markdown("#### 📅 محرك بحث التاريخ")
+                st.caption(f"الأعمدة المكتشفة: {', '.join(detected_columns['date'])}")
+                
+                col_date1, col_date2 = st.columns([3, 1])
+                
+                with col_date1:
+                    date_input = st.text_input(
+                        "أدخل التاريخ (مثال: 2024, 1/2024, 20/5/2025):",
+                        value=st.session_state.search_params.get("date_range", ""),
+                        key="input_date_main",
+                        placeholder="اتركه فارغاً للبحث في كل التواريخ",
+                        help="يمكنك البحث بسنة أو شهر/سنة أو تاريخ كامل"
+                    )
+                
+                with col_date2:
+                    if st.button("🗑 مسح", key="clear_date"):
+                        date_input = ""
+                        st.rerun()
+                
+                # تحديث المعايير
+                st.session_state.search_params["date_range"] = date_input
+            else:
+                st.info("ℹ️ لم يتم العثور على أعمدة تاريخ في البيانات")
+        
+        # محرك بحث فني الخدمة
+        with search_tabs[2]:
+            if detected_columns["servised_by"]:
+                st.markdown("#### 👨‍🔧 محرك بحث فني الخدمة")
+                st.caption(f"الأعمدة المكتشفة: {', '.join(detected_columns['servised_by'])}")
+                
+                col_tech1, col_tech2 = st.columns([3, 1])
+                
+                with col_tech1:
+                    tech_names = st.text_input(
+                        "أدخل أسماء الفنيين (مثال: أحمد, محمد, علي):",
+                        value=st.session_state.search_params.get("tech_names", ""),
+                        key="input_techs_main",
+                        placeholder="اتركه فارغاً للبحث عن كل الفنيين",
+                        help="يمكنك إدخال أسماء مفصولة بفواصل"
+                    )
+                
+                with col_tech2:
+                    if st.button("🗑 مسح", key="clear_techs"):
+                        tech_names = ""
+                        st.rerun()
+                
+                # تحديث المعايير
+                st.session_state.search_params["tech_names"] = tech_names
+            else:
+                st.info("ℹ️ لم يتم العثور على أعمدة فنيين في البيانات")
+        
+        # محرك بحث النص
+        with search_tabs[3]:
+            st.markdown("#### 📝 محرك بحث النص (يبحث في الحدث والتصحيح)")
+            
+            col_text1, col_text2, col_text3 = st.columns([3, 1, 1])
+            
+            with col_text1:
+                search_text = st.text_input(
+                    "أدخل النص للبحث (مثال: صيانة, إصلاح, تغيير):",
+                    value=st.session_state.search_params.get("search_text", ""),
+                    key="input_text_main",
+                    placeholder="اتركه فارغاً للبحث عن كل النصوص",
+                    help="يبحث في أعمدة الحدث والتصحيح إذا وجدت"
                 )
-                
-                if not can_calculate and calculate_duration:
-                    st.warning("⚠ لا يمكن حساب المدة لعدم توفر أعمدة التاريخ أو أرقام الماكينات")
-                
-                if calculate_duration and can_calculate:
-                    duration_type = st.selectbox(
-                        "وحدة حساب المدة:",
-                        ["أيام", "أسابيع", "أشهر"],
-                        index=["أيام", "أسابيع", "أشهر"].index(
-                            st.session_state.search_params.get("duration_type", "أيام")
-                        ),
-                        key="select_duration_type"
-                    )
-                    
-                    group_by_type = st.checkbox(
-                        "📊 تجميع حسب نوع الحدث",
-                        value=st.session_state.search_params.get("group_by_type", False),
-                        key="checkbox_group_by_type",
-                        help="فصل حساب المدة حسب نوع الحدث (حدث/تصحيح)"
-                    )
             
-            with col_dur2:
-                if calculate_duration and can_calculate:
-                    st.markdown("#### 🔍 فلترة حسب المدة")
-                    
+            with col_text2:
+                text_exact = st.checkbox(
+                    "مطابقة تامة",
+                    value=st.session_state.search_params.get("exact_match", False),
+                    key="text_exact_match"
+                )
+            
+            with col_text3:
+                if st.button("🗑 مسح", key="clear_text"):
+                    search_text = ""
+                    st.rerun()
+            
+            # تحديث المعايير
+            st.session_state.search_params["search_text"] = search_text
+            st.session_state.search_params["exact_match"] = text_exact
+        
+        # محرك بحث اسم الشيت
+        with search_tabs[4]:
+            st.markdown("#### 📄 محرك بحث اسم/رقم الشيت")
+            
+            col_sheet1, col_sheet2, col_sheet3 = st.columns([3, 1, 1])
+            
+            with col_sheet1:
+                sheet_name_search = st.text_input(
+                    "أدخل اسم أو رقم الشيت (مثال: Card, 101, قسم الحلج):",
+                    value=st.session_state.search_params.get("sheet_name_search", ""),
+                    key="input_sheet_name_main",
+                    placeholder="اتركه فارغاً للبحث في كل الشيتات",
+                    help="يبحث في أسماء الشيتات فقط"
+                )
+            
+            with col_sheet2:
+                sheet_exact = st.checkbox(
+                    "مطابقة تامة",
+                    value=st.session_state.search_params.get("exact_match", False),
+                    key="sheet_exact_match"
+                )
+            
+            with col_sheet3:
+                if st.button("🗑 مسح", key="clear_sheet"):
+                    sheet_name_search = ""
+                    st.rerun()
+            
+            # تحديث المعايير
+            st.session_state.search_params["sheet_name_search"] = sheet_name_search
+            st.session_state.search_params["exact_match"] = sheet_exact
+    
+    st.markdown("---")
+    
+    # ===============================
+    # خيارات متقدمة
+    # ===============================
+    with st.expander("⚙ خيارات متقدمة", expanded=False):
+        col_adv1, col_adv2 = st.columns(2)
+        
+        with col_adv1:
+            include_empty = st.checkbox(
+                "🔍 تضمين الحقول الفارغة في النتائج",
+                value=st.session_state.search_params.get("include_empty", True),
+                key="include_empty_global",
+                help="إذا لم يتم التحديد، سيتم استبعاد النتائج التي تحتوي على حقول فارغة"
+            )
+            
+            st.session_state.search_params["include_empty"] = include_empty
+        
+        with col_adv2:
+            calculate_duration = st.checkbox(
+                "⏱️ حساب المدة بين الأحداث",
+                value=st.session_state.search_params.get("calculate_duration", False) and (detected_columns["date"] and detected_columns["card"]),
+                key="calculate_duration_global",
+                disabled=not (detected_columns["date"] and detected_columns["card"]),
+                help="حساب المدة بين الأحداث لنفس الماكينة (يتطلب وجود أعمدة تاريخ وأرقام ماكينات)"
+            )
+            
+            if calculate_duration and (detected_columns["date"] and detected_columns["card"]):
+                st.session_state.search_params["calculate_duration"] = True
+                
+                duration_type = st.selectbox(
+                    "وحدة حساب المدة:",
+                    ["أيام", "أسابيع", "أشهر"],
+                    index=["أيام", "أسابيع", "أشهر"].index(
+                        st.session_state.search_params.get("duration_type", "أيام")
+                    ),
+                    key="duration_type_global"
+                )
+                st.session_state.search_params["duration_type"] = duration_type
+                
+                col_dur_min, col_dur_max = st.columns(2)
+                with col_dur_min:
                     duration_filter_min = st.number_input(
                         "الحد الأدنى للمدة:",
                         min_value=0,
                         value=st.session_state.search_params.get("duration_filter_min", 0),
                         step=1,
-                        key="input_duration_min"
+                        key="duration_min_global"
                     )
-                    
+                    st.session_state.search_params["duration_filter_min"] = duration_filter_min
+                
+                with col_dur_max:
                     duration_filter_max = st.number_input(
                         "الحد الأقصى للمدة:",
                         min_value=duration_filter_min,
                         value=st.session_state.search_params.get("duration_filter_max", 365),
                         step=1,
-                        key="input_duration_max"
+                        key="duration_max_global"
                     )
-                    
-                    st.caption(f"سيتم عرض الأحداث التي تتراوح مدتها بين {duration_filter_min} و {duration_filter_max} {duration_type if 'duration_type' in locals() else 'أيام'}")
+                    st.session_state.search_params["duration_filter_max"] = duration_filter_max
+                
+                group_by_type = st.checkbox(
+                    "📊 تجميع حسب نوع الحدث (حدث/تصحيح)",
+                    value=st.session_state.search_params.get("group_by_type", False),
+                    key="group_by_type_global"
+                )
+                st.session_state.search_params["group_by_type"] = group_by_type
+            else:
+                st.session_state.search_params["calculate_duration"] = False
         
-        # تحديث معايير البحث مع التحقق من وجود المتغيرات
-        search_params_update = {
-            "selected_category": selected_category if 'selected_category' in locals() else "جميع الأقسام",
-            "sheet_name_search": sheet_name_search if 'sheet_name_search' in locals() else "",
-            "exact_match": search_mode == "مطابقة كاملة" if 'search_mode' in locals() else False,
-            "include_empty": include_empty if 'include_empty' in locals() else True,
-            "calculate_duration": calculate_duration if 'calculate_duration' in locals() else False,
-        }
-        
-        # إضافة المتغيرات فقط إذا كانت موجودة
-        if 'card_numbers' in locals():
-            search_params_update["card_numbers"] = card_numbers
-        if 'date_input' in locals():
-            search_params_update["date_range"] = date_input
-        if 'tech_names' in locals():
-            search_params_update["tech_names"] = tech_names
-        if 'search_text' in locals():
-            search_params_update["search_text"] = search_text
-        if 'duration_type' in locals():
-            search_params_update["duration_type"] = duration_type
-        if 'duration_filter_min' in locals():
-            search_params_update["duration_filter_min"] = duration_filter_min
-        if 'duration_filter_max' in locals():
-            search_params_update["duration_filter_max"] = duration_filter_max
-        if 'group_by_type' in locals():
-            search_params_update["group_by_type"] = group_by_type
-        
-        st.session_state.search_params.update(search_params_update)
-        
-        # زر البحث الرئيسي
-        st.markdown("---")
-        col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 1])
-        with col_btn1:
-            search_clicked = st.button(
-                "🔍 **بدء البحث**",
-                type="primary",
-                use_container_width=True,
-                key="main_search_btn"
-            )
-        with col_btn2:
-            if st.button("🗑 **مسح الحقول**", use_container_width=True, key="clear_fields"):
-                st.session_state.search_params = {
-                    "selected_category": "جميع الأقسام",
-                    "sheet_name_search": "",
-                    "card_numbers": "",
-                    "date_range": "",
-                    "tech_names": "",
-                    "search_text": "",
-                    "exact_match": False,
-                    "include_empty": True,
-                    "calculate_duration": False,
-                    "duration_type": "أيام",
-                    "duration_filter_min": 0,
-                    "duration_filter_max": 365,
-                    "group_by_type": False,
-                }
-                st.session_state.search_triggered = False
-                st.rerun()
-        with col_btn3:
-            if st.button("📊 **عرض كل البيانات**", use_container_width=True, key="show_all"):
-                st.session_state.search_params = {
-                    "selected_category": "جميع الأقسام",
-                    "sheet_name_search": "",
-                    "card_numbers": "",
-                    "date_range": "",
-                    "tech_names": "",
-                    "search_text": "",
-                    "exact_match": False,
-                    "include_empty": True,
-                    "calculate_duration": False,
-                    "duration_type": "أيام",
-                    "duration_filter_min": 0,
-                    "duration_filter_max": 365,
-                    "group_by_type": False,
-                }
-                st.session_state.search_triggered = True
-                st.rerun()
+        # إضافة خيار مطابقة تامة عام
+        global_exact = st.checkbox(
+            "🎯 تفعيل المطابقة التامة لجميع محركات البحث",
+            value=st.session_state.search_params.get("exact_match", False),
+            key="global_exact_match"
+        )
+        st.session_state.search_params["exact_match"] = global_exact
+    
+    st.markdown("---")
+    
+    # ===============================
+    # أزرار التحكم الرئيسية
+    # ===============================
+    col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([2, 1, 1, 1])
+    
+    with col_btn1:
+        search_clicked = st.button(
+            "🔍 **بدء البحث المتقدم**",
+            type="primary",
+            use_container_width=True,
+            key="main_search_btn_final"
+        )
+    
+    with col_btn2:
+        if st.button("🗑 **مسح الكل**", use_container_width=True, key="clear_all_final"):
+            st.session_state.search_params = {
+                "selected_category": "جميع الأقسام",
+                "sheet_name_search": "",
+                "card_numbers": "",
+                "date_range": "",
+                "tech_names": "",
+                "search_text": "",
+                "exact_match": False,
+                "include_empty": True,
+                "calculate_duration": False,
+                "duration_type": "أيام",
+                "duration_filter_min": 0,
+                "duration_filter_max": 365,
+                "group_by_type": False,
+            }
+            st.session_state.search_triggered = False
+            st.rerun()
+    
+    with col_btn3:
+        if st.button("📊 **عرض الكل**", use_container_width=True, key="show_all_final"):
+            st.session_state.search_params = {
+                "selected_category": "جميع الأقسام",
+                "sheet_name_search": "",
+                "card_numbers": "",
+                "date_range": "",
+                "tech_names": "",
+                "search_text": "",
+                "exact_match": False,
+                "include_empty": True,
+                "calculate_duration": False,
+                "duration_type": "أيام",
+                "duration_filter_min": 0,
+                "duration_filter_max": 365,
+                "group_by_type": False,
+            }
+            st.session_state.search_triggered = True
+            st.rerun()
+    
+    with col_btn4:
+        if st.button("🔄 **تحديث**", use_container_width=True, key="refresh_final"):
+            st.rerun()
     
     # معالجة البحث
     if search_clicked or st.session_state.search_triggered:
@@ -1803,23 +1867,46 @@ def show_search_params(search_params):
         if search_params.get("selected_category"):
             params_display.append(f"**🏭 القسم:** {search_params['selected_category']}")
         
-        # عرض البحث في اسم الشيت
+        # عرض محركات البحث النشطة
         if search_params.get("sheet_name_search"):
-            params_display.append(f"**📄 اسم/رقم الشيت:** {search_params['sheet_name_search']}")
+            params_display.append(f"**📄 اسم الشيت:** {search_params['sheet_name_search']}")
         
         if search_params.get("card_numbers"):
             params_display.append(f"**🔢 رقم الماكينة:** {search_params['card_numbers']}")
+        
         if search_params.get("date_range"):
             params_display.append(f"**📅 التاريخ:** {search_params['date_range']}")
+        
         if search_params.get("tech_names"):
             params_display.append(f"**👨‍🔧 فني الخدمة:** {search_params['tech_names']}")
+        
         if search_params.get("search_text"):
             params_display.append(f"**📝 نص البحث:** {search_params['search_text']}")
+        
+        if search_params.get("exact_match"):
+            params_display.append("**🎯 مطابقة تامة**")
         
         if params_display:
             st.info(" | ".join(params_display))
         else:
-            st.info("🔍 **بحث في كل البيانات**")
+            st.info("🔍 **بحث في كل البيانات (بدون معايير)**")
+
+def filter_sheets_by_search(sheets_list, search_term):
+    """تصفية الشيتات حسب مصطلح البحث"""
+    if not search_term or not search_term.strip():
+        return sheets_list
+    
+    search_terms = [term.strip().lower() for term in search_term.split(',') if term.strip()]
+    filtered = []
+    
+    for sheet in sheets_list:
+        sheet_lower = sheet.lower()
+        for term in search_terms:
+            if term in sheet_lower:
+                filtered.append(sheet)
+                break
+    
+    return filtered
 
 def show_search_results(search_params, all_sheets, detected_columns, category_stats):
     """عرض نتائج البحث بشكل منظم مع مراعاة التصنيف"""
@@ -1903,7 +1990,7 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
     col_mapping = get_column_mapping(all_sheets[first_sheet])
     
     # تحديد الأعمدة الرئيسية للعرض
-    main_columns = ["Sheet Name", "رقم الشيت"]  # إضافة أعمدة الشيت
+    main_columns = ["Sheet Name", "رقم الشيت"]
     display_names = {
         "Sheet Name": "اسم الشيت",
         "رقم الشيت": "رقم الشيت"
@@ -2371,7 +2458,7 @@ def edit_event_dynamic(sheets_edit):
                 st.rerun()
 
 # ===============================
-# 🖥 دالة إدارة الشيتات والأعمدة - معدلة بالكامل للأقسام الديناميكية
+# 🖥 دالة إدارة الشيتات والأعمدة
 # ===============================
 def manage_sheets_and_columns(sheets_edit):
     """إدارة الشيتات والأعمدة مع أقسام ديناميكية"""
@@ -2974,15 +3061,15 @@ else:  # viewer
     tabs = st.tabs(["📋 فحص الإيفينت والكوريكشن"])
 
 # -------------------------------
-# Tab: فحص الإيفينت والكوريكشن (لجميع المستخدمين) - المعدل بالكامل مع تصنيف الشيتات
+# Tab: فحص الإيفينت والكوريكشن (لجميع المستخدمين) - المعدل بالكامل مع محركات بحث متعددة
 # -------------------------------
 with tabs[0]:
-    st.header("📋 فحص الإيفينت والكوريكشن - بحث ديناميكي مع تصنيف الشيتات")
+    st.header("📋 فحص الإيفينت والكوريكشن - بحث متعدد المحركات")
     
     if all_sheets is None:
         st.warning("❗ الملف المحلي غير موجود. استخدم زر التحديث في الشريط الجانبي لتحميل الملف من GitHub.")
     else:
-        # واجهة بحث ديناميكي متعدد المعايير مع تصنيف الشيتات
+        # واجهة بحث متعدد المعايير
         check_events_and_corrections(all_sheets)
 
 # -------------------------------
@@ -3021,7 +3108,7 @@ if permissions["can_edit"] and len(tabs) > 1:
             with tabs_edit[2]:
                 edit_event_dynamic(sheets_edit)
             
-            # Tab 4: إدارة الشيتات والأقسام - المعدلة
+            # Tab 4: إدارة الشيتات والأقسام
             with tabs_edit[3]:
                 sheets_edit = manage_sheets_and_columns(sheets_edit)
             
