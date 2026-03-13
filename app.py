@@ -28,8 +28,8 @@ APP_CONFIG = {
     # إعدادات GitHub
     "REPO_NAME": "mahmedabdallh123/Elqds",
     "BRANCH": "main",
-    "FILE_PATH": "l4.xlsx",
-    "LOCAL_FILE": "l4.xlsx",
+    "FILE_PATH": "l7.xlsx",
+    "LOCAL_FILE": "l7.xlsx",
     
     # إعدادات الأمان
     "MAX_ACTIVE_USERS": 5,
