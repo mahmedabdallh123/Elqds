@@ -66,7 +66,7 @@ APP_CONFIG = {
 # ===============================
 USERS_FILE = "users.json"
 STATE_FILE = "state.json"
-CATEGORIES_FILE = "categories.json"  # ملف لحفظ الأقسام
+CATEGORIES_FILE = "categories.json"
 SESSION_DURATION = timedelta(minutes=APP_CONFIG["SESSION_DURATION_MINUTES"])
 MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
@@ -83,7 +83,6 @@ def setup_images_folder():
     """إنشاء وإعداد مجلد الصور"""
     if not os.path.exists(IMAGES_FOLDER):
         os.makedirs(IMAGES_FOLDER)
-        # إنشاء ملف .gitkeep لجعل المجلد فارغاً في GitHub
         with open(os.path.join(IMAGES_FOLDER, ".gitkeep"), "w") as f:
             pass
 
@@ -94,25 +93,21 @@ def save_uploaded_images(uploaded_files):
     
     saved_files = []
     for uploaded_file in uploaded_files:
-        # التحقق من نوع الملف
         file_extension = uploaded_file.name.split('.')[-1].lower()
         if file_extension not in APP_CONFIG["ALLOWED_IMAGE_TYPES"]:
             st.warning(f"⚠ تم تجاهل الملف {uploaded_file.name} لأن نوعه غير مدعوم")
             continue
         
-        # التحقق من حجم الملف
         file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
         if file_size_mb > APP_CONFIG["MAX_IMAGE_SIZE_MB"]:
             st.warning(f"⚠ تم تجاهل الملف {uploaded_file.name} لأن حجمه ({file_size_mb:.2f}MB) يتجاوز الحد المسموح ({APP_CONFIG['MAX_IMAGE_SIZE_MB']}MB)")
             continue
         
-        # إنشاء اسم فريد للملف
         unique_id = str(uuid.uuid4())[:8]
         original_name = uploaded_file.name.split('.')[0]
         safe_name = re.sub(r'[^\w\-_]', '_', original_name)
         new_filename = f"{safe_name}_{unique_id}.{file_extension}"
         
-        # حفظ الملف
         file_path = os.path.join(IMAGES_FOLDER, new_filename)
         with open(file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
@@ -149,7 +144,6 @@ def display_images(image_filenames, caption="الصور المرفقة"):
     
     st.markdown(f"**{caption}:**")
     
-    # تقسيم الصور إلى أعمدة
     images_per_row = 3
     images = image_filenames.split(',') if isinstance(image_filenames, str) else image_filenames
     
@@ -179,7 +173,6 @@ def download_users_from_github():
         response.raise_for_status()
         users_data = response.json()
         
-        # حفظ نسخة محلية
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(users_data, f, indent=4, ensure_ascii=False)
         
@@ -187,7 +180,6 @@ def download_users_from_github():
     except Exception as e:
         st.error(f"❌ خطأ في تحميل ملف المستخدمين من GitHub: {e}")
         
-        # محاولة استخدام النسخة المحلية إذا كانت موجودة
         if os.path.exists(USERS_FILE):
             try:
                 with open(USERS_FILE, "r", encoding="utf-8") as f:
@@ -196,7 +188,6 @@ def download_users_from_github():
             except:
                 pass
         
-        # إرجاع بيانات افتراضية
         return {
             "admin": {
                 "password": "admin123", 
@@ -218,10 +209,8 @@ def upload_users_to_github(users_data):
         g = Github(token)
         repo = g.get_repo(GITHUB_REPO_USERS)
         
-        # تحويل البيانات إلى JSON
         users_json = json.dumps(users_data, indent=4, ensure_ascii=False, sort_keys=True)
         
-        # محاولة تحديث الملف إذا كان موجوداً
         try:
             contents = repo.get_contents("users.json", ref="main")
             result = repo.update_file(
@@ -233,10 +222,8 @@ def upload_users_to_github(users_data):
             )
             return True
         except Exception as e:
-            # إذا كان الخطأ أن الملف غير موجود (404) أو SHA غير موجود
             error_msg = str(e)
             if "404" in error_msg or "sha" in error_msg.lower() or "not found" in error_msg.lower():
-                # إنشاء ملف جديد إذا لم يكن موجوداً
                 try:
                     result = repo.create_file(
                         path="users.json",
@@ -259,10 +246,8 @@ def upload_users_to_github(users_data):
 def load_users():
     """تحميل بيانات المستخدمين من GitHub"""
     try:
-        # أولاً: تحميل من GitHub
         users_data = download_users_from_github()
         
-        # التحقق من وجود المستخدم admin
         if "admin" not in users_data:
             users_data["admin"] = {
                 "password": "admin123", 
@@ -271,10 +256,8 @@ def load_users():
                 "permissions": ["all"],
                 "active": False
             }
-            # حفظ التحديث في GitHub
             upload_users_to_github(users_data)
         
-        # التأكد من وجود جميع الحقول لكل مستخدم
         for username, user_data in users_data.items():
             required_fields = ["password", "role", "created_at", "permissions", "active"]
             for field in required_fields:
@@ -296,13 +279,11 @@ def load_users():
                     elif field == "active":
                         user_data[field] = False
         
-        # حفظ أي تحديثات في GitHub
         upload_users_to_github(users_data)
         
         return users_data
     except Exception as e:
         st.error(f"❌ خطأ في تحميل بيانات المستخدمين: {e}")
-        # إرجاع المستخدم الافتراضي في حالة الخطأ
         return {
             "admin": {
                 "password": "admin123", 
@@ -429,13 +410,11 @@ def login_ui():
 
     st.title(f"{APP_CONFIG['APP_ICON']} تسجيل الدخول - {APP_CONFIG['APP_TITLE']}")
 
-    # تحميل قائمة المستخدمين من GitHub
     try:
         user_list = list(users.keys())
     except:
         user_list = list(users.keys())
 
-    # اختيار المستخدم
     username_input = st.selectbox("👤 اختر المستخدم", user_list)
     password = st.text_input("🔑 كلمة المرور", type="password")
 
@@ -445,7 +424,6 @@ def login_ui():
 
     if not st.session_state.logged_in:
         if st.button("تسجيل الدخول"):
-            # تحميل المستخدمين من GitHub
             current_users = load_users()
             
             if username_input in current_users and current_users[username_input]["password"] == password:
@@ -496,7 +474,6 @@ def fetch_from_github_requests():
         response.raise_for_status()
         with open(APP_CONFIG["LOCAL_FILE"], "wb") as f:
             shutil.copyfileobj(response.raw, f)
-        # امسح الكاش
         try:
             st.cache_data.clear()
         except:
@@ -532,7 +509,7 @@ def fetch_from_github_api():
         return False
 
 # -------------------------------
-# 📂 تحميل الشيتات (مخبأ) - معدل لقراءة جميع الشيتات بشكل ديناميكي
+# 📂 تحميل الشيتات (مخبأ)
 # -------------------------------
 @st.cache_data(show_spinner=False)
 def load_all_sheets():
@@ -541,18 +518,15 @@ def load_all_sheets():
         return None
     
     try:
-        # قراءة جميع الشيتات
         sheets = pd.read_excel(APP_CONFIG["LOCAL_FILE"], sheet_name=None)
         
         if not sheets:
             return None
         
-        # تنظيف أسماء الأعمدة لكل شيت
         for name, df in sheets.items():
             if df.empty:
                 continue
             df.columns = df.columns.astype(str).str.strip()
-            # تعبئة القيم NaN لتجنب الأخطاء
             df = df.fillna('')
             sheets[name] = df
         
@@ -561,7 +535,6 @@ def load_all_sheets():
         st.error(f"❌ خطأ في تحميل الشيتات: {e}")
         return None
 
-# نسخة مع dtype=object لواجهة التحرير
 @st.cache_data(show_spinner=False)
 def load_sheets_for_edit():
     """تحميل جميع الشيتات للتحرير"""
@@ -569,16 +542,13 @@ def load_sheets_for_edit():
         return None
     
     try:
-        # قراءة جميع الشيتات مع dtype=object للحفاظ على تنسيق البيانات
         sheets = pd.read_excel(APP_CONFIG["LOCAL_FILE"], sheet_name=None, dtype=object)
         
         if not sheets:
             return None
         
-        # تنظيف أسماء الأعمدة لكل شيت
         for name, df in sheets.items():
             df.columns = df.columns.astype(str).str.strip()
-            # تعبئة القيم NaN
             df = df.fillna('')
             sheets[name] = df
         
@@ -588,11 +558,10 @@ def load_sheets_for_edit():
         return None
 
 # -------------------------------
-# 🔁 حفظ محلي + رفع على GitHub + مسح الكاش + إعادة تحميل
+# 🔁 حفظ محلي + رفع على GitHub
 # -------------------------------
 def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit"):
     """دالة محسنة للحفظ التلقائي المحلي والرفع إلى GitHub"""
-    # احفظ محلياً
     try:
         with pd.ExcelWriter(APP_CONFIG["LOCAL_FILE"], engine="openpyxl") as writer:
             for name, sh in sheets_dict.items():
@@ -604,13 +573,11 @@ def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit
         st.error(f"⚠ خطأ أثناء الحفظ المحلي: {e}")
         return None
 
-    # امسح الكاش
     try:
         st.cache_data.clear()
     except:
         pass
 
-    # حاول الرفع عبر PyGithub token في secrets
     token = st.secrets.get("github", {}).get("token", None)
     if not token:
         st.warning("⚠ لم يتم العثور على GitHub token. سيتم الحفظ محلياً فقط.")
@@ -632,11 +599,9 @@ def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit
             st.success(f"✅ تم الحفظ والرفع إلى GitHub بنجاح: {commit_message}")
             return load_sheets_for_edit()
         except Exception as e:
-            # إذا كان الملف غير موجود أو هناك مشكلة في SHA
             error_msg = str(e)
             if "404" in error_msg or "sha" in error_msg.lower():
                 try:
-                    # حاول إنشاء ملف جديد
                     result = repo.create_file(path=APP_CONFIG["FILE_PATH"], message=commit_message, content=content, branch=APP_CONFIG["BRANCH"])
                     st.success(f"✅ تم إنشاء ملف جديد على GitHub: {commit_message}")
                     return load_sheets_for_edit()
@@ -664,9 +629,9 @@ def auto_save_to_github(sheets_dict, operation_description):
         st.error("❌ فشل الحفظ التلقائي")
         return sheets_dict
 
-# -------------------------------
-# 📁 دوال إدارة الأقسام الديناميكية
-# -------------------------------
+# ===============================
+# 📁 دوال إدارة الأقسام الديناميكية - المعدلة لحل مشكلة التداخل
+# ===============================
 def load_categories():
     """تحميل الأقسام من ملف JSON"""
     categories_file = "categories.json"
@@ -678,9 +643,8 @@ def load_categories():
         except:
             return {}
     else:
-        # إنشاء ملف الأقسام إذا لم يكن موجوداً
         default_categories = {
-            "جميع الأقسام": ["*"]  # القسم الافتراضي للبحث في كل الشيتات
+            "جميع الأقسام": []  # سيتم تعبئتها بكل الشيتات ديناميكياً
         }
         save_categories(default_categories)
         return default_categories
@@ -708,7 +672,7 @@ def add_category(category_name):
 def delete_category(category_name):
     """حذف قسم"""
     if category_name == "جميع الأقسام":
-        return False  # لا يمكن حذف القسم الافتراضي
+        return False
     
     categories = load_categories()
     if category_name in categories:
@@ -717,24 +681,16 @@ def delete_category(category_name):
         return True
     return False
 
-def add_sheet_to_category(category_name, sheet_name, additional_patterns=None):
-    """إضافة شيت إلى قسم معين"""
+def add_sheet_to_category(category_name, sheet_name):
+    """إضافة شيت إلى قسم معين (إضافة دقيقة بدون أنماط)"""
     categories = load_categories()
     
     if category_name in categories:
-        # إضافة اسم الشيت إذا لم يكن موجوداً
+        # إضافة اسم الشيت بالكامل (بدون أنماط بحث)
         if sheet_name not in categories[category_name]:
             categories[category_name].append(sheet_name)
-        
-        # إضافة الأنماط الإضافية
-        if additional_patterns:
-            patterns = [p.strip() for p in additional_patterns.split(',') if p.strip()]
-            for pattern in patterns:
-                if pattern not in categories[category_name]:
-                    categories[category_name].append(pattern)
-        
-        save_categories(categories)
-        return True
+            save_categories(categories)
+            return True
     return False
 
 def remove_sheet_from_category(category_name, sheet_name):
@@ -749,31 +705,27 @@ def remove_sheet_from_category(category_name, sheet_name):
     return False
 
 def get_sheets_in_category(category_name, all_sheets):
-    """الحصول على أسماء الشيتات في قسم معين"""
+    """
+    الحصول على أسماء الشيتات في قسم معين - معدلة لحل مشكلة التداخل
+    الآن تعتمد فقط على الأسماء الدقيقة في القسم، وليس على أنماط البحث
+    """
     categories = load_categories()
+    
+    if category_name == "جميع الأقسام":
+        # قسم "جميع الأقسام" يعرض كل الشيتات
+        return list(all_sheets.keys())
     
     if category_name not in categories:
         return []
     
-    category_patterns = categories[category_name]
+    # استخدام الأسماء الدقيقة فقط من القسم
+    exact_sheet_names = categories[category_name]
     
-    # إذا كان هناك "*" في القائمة، أرجع كل الشيتات
-    if "*" in category_patterns:
-        return list(all_sheets.keys())
-    
+    # التحقق من وجود هذه الشيتات فعلياً في البيانات
     matched_sheets = []
-    for sheet_name in all_sheets.keys():
-        sheet_lower = sheet_name.lower()
-        for pattern in category_patterns:
-            pattern_lower = pattern.lower()
-            # البحث الجزئي (إذا كان النموذج موجوداً في اسم الشيت)
-            if pattern_lower in sheet_lower:
-                matched_sheets.append(sheet_name)
-                break
-            # البحث بالمطابقة التامة
-            elif sheet_lower == pattern_lower:
-                matched_sheets.append(sheet_name)
-                break
+    for sheet_name in exact_sheet_names:
+        if sheet_name in all_sheets:
+            matched_sheets.append(sheet_name)
     
     return matched_sheets
 
@@ -787,10 +739,20 @@ def get_category_stats(all_sheets):
         stats[category_name] = {
             "count": len(sheets_in_cat),
             "sheets": sheets_in_cat,
-            "patterns": categories[category_name]
+            "patterns": categories[category_name]  # للتوثيق فقط
         }
     
     return stats
+
+def update_all_sheets_category(all_sheets):
+    """تحديث قسم 'جميع الأقسام' بكل الشيتات المتاحة"""
+    categories = load_categories()
+    
+    if "جميع الأقسام" in categories:
+        categories["جميع الأقسام"] = list(all_sheets.keys())
+        save_categories(categories)
+    
+    return categories
 
 # -------------------------------
 # 🧰 دوال مساعدة للمعالجة والنصوص
@@ -828,7 +790,6 @@ def style_table(row):
 
 def get_user_permissions(user_role, user_permissions):
     """الحصول على صلاحيات المستخدم بناءً على الدور والصلاحيات"""
-    # إذا كان الدور admin، يعطى جميع الصلاحيات
     if user_role == "admin":
         return {
             "can_view": True,
@@ -838,7 +799,6 @@ def get_user_permissions(user_role, user_permissions):
             "can_manage_sheets": True
         }
     
-    # إذا كان الدور editor
     elif user_role == "editor":
         return {
             "can_view": True,
@@ -848,9 +808,7 @@ def get_user_permissions(user_role, user_permissions):
             "can_manage_sheets": True
         }
     
-    # إذا كان الدور viewer أو أي دور آخر
     else:
-        # التحقق من الصلاحيات الفردية
         return {
             "can_view": "view" in user_permissions or "edit" in user_permissions or "all" in user_permissions,
             "can_edit": "edit" in user_permissions or "all" in user_permissions,
@@ -860,7 +818,7 @@ def get_user_permissions(user_role, user_permissions):
         }
 
 # ===============================
-# 🔧 دوال مساعدة للعثور على الأعمدة بناءً على الكلمات المفتاحية
+# 🔧 دوال مساعدة للعثور على الأعمدة
 # ===============================
 def find_column_by_keywords(df, keywords_list):
     """البحث عن عمود في DataFrame بناءً على قائمة كلمات مفتاحية"""
@@ -883,7 +841,7 @@ def find_all_matching_columns(df, keywords_list):
     return matching_cols
 
 def get_column_mapping(df):
-    """الحصول على تعيين الأعمدة المهمة بناءً على الكلمات المفتاحية (ديناميكي)"""
+    """الحصول على تعيين الأعمدة المهمة بناءً على الكلمات المفتاحية"""
     mapping = {
         "card": find_column_by_keywords(df, APP_CONFIG["EXPECTED_COLUMNS"]["card"]),
         "date": find_column_by_keywords(df, APP_CONFIG["EXPECTED_COLUMNS"]["date"]),
@@ -915,7 +873,6 @@ def get_all_detected_columns(all_sheets):
             if col:
                 detected[key].add(col)
         
-        # الأعمدة الأخرى غير المكتشفة
         mapped_cols = set([v for v in mapping.values() if v])
         all_cols = set(df.columns)
         detected["other"].update(all_cols - mapped_cols)
@@ -927,7 +884,6 @@ def get_all_detected_columns(all_sheets):
 # ===============================
 def get_sheet_info(sheet_name):
     """استخراج معلومات من اسم الشيت (مثل الرقم)"""
-    # محاولة استخراج الأرقام من اسم الشيت
     numbers = re.findall(r'\d+', sheet_name)
     if numbers:
         return {
@@ -954,10 +910,8 @@ def extract_sheet_data(df, sheet_name):
     
     results = []
     
-    # الحصول على تعيين الأعمدة
     col_mapping = get_column_mapping(df)
     
-    # استخراج البيانات من كل صف
     for idx, row in df.iterrows():
         try:
             result = {
@@ -966,7 +920,6 @@ def extract_sheet_data(df, sheet_name):
                 "Sheet Info": get_sheet_info(sheet_name)
             }
             
-            # إضافة البيانات من الأعمدة المهمة إذا وجدت
             for key, col_name in col_mapping.items():
                 if col_name and col_name in row:
                     value = row[col_name]
@@ -977,13 +930,11 @@ def extract_sheet_data(df, sheet_name):
                 else:
                     result[key] = ""
             
-            # إضافة جميع الأعمدة الأخرى
             for col in df.columns:
                 if col not in [v for v in col_mapping.values() if v]:
                     col_name = str(col).strip()
                     value = row[col] if col in row and pd.notna(row[col]) else ""
                     
-                    # تحويل القيم إلى نص مناسب
                     if isinstance(value, (datetime, pd.Timestamp)):
                         value = value.strftime("%Y-%m-%d %H:%M:%S")
                     elif value == "" or pd.isna(value):
@@ -993,12 +944,10 @@ def extract_sheet_data(df, sheet_name):
                     
                     result[col_name] = value
             
-            # إضافة الصف إذا كان يحتوي على أي بيانات غير فارغة
             has_data = any(v != "" for k, v in result.items() if k not in ["Sheet Name", "Row Index", "Sheet Info"])
             if has_data:
                 results.append(result)
         except Exception as e:
-            # تجاهل الصفوف التي بها أخطاء
             continue
     
     return results
@@ -1006,7 +955,6 @@ def extract_sheet_data(df, sheet_name):
 def check_row_criteria(result, search_params, col_mapping):
     """التحقق من مطابقة الصف لمعايير البحث"""
     
-    # 0. البحث في اسم الشيت
     if search_params.get("sheet_name_search") and search_params["sheet_name_search"].strip():
         sheet_name = result.get("Sheet Name", "").lower()
         search_terms = [term.strip().lower() for term in search_params["sheet_name_search"].split(',') if term.strip()]
@@ -1025,7 +973,6 @@ def check_row_criteria(result, search_params, col_mapping):
         if not match_found:
             return False
     
-    # 1. البحث في رقم الماكينة/الكارد
     if search_params.get("card_numbers") and search_params["card_numbers"].strip():
         card_col = col_mapping.get("card")
         if card_col and card_col in result:
@@ -1048,7 +995,6 @@ def check_row_criteria(result, search_params, col_mapping):
         elif not search_params.get("include_empty", True):
             return False
     
-    # 2. البحث في التاريخ
     if search_params.get("date_range") and search_params["date_range"].strip():
         date_col = col_mapping.get("date")
         if date_col and date_col in result:
@@ -1071,7 +1017,6 @@ def check_row_criteria(result, search_params, col_mapping):
         elif not search_params.get("include_empty", True):
             return False
     
-    # 3. البحث في فني الخدمة
     if search_params.get("tech_names") and search_params["tech_names"].strip():
         tech_col = col_mapping.get("servised_by")
         if tech_col and tech_col in result:
@@ -1094,7 +1039,6 @@ def check_row_criteria(result, search_params, col_mapping):
         elif not search_params.get("include_empty", True):
             return False
     
-    # 4. البحث في النص (الحدث والتصحيح)
     if search_params.get("search_text") and search_params["search_text"].strip():
         event_col = col_mapping.get("event")
         correction_col = col_mapping.get("correction")
@@ -1156,10 +1100,8 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
     if not events_data:
         return events_data
     
-    # تحويل إلى DataFrame
     df = pd.DataFrame(events_data)
     
-    # البحث عن عمود التاريخ
     date_column = None
     for col in df.columns:
         col_lower = col.lower()
@@ -1170,7 +1112,6 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
     if not date_column:
         return []
     
-    # البحث عن عمود رقم الماكينة
     card_column = None
     for col in df.columns:
         col_lower = col.lower()
@@ -1179,10 +1120,8 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
             break
     
     if not card_column:
-        # إذا لم نجد عمود ماكينة، نستخدم اسم الشيت كمعرف
         card_column = "Sheet Name"
     
-    # البحث عن أعمدة الحدث والتصحيح
     event_column = None
     correction_column = None
     tech_column = None
@@ -1196,15 +1135,12 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
         elif any(keyword in col_lower for keyword in ['servised', 'serviced', 'service', 'فني', 'tech']):
             tech_column = col
     
-    # تحويل التواريخ إلى تنسيق datetime
     def parse_date(date_str):
         try:
-            # محاولة تحليل تنسيقات مختلفة
             date_str = str(date_str).strip()
             if not date_str or date_str.lower() in ["nan", "none", "-", ""]:
                 return None
             
-            # تجربة تنسيقات مختلفة
             formats = [
                 "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",
                 "%Y/%m/%d", "%Y-%m-%d", "%Y.%m.%d",
@@ -1217,17 +1153,14 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
                 except:
                     continue
             
-            # إذا فشلت جميع المحاولات
             return None
         except:
             return None
     
     df['Date_Parsed'] = df[date_column].apply(parse_date)
     
-    # فرز البيانات حسب الماكينة ثم التاريخ
     df = df.sort_values([card_column, 'Date_Parsed'])
     
-    # تحديد نوع الحدث (حدث أو تصحيح)
     def determine_event_type(row):
         if event_column and correction_column:
             event_val = str(row.get(event_column, "")).strip().lower()
@@ -1243,7 +1176,6 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
     
     df['Event_Type'] = df.apply(determine_event_type, axis=1)
     
-    # حساب المدة بين الأحداث لكل ماكينة
     durations_data = []
     
     for card_num in df[card_column].unique():
@@ -1258,21 +1190,18 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
                 previous_date = previous_event['Date_Parsed']
                 
                 if current_date and previous_date:
-                    # حساب المدة بالأيام
                     duration_days = (current_date - previous_date).days
                     
-                    # تحويل إلى الوحدة المطلوبة
                     if duration_type == "أسابيع":
                         duration_value = duration_days / 7
                         duration_unit = "أسبوع"
                     elif duration_type == "أشهر":
-                        duration_value = duration_days / 30.44  # متوسط أيام الشهر
+                        duration_value = duration_days / 30.44
                         duration_unit = "شهر"
-                    else:  # أيام
+                    else:
                         duration_value = duration_days
                         duration_unit = "يوم"
                     
-                    # التحقق من تجميع حسب النوع
                     if group_by_type:
                         current_type = current_event['Event_Type']
                         previous_type = previous_event['Event_Type']
@@ -1288,7 +1217,6 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
                                 'Technician': current_event[tech_column] if tech_column and tech_column in current_event else '-'
                             }
                             
-                            # إضافة معلومات الحدث والتصحيح إذا وجدت
                             if event_column and event_column in current_event:
                                 duration_info['Current_Event'] = current_event[event_column]
                             if correction_column and correction_column in current_event:
@@ -1306,7 +1234,6 @@ def calculate_durations_between_events(events_data, duration_type="أيام", gr
                             'Technician': current_event[tech_column] if tech_column and tech_column in current_event else '-'
                         }
                         
-                        # إضافة معلومات الحدث والتصحيح إذا وجدت
                         if event_column and event_column in current_event:
                             duration_info['Current_Event'] = current_event[event_column]
                         if correction_column and correction_column in current_event:
@@ -1339,13 +1266,10 @@ def create_dynamic_event_form(df, prefix="", default_values=None):
     if default_values is None:
         default_values = {}
     
-    # الحصول على تعيين الأعمدة
     col_mapping = get_column_mapping(df)
     
-    # الحصول على جميع الأعمدة
     columns = df.columns.tolist()
     
-    # تصنيف الأعمدة
     text_columns = []
     date_columns = []
     number_columns = []
@@ -1366,10 +1290,8 @@ def create_dynamic_event_form(df, prefix="", default_values=None):
         else:
             other_columns.append(col)
     
-    # إنشاء الحقول حسب النوع
     form_data = {}
     
-    # أولاً: عرض الحقول النصية المهمة
     st.markdown("#### 📝 البيانات الأساسية")
     col1, col2 = st.columns(2)
     
@@ -1378,7 +1300,6 @@ def create_dynamic_event_form(df, prefix="", default_values=None):
             default = default_values.get(col, "")
             form_data[col] = st.text_area(f"{col}:", value=default, key=f"{prefix}_{col}_text", height=100)
     
-    # ثانياً: حقول التاريخ
     if date_columns:
         st.markdown("#### 📅 التواريخ")
         date_cols = st.columns(min(3, len(date_columns)))
@@ -1387,7 +1308,6 @@ def create_dynamic_event_form(df, prefix="", default_values=None):
                 default = default_values.get(col, "")
                 form_data[col] = st.text_input(f"{col}:", value=default, key=f"{prefix}_{col}_date", placeholder="مثال: 20/5/2025")
     
-    # ثالثاً: الحقول الرقمية
     if number_columns:
         st.markdown("#### 🔢 القيم الرقمية")
         num_cols = st.columns(min(3, len(number_columns)))
@@ -1396,7 +1316,6 @@ def create_dynamic_event_form(df, prefix="", default_values=None):
                 default = default_values.get(col, "")
                 form_data[col] = st.text_input(f"{col}:", value=default, key=f"{prefix}_{col}_num")
     
-    # رابعاً: باقي الحقول
     if other_columns:
         st.markdown("#### 📋 حقول إضافية")
         other_cols = st.columns(3)
@@ -1405,7 +1324,6 @@ def create_dynamic_event_form(df, prefix="", default_values=None):
                 default = default_values.get(col, "")
                 form_data[col] = st.text_input(f"{col}:", value=default, key=f"{prefix}_{col}_other")
     
-    # خامساً: حقول الصور
     if image_columns:
         st.markdown("#### 📷 الصور المرفقة")
         for col in image_columns:
@@ -1436,13 +1354,16 @@ def create_dynamic_event_form(df, prefix="", default_values=None):
     return form_data
 
 # ===============================
-# 🖥 دالة فحص الإيفينت والكوريكشن - معدلة بالكامل مع محركات بحث متعددة
+# 🖥 دالة فحص الإيفينت والكوريكشن - المعدلة لحل مشكلة الأقسام
 # ===============================
 def check_events_and_corrections(all_sheets):
-    """فحص الإيفينت والكوريكشن مع محركات بحث متعددة"""
+    """فحص الإيفينت والكوريكشن مع محركات بحث متعددة وأقسام مستقلة"""
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
+    
+    # تحديث قسم "جميع الأقسام" بكل الشيتات
+    update_all_sheets_category(all_sheets)
     
     # اكتشاف الأعمدة الموجودة في كل الشيتات
     detected_columns = get_all_detected_columns(all_sheets)
@@ -1492,7 +1413,7 @@ def check_events_and_corrections(all_sheets):
     st.markdown("### 🔍 فحص الإيفينت والكوريكشن")
     
     # ===============================
-    # قسم اختيار القسم
+    # قسم اختيار القسم - معروض بشكل بارز
     # ===============================
     with st.container():
         col_cat1, col_cat2, col_cat3 = st.columns([3, 2, 1])
@@ -1508,11 +1429,9 @@ def check_events_and_corrections(all_sheets):
                 key="select_category_main"
             )
             
-            # تحديث المعايير
             st.session_state.search_params["selected_category"] = selected_category
         
         with col_cat2:
-            # عرض عدد الشيتات في القسم المختار
             if selected_category in category_stats:
                 sheets_count = len(category_stats[selected_category]["sheets"])
                 st.metric("📊 عدد الشيتات في هذا القسم", sheets_count)
@@ -1527,15 +1446,15 @@ def check_events_and_corrections(all_sheets):
         with st.expander("📊 تفاصيل القسم المختار", expanded=True):
             cat_stat = category_stats[selected_category]
             st.info(f"**{selected_category}**")
-            st.write(f"**أنماط البحث:** {', '.join(cat_stat['patterns'])}")
             
             if cat_stat["sheets"]:
                 st.write(f"**الشيتات في هذا القسم ({len(cat_stat['sheets'])}):**")
-                # عرض الشيتات في أعمدة
                 sheet_cols = st.columns(3)
                 for i, sheet in enumerate(cat_stat["sheets"]):
                     with sheet_cols[i % 3]:
                         st.write(f"- {sheet}")
+            else:
+                st.warning("⚠ لا توجد شيتات في هذا القسم")
     
     st.markdown("---")
     
@@ -1546,7 +1465,6 @@ def check_events_and_corrections(all_sheets):
         st.markdown("### 🔍 محركات البحث")
         st.markdown("يمكنك استخدام محرك بحث واحد أو أكثر من المحركات التالية:")
         
-        # تبويبات لمحركات البحث المختلفة
         search_tabs = st.tabs([
             "🔢 محرك بحث رقم الماكينة", 
             "📅 محرك بحث التاريخ", 
@@ -1584,7 +1502,6 @@ def check_events_and_corrections(all_sheets):
                         card_numbers = ""
                         st.rerun()
                 
-                # تحديث المعايير
                 st.session_state.search_params["card_numbers"] = card_numbers
                 st.session_state.search_params["exact_match"] = card_exact
             else:
@@ -1612,7 +1529,6 @@ def check_events_and_corrections(all_sheets):
                         date_input = ""
                         st.rerun()
                 
-                # تحديث المعايير
                 st.session_state.search_params["date_range"] = date_input
             else:
                 st.info("ℹ️ لم يتم العثور على أعمدة تاريخ في البيانات")
@@ -1639,7 +1555,6 @@ def check_events_and_corrections(all_sheets):
                         tech_names = ""
                         st.rerun()
                 
-                # تحديث المعايير
                 st.session_state.search_params["tech_names"] = tech_names
             else:
                 st.info("ℹ️ لم يتم العثور على أعمدة فنيين في البيانات")
@@ -1671,7 +1586,6 @@ def check_events_and_corrections(all_sheets):
                     search_text = ""
                     st.rerun()
             
-            # تحديث المعايير
             st.session_state.search_params["search_text"] = search_text
             st.session_state.search_params["exact_match"] = text_exact
         
@@ -1702,7 +1616,6 @@ def check_events_and_corrections(all_sheets):
                     sheet_name_search = ""
                     st.rerun()
             
-            # تحديث المعايير
             st.session_state.search_params["sheet_name_search"] = sheet_name_search
             st.session_state.search_params["exact_match"] = sheet_exact
     
@@ -1776,7 +1689,6 @@ def check_events_and_corrections(all_sheets):
             else:
                 st.session_state.search_params["calculate_duration"] = False
         
-        # إضافة خيار مطابقة تامة عام
         global_exact = st.checkbox(
             "🎯 تفعيل المطابقة التامة لجميع محركات البحث",
             value=st.session_state.search_params.get("exact_match", False),
@@ -1847,13 +1759,10 @@ def check_events_and_corrections(all_sheets):
     if search_clicked or st.session_state.search_triggered:
         st.session_state.search_triggered = True
         
-        # جمع معايير البحث
         search_params = st.session_state.search_params.copy()
         
-        # عرض معايير البحث
         show_search_params(search_params)
         
-        # تنفيذ البحث مع مراعاة التصنيف والبحث في أسماء الشيتات
         show_search_results(search_params, all_sheets, detected_columns, category_stats)
 
 def show_search_params(search_params):
@@ -1863,11 +1772,9 @@ def show_search_params(search_params):
         
         params_display = []
         
-        # عرض التصنيف
         if search_params.get("selected_category"):
             params_display.append(f"**🏭 القسم:** {search_params['selected_category']}")
         
-        # عرض محركات البحث النشطة
         if search_params.get("sheet_name_search"):
             params_display.append(f"**📄 اسم الشيت:** {search_params['sheet_name_search']}")
         
@@ -1920,7 +1827,7 @@ def show_search_results(search_params, all_sheets, detected_columns, category_st
     else:
         sheets_to_search = list(all_sheets.keys())
     
-    # تطبيق البحث الإضافي في أسماء الشيتات
+    # تطبيق البحث الإضافي في أسماء الشيتات (اختياري)
     sheet_name_search = search_params.get("sheet_name_search", "")
     if sheet_name_search:
         sheets_to_search = filter_sheets_by_search(sheets_to_search, sheet_name_search)
@@ -1931,16 +1838,13 @@ def show_search_results(search_params, all_sheets, detected_columns, category_st
         st.warning("⚠ لا توجد شيتات تطابق معايير البحث في التصنيف")
         return
     
-    # شريط التقدم
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    # البحث في البيانات
     all_results = []
     total_sheets = len(sheets_to_search)
     processed_sheets = 0
     
-    # البحث في الشيتات المحددة فقط
     for sheet_name in sheets_to_search:
         if sheet_name not in all_sheets:
             continue
@@ -1952,22 +1856,17 @@ def show_search_results(search_params, all_sheets, detected_columns, category_st
         
         status_text.text(f"🔍 جاري معالجة الشيت: {sheet_name}...")
         
-        # الحصول على تعيين الأعمدة لهذا الشيت
         col_mapping = get_column_mapping(df)
         
-        # استخراج البيانات من الشيت
         sheet_results = extract_sheet_data(df, sheet_name)
         
-        # فلترة النتائج حسب معايير البحث
         for result in sheet_results:
             if check_row_criteria(result, search_params, col_mapping):
                 all_results.append(result)
     
-    # إخفاء شريط التقدم
     progress_bar.empty()
     status_text.empty()
     
-    # عرض النتائج
     if all_results:
         display_search_results(all_results, search_params, all_sheets, detected_columns)
     else:
@@ -1976,27 +1875,22 @@ def show_search_results(search_params, all_sheets, detected_columns, category_st
 
 def display_search_results(results, search_params, all_sheets, detected_columns):
     """عرض نتائج البحث في واجهة منظمة"""
-    # تحويل النتائج إلى DataFrame
     result_df = pd.DataFrame(results)
     
-    # إضافة عمود معلومات الشيت للعرض
     if "Sheet Info" in result_df.columns:
         result_df["رقم الشيت"] = result_df["Sheet Info"].apply(
             lambda x: x.get("first_number") if isinstance(x, dict) and x.get("first_number") else "-"
         )
     
-    # الحصول على تعيين الأعمدة من أول شيت (للعرض)
     first_sheet = list(all_sheets.keys())[0]
     col_mapping = get_column_mapping(all_sheets[first_sheet])
     
-    # تحديد الأعمدة الرئيسية للعرض
     main_columns = ["Sheet Name", "رقم الشيت"]
     display_names = {
         "Sheet Name": "اسم الشيت",
         "رقم الشيت": "رقم الشيت"
     }
     
-    # إضافة الأعمدة حسب ما تم اكتشافه
     if detected_columns["card"]:
         for col in detected_columns["card"]:
             if col in result_df.columns:
@@ -2039,10 +1933,8 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
                 display_names[col] = "الأطنان"
                 break
     
-    # إضافة أعمدة أخرى غير موجودة في القائمة الرئيسية
     other_columns = [col for col in result_df.columns if col not in main_columns and col not in ["Sheet Name", "Row Index", "Sheet Info", "رقم الشيت"]]
     
-    # عرض الإحصائيات
     st.markdown("### 📈 إحصائيات النتائج")
     
     col1, col2, col3, col4 = st.columns(4)
@@ -2055,7 +1947,6 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
         st.metric("📂 عدد الشيتات", unique_sheets)
     
     with col3:
-        # عدد الفنيين الموجودين
         if detected_columns["servised_by"]:
             tech_col = None
             for col in detected_columns["servised_by"]:
@@ -2072,7 +1963,6 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
             st.metric("👨‍🔧 عدد الفنيين", 0)
     
     with col4:
-        # عدد الصفوف التي تحتوي على صور
         if detected_columns["images"]:
             img_col = None
             for col in detected_columns["images"]:
@@ -2088,15 +1978,12 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
         else:
             st.metric("📷 تحتوي على صور", 0)
     
-    # عرض النتائج في جدول
     st.markdown("---")
     st.markdown("### 📋 النتائج التفصيلية")
     
-    # تبويبات للعرض
     display_tabs = st.tabs(["📊 عرض جدولي", "📋 عرض تفصيلي حسب الشيت"])
     
     with display_tabs[0]:
-        # اختيار الأعمدة للعرض
         all_display_columns = main_columns + other_columns
         
         selected_columns = st.multiselect(
@@ -2109,7 +1996,6 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
         if not selected_columns:
             selected_columns = main_columns[:min(6, len(main_columns))]
         
-        # إعادة تسمية الأعمدة للعرض
         display_df = result_df[selected_columns].copy()
         display_df.columns = [display_names.get(col, col) for col in selected_columns]
         
@@ -2117,12 +2003,10 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
         st.caption(f"إجمالي النتائج: {len(result_df)}")
     
     with display_tabs[1]:
-        # عرض تفصيلي لكل شيت
         for sheet_name in result_df["Sheet Name"].unique():
             sheet_results = result_df[result_df["Sheet Name"] == sheet_name]
             
             with st.expander(f"📂 {sheet_name} - عدد الأحداث: {len(sheet_results)}"):
-                # عرض إحصائيات الشيت
                 col_s1, col_s2, col_s3 = st.columns(3)
                 with col_s1:
                     st.metric("عدد الأحداث", len(sheet_results))
@@ -2149,17 +2033,14 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
                             date_count = sheet_results[date_col].notna().sum()
                             st.metric("تواريخ مسجلة", date_count)
                 
-                # عرض بيانات الشيت
                 sheet_display = sheet_results[main_columns + other_columns].copy()
                 if not sheet_display.empty:
                     st.dataframe(sheet_display, use_container_width=True)
     
-    # حساب المدة بين الأحداث إذا كان مطلوباً
     if search_params.get("calculate_duration", False):
         st.markdown("---")
         st.markdown("### ⏱️ تحليل المدة بين الأحداث")
         
-        # حساب المدة
         durations_data = calculate_durations_between_events(
             results,
             search_params.get("duration_type", "أيام"),
@@ -2167,10 +2048,8 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
         )
         
         if durations_data:
-            # تحويل إلى DataFrame
             durations_df = pd.DataFrame(durations_data)
             
-            # فلترة حسب نطاق المدة
             duration_min = search_params.get("duration_filter_min", 0)
             duration_max = search_params.get("duration_filter_max", 365)
             
@@ -2179,7 +2058,6 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
                 (durations_df['Duration'] <= duration_max)
             ]
             
-            # عرض إحصائيات المدة
             st.markdown("#### 📊 إحصائيات المدة")
             
             col_dur1, col_dur2, col_dur3, col_dur4 = st.columns(4)
@@ -2200,10 +2078,8 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
                 total_durations = len(filtered_durations)
                 st.metric("🔢 عدد الفترات", total_durations)
             
-            # عرض جدول المدة
             st.markdown("#### 📋 جدول المدة بين الأحداث")
             
-            # الأعمدة الأساسية للعرض
             display_columns = []
             for col in ['Card Number', 'Previous_Event_Date', 'Current_Event_Date', 'Duration', 'Duration_Unit', 'Event_Type', 'Technician']:
                 if col in filtered_durations.columns:
@@ -2217,14 +2093,12 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
         else:
             st.info("ℹ️ لا توجد بيانات كافية لحساب المدة بين الأحداث (تحتاج إلى حدثين على الأقل لكل ماكينة)")
     
-    # خيارات التصدير
     st.markdown("---")
     st.markdown("### 💾 خيارات التصدير")
     
     export_col1, export_col2 = st.columns(2)
     
     with export_col1:
-        # تصدير Excel
         if not result_df.empty:
             buffer_excel = io.BytesIO()
             
@@ -2245,7 +2119,6 @@ def display_search_results(results, search_params, all_sheets, detected_columns)
             )
     
     with export_col2:
-        # تصدير CSV
         if not result_df.empty:
             buffer_csv = io.BytesIO()
             
@@ -2276,7 +2149,6 @@ def display_dynamic_sheets(sheets_edit):
         st.warning("⚠ لا توجد شيتات متاحة")
         return
     
-    # إنشاء تبويبات لكل شيت
     sheet_tabs = st.tabs(list(sheets_edit.keys()))
     
     for i, (sheet_name, df) in enumerate(sheets_edit.items()):
@@ -2284,11 +2156,9 @@ def display_dynamic_sheets(sheets_edit):
             st.markdown(f"### 📋 {sheet_name}")
             st.info(f"الصفوف: {len(df)} | الأعمدة: {len(df.columns)}")
             
-            # عرض جميع الأعمدة
             if st.checkbox(f"عرض جميع الأعمدة", key=f"show_all_{sheet_name}"):
                 st.dataframe(df, use_container_width=True)
             else:
-                # عرض الأعمدة الرئيسية فقط
                 display_cols = []
                 for col in df.columns:
                     col_lower = str(col).lower()
@@ -2300,7 +2170,6 @@ def display_dynamic_sheets(sheets_edit):
                 else:
                     st.dataframe(df.head(10), use_container_width=True)
             
-            # عرض إحصائيات
             with st.expander("📊 إحصائيات الشيت", expanded=False):
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -2312,9 +2181,6 @@ def display_dynamic_sheets(sheets_edit):
                     total_cells = len(df) * len(df.columns)
                     st.metric("خلايا غير فارغة", f"{non_empty}/{total_cells}")
 
-# -------------------------------
-# 🖥 دالة إضافة إيفينت جديد - ديناميكية بالكامل
-# -------------------------------
 def add_new_event_dynamic(sheets_edit):
     """إضافة إيفينت جديد في أي شيت مع أي أعمدة"""
     st.subheader("➕ إضافة حدث جديد")
@@ -2325,7 +2191,6 @@ def add_new_event_dynamic(sheets_edit):
     st.markdown(f"### 📝 إضافة حدث جديد في شيت: {sheet_name}")
     st.info(f"الأعمدة المتاحة: {', '.join(df.columns.tolist())}")
     
-    # إنشاء النموذج الديناميكي
     form_data = create_dynamic_event_form(df, prefix=f"add_{sheet_name}")
     
     if st.button("💾 إضافة الحدث الجديد", key=f"add_dynamic_event_btn_{sheet_name}"):
@@ -2333,7 +2198,6 @@ def add_new_event_dynamic(sheets_edit):
             st.warning("⚠ لم يتم إدخال أي بيانات")
             return
         
-        # إنشاء صف جديد
         new_row = {}
         for col in df.columns:
             if col in form_data and form_data[col]:
@@ -2341,13 +2205,11 @@ def add_new_event_dynamic(sheets_edit):
             else:
                 new_row[col] = ""
         
-        # إضافة الصف الجديد
         new_row_df = pd.DataFrame([new_row])
         df_new = pd.concat([df, new_row_df], ignore_index=True)
         
         sheets_edit[sheet_name] = df_new
         
-        # حفظ تلقائي في GitHub
         new_sheets = auto_save_to_github(
             sheets_edit,
             f"إضافة حدث جديد في {sheet_name}"
@@ -2357,9 +2219,6 @@ def add_new_event_dynamic(sheets_edit):
             st.success("✅ تم إضافة الحدث الجديد بنجاح!")
             st.rerun()
 
-# -------------------------------
-# 🖥 دالة تعديل الإيفينت والكوريكشن - ديناميكية
-# -------------------------------
 def edit_event_dynamic(sheets_edit):
     """تعديل حدث في أي شيت مع أي أعمدة"""
     st.subheader("✏ تعديل حدث")
@@ -2369,17 +2228,14 @@ def edit_event_dynamic(sheets_edit):
     
     st.markdown(f"### 📋 البيانات الحالية في شيت: {sheet_name}")
     
-    # عرض البيانات للاختيار
     display_df = df.copy()
     for col in display_df.columns:
         display_df[col] = display_df[col].astype(str).apply(lambda x: x[:50] + "..." if len(x) > 50 else x)
     
     st.dataframe(display_df.head(20), use_container_width=True)
     
-    # اختيار الصف للتعديل
     st.markdown("### 🔍 اختيار الصف للتعديل")
     
-    # البحث عن الصف
     search_col = st.selectbox("ابحث في عمود:", df.columns.tolist(), key="search_col_dynamic")
     search_value = st.text_input("قيمة البحث:", key="search_val_dynamic")
     
@@ -2390,14 +2246,12 @@ def edit_event_dynamic(sheets_edit):
         if not matching_rows.empty:
             st.success(f"✅ تم العثور على {len(matching_rows)} صف")
             
-            # عرض الصفوف المطابقة
             matching_display = matching_rows.copy()
             for col in matching_display.columns:
                 matching_display[col] = matching_display[col].astype(str).apply(lambda x: x[:50] + "..." if len(x) > 50 else x)
             
             st.dataframe(matching_display, use_container_width=True)
             
-            # اختيار الصف المحدد
             row_indices = matching_rows.index.tolist()
             selected_idx = st.selectbox(
                 "اختر رقم الصف للتعديل:",
@@ -2413,28 +2267,24 @@ def edit_event_dynamic(sheets_edit):
         else:
             st.warning("⚠ لا توجد نتائج مطابقة")
     
-    # عرض وتعديل الصف المختار
     if "editing_dynamic_row" in st.session_state and st.session_state.get("editing_dynamic_sheet") == sheet_name:
         row_idx = st.session_state["editing_dynamic_row"]
         original_data = st.session_state["editing_dynamic_data"]
         
         st.markdown(f"### ✏ تعديل الصف رقم {row_idx}")
         
-        # إنشاء النموذج الديناميكي مع البيانات الحالية
         form_data = create_dynamic_event_form(df, prefix=f"edit_{sheet_name}_{row_idx}", default_values=original_data)
         
         col_edit1, col_edit2 = st.columns(2)
         
         with col_edit1:
             if st.button("💾 حفظ التعديلات", key=f"save_dynamic_edit_{row_idx}", type="primary"):
-                # تحديث البيانات
                 for col in df.columns:
                     if col in form_data:
                         df.at[row_idx, col] = form_data[col]
                 
                 sheets_edit[sheet_name] = df
                 
-                # حفظ تلقائي في GitHub
                 new_sheets = auto_save_to_github(
                     sheets_edit,
                     f"تعديل حدث في {sheet_name} - الصف {row_idx}"
@@ -2444,7 +2294,6 @@ def edit_event_dynamic(sheets_edit):
                     sheets_edit = new_sheets
                     st.success("✅ تم حفظ التعديلات بنجاح!")
                     
-                    # مسح بيانات الجلسة
                     del st.session_state["editing_dynamic_row"]
                     del st.session_state["editing_dynamic_sheet"]
                     del st.session_state["editing_dynamic_data"]
@@ -2458,21 +2307,19 @@ def edit_event_dynamic(sheets_edit):
                 st.rerun()
 
 # ===============================
-# 🖥 دالة إدارة الشيتات والأعمدة
+# 🖥 دالة إدارة الشيتات والأقسام - المعدلة
 # ===============================
 def manage_sheets_and_columns(sheets_edit):
-    """إدارة الشيتات والأعمدة مع أقسام ديناميكية"""
+    """إدارة الشيتات والأقسام مع أقسام مستقلة"""
     st.subheader("🗂 إدارة الشيتات والأعمدة")
     
     if not sheets_edit:
         st.warning("⚠ لا توجد بيانات متاحة")
         return sheets_edit
     
-    # تحميل الأقسام الحالية
     categories = load_categories()
     
-    # تبويبات للإدارة
-    manage_tabs = st.tabs(["➕ إنشاء شيت جديد", "✏ إدارة أعمدة شيت", "🗑 حذف شيت", "🏭 إدارة الأقسام"])
+    manage_tabs = st.tabs(["➕ إنشاء شيت جديد", "✏ إدارة أعمدة شيت", "🗑 حذف شيت", "🏭 إدارة الأقسام", "📋 إدارة الشيتات في الأقسام"])
     
     with manage_tabs[0]:
         st.markdown("### ➕ إنشاء شيت جديد")
@@ -2482,7 +2329,6 @@ def manage_sheets_and_columns(sheets_edit):
         with col1:
             st.markdown("#### 🏭 معلومات القسم")
             
-            # خيار إضافة قسم جديد أو اختيار من الموجود
             category_option = st.radio(
                 "خيارات القسم:",
                 ["اختيار من الأقسام الموجودة", "إضافة قسم جديد"],
@@ -2490,7 +2336,6 @@ def manage_sheets_and_columns(sheets_edit):
             )
             
             if category_option == "اختيار من الأقسام الموجودة":
-                # استثناء "جميع الأقسام" من قائمة الاختيار
                 available_categories = [cat for cat in categories.keys() if cat != "جميع الأقسام"]
                 
                 if available_categories:
@@ -2506,15 +2351,14 @@ def manage_sheets_and_columns(sheets_edit):
                 st.markdown("##### إضافة قسم جديد")
                 new_category = st.text_input(
                     "اسم القسم الجديد:",
-                    placeholder="مثال: قسم الإنتاج",
+                    placeholder="مثال: سحب أول",
                     key="new_category"
                 )
                 
                 if new_category:
-                    # إضافة القسم الجديد
                     if new_category not in categories:
                         add_category(new_category)
-                        categories = load_categories()  # إعادة تحميل
+                        categories = load_categories()
                         st.success(f"✅ تم إضافة قسم '{new_category}'")
                     selected_category = new_category
                 else:
@@ -2525,21 +2369,11 @@ def manage_sheets_and_columns(sheets_edit):
             
             new_sheet_name = st.text_input(
                 "اسم الشيت الجديد:", 
-                placeholder="مثال: Card10", 
+                placeholder="مثال: سحب1", 
                 key="new_sheet_name",
                 help="أدخل اسم الشيت كما سيظهر في الملف"
             )
             
-            # إضافة أنماط بحث إضافية
-            st.markdown("##### 🔍 أنماط البحث الإضافية")
-            st.caption("كلمات مفتاحية إضافية للتعرف على هذا الشيت")
-            additional_patterns = st.text_input(
-                "أنماط إضافية (مفصولة بفواصل):",
-                placeholder="مثال: ماكينة10, M10, Machine10",
-                key="additional_patterns"
-            )
-            
-            # اختيار نموذج الأعمدة
             st.markdown("##### 📋 نموذج الأعمدة")
             column_template = st.selectbox(
                 "اختر نموذج الأعمدة:",
@@ -2560,29 +2394,22 @@ def manage_sheets_and_columns(sheets_edit):
                     key="custom_columns"
                 )
             
-            # خيارات إضافية
             initial_rows = st.number_input("عدد الصفوف الأولية:", min_value=0, max_value=100, value=0, step=1, key="initial_rows")
         
-        # عرض ملخص
         if selected_category and new_sheet_name:
             st.markdown("---")
             st.markdown("#### 📋 ملخص الشيت الجديد")
-            col_sum1, col_sum2, col_sum3 = st.columns(3)
+            col_sum1, col_sum2 = st.columns(2)
             with col_sum1:
                 st.info(f"**القسم:** {selected_category}")
             with col_sum2:
                 st.info(f"**اسم الشيت:** {new_sheet_name}")
-            with col_sum3:
-                if additional_patterns:
-                    patterns_count = len([p for p in additional_patterns.split(',') if p.strip()])
-                    st.info(f"**أنماط إضافية:** {patterns_count}")
             
             if st.button("🚀 إنشاء الشيت الجديد", key="create_new_sheet_btn", type="primary"):
                 if new_sheet_name in sheets_edit:
                     st.warning(f"⚠ الشيت '{new_sheet_name}' موجود بالفعل!")
                     return sheets_edit
                 
-                # تحديد الأعمدة
                 columns_to_use = APP_CONFIG["DEFAULT_COLUMNS"]
                 
                 if column_template == "نسخ أعمدة من شيت موجود" and source_sheet in sheets_edit:
@@ -2591,19 +2418,15 @@ def manage_sheets_and_columns(sheets_edit):
                 elif column_template == "تحديد أعمدة مخصصة" and custom_columns.strip():
                     columns_to_use = [col.strip() for col in custom_columns.split(',') if col.strip()]
                 
-                # إنشاء الشيت الجديد
                 new_df = pd.DataFrame(columns=columns_to_use)
                 sheets_edit[new_sheet_name] = new_df
                 
-                # إضافة الصفوف الأولية إذا طلب
                 if initial_rows > 0:
                     empty_data = {col: [""] * initial_rows for col in columns_to_use}
                     sheets_edit[new_sheet_name] = pd.DataFrame(empty_data)
                 
-                # إضافة الشيت إلى القسم
-                add_sheet_to_category(selected_category, new_sheet_name, additional_patterns)
+                add_sheet_to_category(selected_category, new_sheet_name)
                 
-                # حفظ في GitHub
                 new_sheets = auto_save_to_github(
                     sheets_edit,
                     f"إنشاء شيت جديد '{new_sheet_name}' في قسم {selected_category}"
@@ -2612,8 +2435,6 @@ def manage_sheets_and_columns(sheets_edit):
                 if new_sheets is not None:
                     sheets_edit = new_sheets
                     st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' في قسم '{selected_category}' بنجاح!")
-                    if additional_patterns:
-                        st.info(f"ℹ️ تم إضافة أنماط البحث: {additional_patterns}")
                     st.rerun()
         else:
             st.warning("⚠ الرجاء اختيار قسم وإدخال اسم للشيت")
@@ -2621,7 +2442,6 @@ def manage_sheets_and_columns(sheets_edit):
     with manage_tabs[1]:
         st.markdown("### ✏ إدارة أعمدة شيت")
         
-        # اختيار الشيت
         selected_sheet = st.selectbox(
             "اختر الشيت:",
             list(sheets_edit.keys()),
@@ -2635,7 +2455,6 @@ def manage_sheets_and_columns(sheets_edit):
             st.markdown(f"**الأعمدة الحالية في '{selected_sheet}':**")
             st.info(f"عدد الأعمدة: {len(columns)}")
             
-            # عرض الأعمدة الحالية
             columns_df = pd.DataFrame({
                 "الرقم": range(1, len(columns) + 1),
                 "اسم العمود": columns,
@@ -2644,7 +2463,6 @@ def manage_sheets_and_columns(sheets_edit):
             
             st.dataframe(columns_df, use_container_width=True)
             
-            # تبويبات العمليات
             column_ops_tabs = st.tabs(["إعادة تسمية عمود", "إضافة عمود", "حذف عمود"])
             
             with column_ops_tabs[0]:
@@ -2748,12 +2566,10 @@ def manage_sheets_and_columns(sheets_edit):
         if sheet_to_delete:
             st.warning(f"⚠ تحذير: سيتم حذف الشيت بشكل دائم!")
             
-            # عرض معلومات الشيت
             if sheet_to_delete in sheets_edit:
                 df_to_delete = sheets_edit[sheet_to_delete]
                 st.info(f"الشيت يحتوي على: {len(df_to_delete)} صف و {len(df_to_delete.columns)} عمود")
             
-            # معرفة الأقسام التي تحتوي على هذا الشيت
             categories_with_sheet = []
             for cat_name, cat_patterns in categories.items():
                 if sheet_to_delete in cat_patterns:
@@ -2766,11 +2582,9 @@ def manage_sheets_and_columns(sheets_edit):
             
             if st.button("🗑️ حذف الشيت نهائياً", key="delete_sheet_btn", disabled=not confirm_delete, type="secondary"):
                 if confirm_delete:
-                    # حذف الشيت من جميع الأقسام
                     for cat_name in categories_with_sheet:
                         remove_sheet_from_category(cat_name, sheet_to_delete)
                     
-                    # حذف الشيت
                     del sheets_edit[sheet_to_delete]
                     
                     new_sheets = auto_save_to_github(
@@ -2786,43 +2600,28 @@ def manage_sheets_and_columns(sheets_edit):
     with manage_tabs[3]:
         st.markdown("### 🏭 إدارة الأقسام")
         
-        # عرض الأقسام الحالية
         st.markdown("#### الأقسام الحالية:")
         
         if categories:
             categories_data = []
             for cat_name, cat_patterns in categories.items():
-                # حساب عدد الشيتات المطابقة
                 matched_sheets = get_sheets_in_category(cat_name, sheets_edit)
                 categories_data.append({
                     "القسم": cat_name,
-                    "أنماط البحث": ", ".join(cat_patterns[:5]) + ("..." if len(cat_patterns) > 5 else ""),
-                    "عدد الشيتات المطابقة": len(matched_sheets),
-                    "نسبة التغطية": f"{len(matched_sheets)/len(sheets_edit)*100:.1f}%" if sheets_edit else "0%"
+                    "الشيتات المضافة": ", ".join(cat_patterns) if cat_patterns else "لا يوجد",
+                    "عدد الشيتات المطابقة": len(matched_sheets)
                 })
             
             categories_df = pd.DataFrame(categories_data)
             st.dataframe(categories_df, use_container_width=True)
             
-            # إضافة قسم جديد
             with st.expander("➕ إضافة قسم جديد", expanded=False):
                 new_category_name = st.text_input("اسم القسم الجديد:", key="new_category_name_manage")
-                initial_patterns = st.text_input(
-                    "أنماط أولية (اختياري، مفصولة بفواصل):", 
-                    placeholder="مثال: Card100, Card101",
-                    key="initial_patterns_manage"
-                )
                 
                 if st.button("إضافة قسم", key="add_category_btn"):
                     if new_category_name:
                         if new_category_name not in categories:
-                            patterns_list = []
-                            if initial_patterns:
-                                patterns_list = [p.strip() for p in initial_patterns.split(',') if p.strip()]
-                            
-                            # إضافة القسم الجديد
-                            categories[new_category_name] = patterns_list
-                            save_categories(categories)
+                            add_category(new_category_name)
                             st.success(f"✅ تم إضافة القسم '{new_category_name}' بنجاح!")
                             st.rerun()
                         else:
@@ -2830,7 +2629,6 @@ def manage_sheets_and_columns(sheets_edit):
                     else:
                         st.warning("⚠ الرجاء إدخال اسم للقسم الجديد")
             
-            # حذف قسم
             with st.expander("🗑️ حذف قسم", expanded=False):
                 categories_to_delete = [cat for cat in categories.keys() if cat != "جميع الأقسام"]
                 
@@ -2844,14 +2642,9 @@ def manage_sheets_and_columns(sheets_edit):
                     if category_to_delete:
                         st.warning(f"⚠ سيتم حذف قسم '{category_to_delete}' بشكل دائم!")
                         
-                        # عرض معلومات القسم
                         patterns_in_cat = categories[category_to_delete]
                         if patterns_in_cat:
-                            st.info(f"أنماط البحث في هذا القسم: {', '.join(patterns_in_cat[:10])}")
-                        
-                        matched_sheets = get_sheets_in_category(category_to_delete, sheets_edit)
-                        if matched_sheets:
-                            st.info(f"هذا القسم يحتوي على {len(matched_sheets)} شيتات: {', '.join(matched_sheets[:5])}")
+                            st.info(f"الشيتات في هذا القسم: {', '.join(patterns_in_cat[:10])}")
                         
                         confirm_delete_cat = st.checkbox("أنا متأكد من حذف هذا القسم", key="confirm_category_delete")
                         
@@ -2866,11 +2659,80 @@ def manage_sheets_and_columns(sheets_edit):
         else:
             st.info("ℹ️ لا توجد أقسام بعد")
     
+    with manage_tabs[4]:
+        st.markdown("### 📋 إدارة الشيتات في الأقسام")
+        st.markdown("هنا يمكنك إضافة أو إزالة الشيتات من الأقسام يدوياً")
+        
+        col_manage1, col_manage2 = st.columns(2)
+        
+        with col_manage1:
+            st.markdown("#### إضافة شيت إلى قسم")
+            
+            available_categories = [cat for cat in categories.keys() if cat != "جميع الأقسام"]
+            
+            if available_categories:
+                target_category = st.selectbox(
+                    "اختر القسم:",
+                    available_categories,
+                    key="target_category_add"
+                )
+                
+                all_sheets_list = list(sheets_edit.keys())
+                sheets_in_category = categories.get(target_category, [])
+                available_sheets = [s for s in all_sheets_list if s not in sheets_in_category]
+                
+                if available_sheets:
+                    sheet_to_add = st.selectbox(
+                        "اختر الشيت للإضافة:",
+                        available_sheets,
+                        key="sheet_to_add"
+                    )
+                    
+                    if st.button("➕ إضافة الشيت إلى القسم", key="add_sheet_to_cat_btn"):
+                        if add_sheet_to_category(target_category, sheet_to_add):
+                            st.success(f"✅ تم إضافة '{sheet_to_add}' إلى قسم '{target_category}'")
+                            st.rerun()
+                        else:
+                            st.error("❌ فشلت الإضافة")
+                else:
+                    st.info(f"ℹ️ كل الشيتات موجودة بالفعل في قسم '{target_category}'")
+            else:
+                st.info("ℹ️ لا توجد أقسام لإضافة شيتات إليها")
+        
+        with col_manage2:
+            st.markdown("#### إزالة شيت من قسم")
+            
+            available_categories_remove = [cat for cat in categories.keys() if cat != "جميع الأقسام"]
+            
+            if available_categories_remove:
+                source_category = st.selectbox(
+                    "اختر القسم:",
+                    available_categories_remove,
+                    key="source_category_remove"
+                )
+                
+                sheets_in_source = categories.get(source_category, [])
+                
+                if sheets_in_source:
+                    sheet_to_remove = st.selectbox(
+                        "اختر الشيت للإزالة:",
+                        sheets_in_source,
+                        key="sheet_to_remove"
+                    )
+                    
+                    if st.button("🗑️ إزالة الشيت من القسم", key="remove_sheet_from_cat_btn"):
+                        if remove_sheet_from_category(source_category, sheet_to_remove):
+                            st.success(f"✅ تم إزالة '{sheet_to_remove}' من قسم '{source_category}'")
+                            st.rerun()
+                        else:
+                            st.error("❌ فشلت الإزالة")
+                else:
+                    st.info(f"ℹ️ لا توجد شيتات في قسم '{source_category}'")
+            else:
+                st.info("ℹ️ لا توجد أقسام لإزالة شيتات منها")
+    
     return sheets_edit
 
-# -------------------------------
-# 🖥 دالة تعديل الشيت مع زر حفظ يدوي
-# -------------------------------
 def edit_sheet_with_save_button(sheets_edit):
     """تعديل بيانات الشيت مع زر حفظ يدوي"""
     st.subheader("✏ تعديل البيانات")
@@ -2888,11 +2750,9 @@ def edit_sheet_with_save_button(sheets_edit):
     
     df = sheets_edit[sheet_name].astype(str).copy()
     
-    # عرض البيانات للتحرير
     st.markdown(f"### 📋 تحرير شيت: {sheet_name}")
     st.info(f"عدد الصفوف: {len(df)} | عدد الأعمدة: {len(df.columns)}")
     
-    # محرر البيانات
     edited_df = st.data_editor(
         df, 
         num_rows="dynamic", 
@@ -2900,24 +2760,19 @@ def edit_sheet_with_save_button(sheets_edit):
         key=f"editor_{sheet_name}"
     )
     
-    # التحقق من وجود تغييرات
     has_changes = not edited_df.equals(df)
     
     if has_changes:
         st.session_state.unsaved_changes[sheet_name] = True
         
-        # عرض إشعار بالتغييرات غير المحفوظة
         st.warning("⚠ لديك تغييرات غير محفوظة!")
         
-        # أزرار الإدارة
         col1, col2 = st.columns(2)
         
         with col1:
             if st.button("💾 حفظ التغييرات", key=f"save_{sheet_name}", type="primary"):
-                # حفظ التغييرات
                 sheets_edit[sheet_name] = edited_df.astype(object)
                 
-                # حفظ تلقائي في GitHub
                 new_sheets = auto_save_to_github(
                     sheets_edit,
                     f"تعديل يدوي في شيت {sheet_name}"
@@ -2928,7 +2783,6 @@ def edit_sheet_with_save_button(sheets_edit):
                     st.session_state.unsaved_changes[sheet_name] = False
                     st.success(f"✅ تم حفظ التغييرات بنجاح!")
                     
-                    # تحديث البيانات الأصلية
                     st.session_state.original_sheets[sheet_name] = edited_df.copy()
                     
                     st.rerun()
@@ -2937,7 +2791,6 @@ def edit_sheet_with_save_button(sheets_edit):
         
         with col2:
             if st.button("↩️ تراجع عن التغييرات", key=f"undo_{sheet_name}"):
-                # استعادة البيانات الأصلية
                 if sheet_name in st.session_state.original_sheets:
                     sheets_edit[sheet_name] = st.session_state.original_sheets[sheet_name].astype(object)
                     st.session_state.unsaved_changes[sheet_name] = False
@@ -2950,7 +2803,6 @@ def edit_sheet_with_save_button(sheets_edit):
             st.info("ℹ️ التغييرات السابقة تم حفظها.")
             st.session_state.unsaved_changes[sheet_name] = False
         
-        # زر لإعادة تحميل البيانات
         if st.button("🔄 تحديث البيانات", key=f"refresh_{sheet_name}"):
             st.rerun()
     
@@ -2959,13 +2811,10 @@ def edit_sheet_with_save_button(sheets_edit):
 # ===============================
 # 🖥 الواجهة الرئيسية المدمجة
 # ===============================
-# إعداد الصفحة
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 
-# إعداد مجلد الصور
 setup_images_folder()
 
-# شريط تسجيل الدخول / معلومات الجلسة في الشريط الجانبي
 with st.sidebar:
     st.header("👤 الجلسة")
     if not st.session_state.get("logged_in"):
@@ -2988,7 +2837,6 @@ with st.sidebar:
         if fetch_from_github_requests():
             st.rerun()
     
-    # زر مسح الكاش
     if st.button("🗑 مسح الكاش", key="clear_cache"):
         try:
             st.cache_data.clear()
@@ -2996,7 +2844,6 @@ with st.sidebar:
         except Exception as e:
             st.error(f"❌ خطأ في مسح الكاش: {e}")
     
-    # زر تحديث الجلسة
     if st.button("🔄 تحديث الجلسة", key="refresh_session"):
         users = load_users()
         username = st.session_state.get("username")
@@ -3008,7 +2855,6 @@ with st.sidebar:
         else:
             st.warning("⚠ لا يمكن تحديث الجلسة.")
     
-    # زر إدارة الصور
     st.markdown("---")
     st.markdown("**📷 إدارة الصور:**")
     if os.path.exists(IMAGES_FOLDER):
@@ -3016,26 +2862,19 @@ with st.sidebar:
         st.caption(f"عدد الصور: {len(image_files)}")
     
     st.markdown("---")
-    # زر لإعادة تسجيل الخروج
     if st.button("🚪 تسجيل الخروج", key="logout_btn"):
         logout_action()
 
-# تحميل الشيتات (عرض وتحليل)
 all_sheets = load_all_sheets()
-
-# تحميل الشيتات للتحرير (dtype=object)
 sheets_edit = load_sheets_for_edit()
 
-# واجهة التبويبات الرئيسية
 st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
 
-# التحقق من الصلاحيات
 username = st.session_state.get("username")
 user_role = st.session_state.get("user_role", "viewer")
 user_permissions = st.session_state.get("user_permissions", ["view"])
 permissions = get_user_permissions(user_role, user_permissions)
 
-# عرض جميع الشيتات المتاحة
 if all_sheets:
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📂 الشيتات المتاحة")
@@ -3047,34 +2886,24 @@ if all_sheets:
         df_info = all_sheets[selected_sheet_info]
         st.sidebar.info(f"**{selected_sheet_info}:** {len(df_info)} صف × {len(df_info.columns)} عمود")
         
-        # عرض عينة من البيانات
         if st.sidebar.checkbox("عرض عينة من البيانات"):
             st.sidebar.dataframe(df_info.head(3), use_container_width=True)
 
-# تحديد التبويبات بناءً على الصلاحيات
-if permissions["can_manage_users"]:  # admin
+if permissions["can_manage_users"]:
     tabs = st.tabs(APP_CONFIG["CUSTOM_TABS"])
-    
-elif permissions["can_edit"]:  # editor
+elif permissions["can_edit"]:
     tabs = st.tabs(["📋 فحص الإيفينت والكوريكشن", "🛠 تعديل وإدارة البيانات"])
-else:  # viewer
+else:
     tabs = st.tabs(["📋 فحص الإيفينت والكوريكشن"])
 
-# -------------------------------
-# Tab: فحص الإيفينت والكوريكشن (لجميع المستخدمين) - المعدل بالكامل مع محركات بحث متعددة
-# -------------------------------
 with tabs[0]:
     st.header("📋 فحص الإيفينت والكوريكشن - بحث متعدد المحركات")
     
     if all_sheets is None:
         st.warning("❗ الملف المحلي غير موجود. استخدم زر التحديث في الشريط الجانبي لتحميل الملف من GitHub.")
     else:
-        # واجهة بحث متعدد المعايير
         check_events_and_corrections(all_sheets)
 
-# -------------------------------
-# Tab: تعديل وإدارة البيانات - للمحررين والمسؤولين فقط
-# -------------------------------
 if permissions["can_edit"] and len(tabs) > 1:
     with tabs[1]:
         st.header("🛠 تعديل وإدارة البيانات")
@@ -3082,10 +2911,8 @@ if permissions["can_edit"] and len(tabs) > 1:
         if sheets_edit is None:
             st.warning("❗ الملف المحلي غير موجود. اضغط تحديث من GitHub في الشريط الجانبي أولًا.")
         else:
-            # عرض جميع الشيتات أولاً
             display_dynamic_sheets(sheets_edit)
             
-            # تبويبات متعددة للإدارة
             tab_names = [
                 "عرض وتعديل شيت",
                 "➕ إضافة حدث جديد",
@@ -3096,23 +2923,18 @@ if permissions["can_edit"] and len(tabs) > 1:
             
             tabs_edit = st.tabs(tab_names)
 
-            # Tab 1: تعديل بيانات وعرض
             with tabs_edit[0]:
                 sheets_edit = edit_sheet_with_save_button(sheets_edit)
 
-            # Tab 2: إضافة حدث جديد
             with tabs_edit[1]:
                 add_new_event_dynamic(sheets_edit)
 
-            # Tab 3: تعديل حدث
             with tabs_edit[2]:
                 edit_event_dynamic(sheets_edit)
             
-            # Tab 4: إدارة الشيتات والأقسام
             with tabs_edit[3]:
                 sheets_edit = manage_sheets_and_columns(sheets_edit)
             
-            # Tab 5: إدارة الصور
             with tabs_edit[4]:
                 st.subheader("📷 إدارة الصور المخزنة")
                 
@@ -3122,7 +2944,6 @@ if permissions["can_edit"] and len(tabs) > 1:
                     if image_files:
                         st.info(f"عدد الصور المخزنة: {len(image_files)}")
                         
-                        # فلترة الصور
                         search_term = st.text_input("🔍 بحث عن صور:", placeholder="ابحث باسم الصورة")
                         
                         filtered_images = image_files
@@ -3130,7 +2951,6 @@ if permissions["can_edit"] and len(tabs) > 1:
                             filtered_images = [img for img in image_files if search_term.lower() in img.lower()]
                             st.caption(f"تم العثور على {len(filtered_images)} صورة")
                         
-                        # عرض الصور
                         images_per_page = 9
                         if "image_page" not in st.session_state:
                             st.session_state.image_page = 0
@@ -3138,7 +2958,6 @@ if permissions["can_edit"] and len(tabs) > 1:
                         total_pages = (len(filtered_images) + images_per_page - 1) // images_per_page
                         
                         if filtered_images:
-                            # أزرار التنقل بين الصفحات
                             col_nav1, col_nav2, col_nav3 = st.columns([1, 2, 1])
                             with col_nav1:
                                 if st.button("⏪ السابق", disabled=st.session_state.image_page == 0):
@@ -3153,7 +2972,6 @@ if permissions["can_edit"] and len(tabs) > 1:
                                     st.session_state.image_page = min(total_pages - 1, st.session_state.image_page + 1)
                                     st.rerun()
                             
-                            # عرض الصور
                             start_idx = st.session_state.image_page * images_per_page
                             end_idx = min(start_idx + images_per_page, len(filtered_images))
                             
@@ -3169,7 +2987,6 @@ if permissions["can_edit"] and len(tabs) > 1:
                                             try:
                                                 st.image(img_path, caption=img_file, use_container_width=True)
                                                 
-                                                # زر حذف الصورة
                                                 if st.button(f"🗑 حذف", key=f"delete_{img_file}"):
                                                     if delete_image_file(img_file):
                                                         st.success(f"✅ تم حذف {img_file}")
@@ -3184,9 +3001,6 @@ if permissions["can_edit"] and len(tabs) > 1:
                 else:
                     st.warning(f"⚠ مجلد الصور {IMAGES_FOLDER} غير موجود")
 
-# -------------------------------
-# Tab: تحليلات متقدمة - للمسؤولين فقط
-# -------------------------------
 if permissions["can_manage_users"] and len(tabs) > 2:
     with tabs[2]:
         st.header("📊 تحليلات متقدمة")
@@ -3196,7 +3010,6 @@ if permissions["can_manage_users"] and len(tabs) > 2:
         else:
             st.markdown("### 📈 تحليلات شاملة")
             
-            # إحصائيات عامة
             total_sheets = len(all_sheets)
             total_rows = sum(len(df) for df in all_sheets.values())
             total_columns = sum(len(df.columns) for df in all_sheets.values())
@@ -3209,7 +3022,6 @@ if permissions["can_manage_users"] and len(tabs) > 2:
             with col_stat3:
                 st.metric("📋 عدد الأعمدة", total_columns)
             
-            # تحليل الشيتات
             st.markdown("### 📊 تحليل الشيتات")
             
             sheets_analysis = []
@@ -3218,10 +3030,8 @@ if permissions["can_manage_users"] and len(tabs) > 2:
                 total_cells = len(df) * len(df.columns)
                 fill_rate = (non_empty / total_cells * 100) if total_cells > 0 else 0
                 
-                # الحصول على تعيين الأعمدة
                 col_mapping = get_column_mapping(df)
                 
-                # استخراج الرقم من اسم الشيت
                 sheet_info = get_sheet_info(sheet_name)
                 
                 sheets_analysis.append({
@@ -3240,7 +3050,6 @@ if permissions["can_manage_users"] and len(tabs) > 2:
             analysis_df = pd.DataFrame(sheets_analysis)
             st.dataframe(analysis_df, use_container_width=True)
             
-            # تحليل التصنيفات
             st.markdown("### 🏭 تحليل الأقسام")
             
             category_stats = get_category_stats(all_sheets)
