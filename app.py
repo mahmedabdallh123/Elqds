@@ -1423,4 +1423,3 @@ if permissions["can_manage_users"] and len(tabs) > 2:
     with tabs[2]:
         st.header("👥 إدارة المستخدمين")
         manage_users()
-احزف اداره مستخدمين وعرض البيانات من كود واديني كود كامل بعد تعديل
