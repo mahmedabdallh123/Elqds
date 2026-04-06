@@ -61,6 +61,9 @@ APP_CONFIG = {
     }
 }
 
+# ملف الهيكل التنظيمي (الأقسام والماكينات والشيتات)
+STRUCTURE_FILE = "structure.json"
+
 # ===============================
 # 🗂 إعدادات الملفات
 # ===============================
@@ -74,6 +77,174 @@ IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
 GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/Elqds/refs/heads/main/users.json"
 GITHUB_REPO_USERS = "mahmedabdallh123/Elqds"
+
+# ===============================
+# 🧩 دوال إدارة الهيكل التنظيمي
+# ===============================
+def load_structure():
+    """تحميل هيكل الأقسام والماكينات والشيتات"""
+    if not os.path.exists(STRUCTURE_FILE):
+        # هيكل افتراضي
+        default_structure = {
+            "departments": {
+                "الميكانيكا": {
+                    "machines": {
+                        "ماكينة 1": {
+                            "sheets": ["Sheet1", "Sheet2"],
+                            "created_at": datetime.now().isoformat()
+                        },
+                        "ماكينة 2": {
+                            "sheets": ["Sheet3"],
+                            "created_at": datetime.now().isoformat()
+                        }
+                    },
+                    "created_at": datetime.now().isoformat()
+                },
+                "الكهرباء": {
+                    "machines": {
+                        "محول 1": {
+                            "sheets": ["Sheet4"],
+                            "created_at": datetime.now().isoformat()
+                        }
+                    },
+                    "created_at": datetime.now().isoformat()
+                },
+                "الإنتاج": {
+                    "machines": {
+                        "خط إنتاج 1": {
+                            "sheets": ["Sheet5"],
+                            "created_at": datetime.now().isoformat()
+                        }
+                    },
+                    "created_at": datetime.now().isoformat()
+                }
+            }
+        }
+        with open(STRUCTURE_FILE, "w", encoding="utf-8") as f:
+            json.dump(default_structure, f, indent=4, ensure_ascii=False)
+        return default_structure
+    
+    try:
+        with open(STRUCTURE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {"departments": {}}
+
+def save_structure(structure):
+    """حفظ هيكل الأقسام والماكينات والشيتات"""
+    try:
+        with open(STRUCTURE_FILE, "w", encoding="utf-8") as f:
+            json.dump(structure, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        st.error(f"❌ خطأ في حفظ الهيكل: {e}")
+        return False
+
+def add_department(structure, dept_name):
+    """إضافة قسم جديد"""
+    if dept_name in structure["departments"]:
+        return False, "القسم موجود بالفعل"
+    
+    structure["departments"][dept_name] = {
+        "machines": {},
+        "created_at": datetime.now().isoformat()
+    }
+    save_structure(structure)
+    return True, f"تم إضافة القسم {dept_name} بنجاح"
+
+def delete_department(structure, dept_name):
+    """حذف قسم (مع جميع ماكيناته وشيتاته)"""
+    if dept_name not in structure["departments"]:
+        return False, "القسم غير موجود"
+    
+    del structure["departments"][dept_name]
+    save_structure(structure)
+    return True, f"تم حذف القسم {dept_name} بنجاح"
+
+def add_machine(structure, dept_name, machine_name):
+    """إضافة ماكينة جديدة في قسم معين"""
+    if dept_name not in structure["departments"]:
+        return False, "القسم غير موجود"
+    
+    if machine_name in structure["departments"][dept_name]["machines"]:
+        return False, "الماكينة موجودة بالفعل في هذا القسم"
+    
+    structure["departments"][dept_name]["machines"][machine_name] = {
+        "sheets": [],
+        "created_at": datetime.now().isoformat()
+    }
+    save_structure(structure)
+    return True, f"تم إضافة الماكينة {machine_name} في قسم {dept_name}"
+
+def delete_machine(structure, dept_name, machine_name):
+    """حذف ماكينة"""
+    if dept_name not in structure["departments"]:
+        return False, "القسم غير موجود"
+    
+    if machine_name not in structure["departments"][dept_name]["machines"]:
+        return False, "الماكينة غير موجودة"
+    
+    del structure["departments"][dept_name]["machines"][machine_name]
+    save_structure(structure)
+    return True, f"تم حذف الماكينة {machine_name} بنجاح"
+
+def add_sheet_to_machine(structure, dept_name, machine_name, sheet_name, all_sheets=None):
+    """إضافة شيت جديد لماكينة معينة"""
+    if dept_name not in structure["departments"]:
+        return False, "القسم غير موجود"
+    
+    if machine_name not in structure["departments"][dept_name]["machines"]:
+        return False, "الماكينة غير موجودة"
+    
+    if sheet_name in structure["departments"][dept_name]["machines"][machine_name]["sheets"]:
+        return False, "الشيت موجود بالفعل في هذه الماكينة"
+    
+    structure["departments"][dept_name]["machines"][machine_name]["sheets"].append(sheet_name)
+    save_structure(structure)
+    return True, f"تم إضافة الشيت {sheet_name} إلى الماكينة {machine_name}"
+
+def delete_sheet_from_machine(structure, dept_name, machine_name, sheet_name):
+    """حذف شيت من ماكينة"""
+    if dept_name not in structure["departments"]:
+        return False, "القسم غير موجود"
+    
+    if machine_name not in structure["departments"][dept_name]["machines"]:
+        return False, "الماكينة غير موجودة"
+    
+    if sheet_name not in structure["departments"][dept_name]["machines"][machine_name]["sheets"]:
+        return False, "الشيت غير موجود في هذه الماكينة"
+    
+    structure["departments"][dept_name]["machines"][machine_name]["sheets"].remove(sheet_name)
+    save_structure(structure)
+    return True, f"تم حذف الشيت {sheet_name} من الماكينة {machine_name}"
+
+def create_new_sheet_in_excel(sheets_edit, new_sheet_name, template_columns=None):
+    """إنشاء شيت جديد في ملف Excel"""
+    if template_columns is None:
+        # أعمدة افتراضية للشيت الجديد
+        template_columns = ["Date", "Event", "Correction", "Servised by", "Tones", "Images", "Notes"]
+    
+    new_df = pd.DataFrame(columns=template_columns)
+    sheets_edit[new_sheet_name] = new_df
+    return sheets_edit
+
+def get_machine_sheets(structure, dept_name, machine_name):
+    """الحصول على قائمة شيتات ماكينة معينة"""
+    if dept_name in structure["departments"] and machine_name in structure["departments"][dept_name]["machines"]:
+        return structure["departments"][dept_name]["machines"][machine_name]["sheets"]
+    return []
+
+def get_all_machines(structure):
+    """الحصول على جميع الماكينات مع أقسامها"""
+    machines = []
+    for dept_name, dept_data in structure["departments"].items():
+        for machine_name in dept_data["machines"].keys():
+            machines.append({
+                "department": dept_name,
+                "machine": machine_name,
+                "sheets": dept_data["machines"][machine_name]["sheets"]
+            })
+    return machines
 
 # -------------------------------
 # 🧩 دوال مساعدة للصور
@@ -670,7 +841,8 @@ def get_user_permissions(user_role, user_permissions):
             "can_edit": True,
             "can_manage_users": True,
             "can_see_tech_support": True,
-            "can_manage_sheets": True
+            "can_manage_sheets": True,
+            "can_manage_structure": True
         }
     
     elif user_role == "editor":
@@ -679,7 +851,8 @@ def get_user_permissions(user_role, user_permissions):
             "can_edit": True,
             "can_manage_users": False,
             "can_see_tech_support": False,
-            "can_manage_sheets": True
+            "can_manage_sheets": True,
+            "can_manage_structure": False
         }
     
     else:
@@ -688,7 +861,8 @@ def get_user_permissions(user_role, user_permissions):
             "can_edit": "edit" in user_permissions or "all" in user_permissions,
             "can_manage_users": "manage_users" in user_permissions or "all" in user_permissions,
             "can_see_tech_support": "tech_support" in user_permissions or "all" in user_permissions,
-            "can_manage_sheets": "manage_sheets" in user_permissions or "all" in user_permissions
+            "can_manage_sheets": "manage_sheets" in user_permissions or "all" in user_permissions,
+            "can_manage_structure": "manage_structure" in user_permissions or "all" in user_permissions
         }
 
 # ===============================
@@ -1179,13 +1353,66 @@ def manage_images():
 # ===============================
 # 🖥 دالة عرض البيانات (بدون فحص)
 # ===============================
-def display_data(all_sheets):
-    """عرض البيانات بشكل بسيط"""
+def display_data_organized(all_sheets, structure):
+    """عرض البيانات بشكل منظم حسب الأقسام والماكينات"""
     if not all_sheets:
         st.error("❌ لم يتم تحميل أي شيتات.")
         return
     
-    st.subheader("📋 عرض البيانات")
+    st.subheader("📋 عرض البيانات (حسب الأقسام والماكينات)")
+    
+    if not structure["departments"]:
+        st.info("ℹ️ لا توجد أقسام. قم بإضافة أقسام وماكينات أولاً.")
+        return
+    
+    # إنشاء تبويبات للأقسام
+    dept_tabs = st.tabs(list(structure["departments"].keys()))
+    
+    for i, (dept_name, dept_data) in enumerate(structure["departments"].items()):
+        with dept_tabs[i]:
+            st.markdown(f"## 🏭 قسم: {dept_name}")
+            
+            if not dept_data["machines"]:
+                st.info(f"ℹ️ لا توجد ماكينات في قسم {dept_name}")
+                continue
+            
+            # إنشاء تبويبات للماكينات داخل القسم
+            machine_tabs = st.tabs(list(dept_data["machines"].keys()))
+            
+            for j, (machine_name, machine_data) in enumerate(dept_data["machines"].items()):
+                with machine_tabs[j]:
+                    st.markdown(f"### 🔧 ماكينة: {machine_name}")
+                    
+                    sheets_list = machine_data["sheets"]
+                    
+                    if not sheets_list:
+                        st.info(f"ℹ️ لا توجد شيتات مرتبطة بهذه الماكينة")
+                        continue
+                    
+                    # عرض الشيتات الخاصة بالماكينة
+                    for sheet_name in sheets_list:
+                        if sheet_name in all_sheets:
+                            df = all_sheets[sheet_name]
+                            
+                            with st.expander(f"📄 {sheet_name} - ({len(df)} صف)", expanded=False):
+                                st.info(f"عدد الصفوف: {len(df)} | عدد الأعمدة: {len(df.columns)}")
+                                
+                                display_df = df.copy()
+                                for col in display_df.columns:
+                                    if display_df[col].dtype == 'object':
+                                        display_df[col] = display_df[col].astype(str).apply(lambda x: x[:100] + "..." if len(x) > 100 else x)
+                                
+                                st.dataframe(display_df, use_container_width=True, height=300)
+                        else:
+                            st.warning(f"⚠ الشيت '{sheet_name}' غير موجود في ملف Excel")
+
+def display_data_simple(all_sheets):
+    """عرض البيانات بشكل بسيط (جميع الشيتات)"""
+    if not all_sheets:
+        st.error("❌ لم يتم تحميل أي شيتات.")
+        return
+    
+    st.subheader("📋 عرض البيانات (جميع الشيتات)")
     
     sheet_tabs = st.tabs(list(all_sheets.keys()))
     
@@ -1238,7 +1465,7 @@ def manage_users():
         new_role = st.selectbox("الدور:", ["viewer", "editor", "admin"], key="new_role")
         new_permissions = st.multiselect(
             "الصلاحيات (لغير الأدمن):",
-            ["view", "edit", "manage_sheets", "tech_support", "manage_users"],
+            ["view", "edit", "manage_sheets", "tech_support", "manage_users", "manage_structure"],
             default=["view"],
             key="new_permissions"
         )
@@ -1279,6 +1506,262 @@ def manage_users():
                 st.error("❌ فشل حذف المستخدم")
     else:
         st.info("ℹ️ لا توجد مستخدمين للحذف غير المشرف")
+
+# ===============================
+# 🖥 دالة إدارة الهيكل التنظيمي (الأقسام والماكينات والشيتات)
+# ===============================
+def manage_structure(sheets_edit):
+    """إدارة الأقسام والماكينات والشيتات"""
+    st.subheader("🏗️ إدارة الهيكل التنظيمي (الأقسام - الماكينات - الشيتات)")
+    
+    structure = load_structure()
+    
+    # تبويبات منفصلة للإدارة
+    tab1, tab2, tab3, tab4 = st.tabs(["🏭 إدارة الأقسام", "🔧 إدارة الماكينات", "📄 إدارة الشيتات", "📊 عرض الهيكل"])
+    
+    # ==================== تبويب إدارة الأقسام ====================
+    with tab1:
+        st.markdown("### 🏭 إدارة الأقسام")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### ➕ إضافة قسم جديد")
+            new_dept = st.text_input("اسم القسم:", key="new_dept")
+            if st.button("➕ إضافة قسم", key="add_dept_btn"):
+                if new_dept:
+                    success, msg = add_department(structure, new_dept)
+                    if success:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+                else:
+                    st.warning("⚠ الرجاء إدخال اسم القسم")
+        
+        with col2:
+            st.markdown("#### 🗑️ حذف قسم")
+            depts_list = list(structure["departments"].keys())
+            if depts_list:
+                dept_to_delete = st.selectbox("اختر القسم للحذف:", depts_list, key="dept_to_delete")
+                if st.button("🗑️ حذف القسم", key="delete_dept_btn"):
+                    success, msg = delete_department(structure, dept_to_delete)
+                    if success:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            else:
+                st.info("ℹ️ لا توجد أقسام للحذف")
+        
+        # عرض الأقسام الحالية
+        st.markdown("#### 📋 الأقسام الحالية")
+        if structure["departments"]:
+            depts_data = []
+            for dept_name, dept_data in structure["departments"].items():
+                depts_data.append({
+                    "القسم": dept_name,
+                    "عدد الماكينات": len(dept_data["machines"]),
+                    "تاريخ الإنشاء": dept_data.get("created_at", "").split("T")[0] if "T" in dept_data.get("created_at", "") else dept_data.get("created_at", "")
+                })
+            st.dataframe(pd.DataFrame(depts_data), use_container_width=True)
+        else:
+            st.info("ℹ️ لا توجد أقسام حالياً")
+    
+    # ==================== تبويب إدارة الماكينات ====================
+    with tab2:
+        st.markdown("### 🔧 إدارة الماكينات")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### ➕ إضافة ماكينة جديدة")
+            depts_list = list(structure["departments"].keys())
+            if depts_list:
+                selected_dept = st.selectbox("اختر القسم:", depts_list, key="machine_dept")
+                new_machine = st.text_input("اسم الماكينة:", key="new_machine")
+                if st.button("➕ إضافة ماكينة", key="add_machine_btn"):
+                    if new_machine:
+                        success, msg = add_machine(structure, selected_dept, new_machine)
+                        if success:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                    else:
+                        st.warning("⚠ الرجاء إدخال اسم الماكينة")
+            else:
+                st.warning("⚠ الرجاء إضافة قسم أولاً")
+        
+        with col2:
+            st.markdown("#### 🗑️ حذف ماكينة")
+            if depts_list:
+                dept_for_delete = st.selectbox("اختر القسم:", depts_list, key="delete_machine_dept")
+                machines_list = list(structure["departments"].get(dept_for_delete, {}).get("machines", {}).keys())
+                if machines_list:
+                    machine_to_delete = st.selectbox("اختر الماكينة للحذف:", machines_list, key="machine_to_delete")
+                    if st.button("🗑️ حذف الماكينة", key="delete_machine_btn"):
+                        success, msg = delete_machine(structure, dept_for_delete, machine_to_delete)
+                        if success:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                else:
+                    st.info("ℹ️ لا توجد ماكينات في هذا القسم")
+            else:
+                st.info("ℹ️ لا توجد أقسام")
+        
+        # عرض الماكينات الحالية
+        st.markdown("#### 📋 الماكينات الحالية")
+        if structure["departments"]:
+            machines_data = []
+            for dept_name, dept_data in structure["departments"].items():
+                for machine_name, machine_data in dept_data["machines"].items():
+                    machines_data.append({
+                        "القسم": dept_name,
+                        "الماكينة": machine_name,
+                        "عدد الشيتات": len(machine_data["sheets"]),
+                        "تاريخ الإنشاء": machine_data.get("created_at", "").split("T")[0] if "T" in machine_data.get("created_at", "") else machine_data.get("created_at", "")
+                    })
+            if machines_data:
+                st.dataframe(pd.DataFrame(machines_data), use_container_width=True)
+            else:
+                st.info("ℹ️ لا توجد ماكينات حالياً")
+        else:
+            st.info("ℹ️ لا توجد أقسام")
+    
+    # ==================== تبويب إدارة الشيتات ====================
+    with tab3:
+        st.markdown("### 📄 إدارة الشيتات")
+        
+        # التأكد من وجود sheets_edit
+        if sheets_edit is None:
+            st.warning("⚠ لا يمكن تحميل ملف Excel. تأكد من وجود الملف.")
+        else:
+            all_sheet_names = list(sheets_edit.keys())
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 🔗 ربط شيت موجود بماكينة")
+                if depts_list:
+                    selected_dept_link = st.selectbox("اختر القسم:", depts_list, key="link_sheet_dept")
+                    machines_list_link = list(structure["departments"].get(selected_dept_link, {}).get("machines", {}).keys())
+                    
+                    if machines_list_link:
+                        selected_machine_link = st.selectbox("اختر الماكينة:", machines_list_link, key="link_sheet_machine")
+                        
+                        if all_sheet_names:
+                            selected_sheet = st.selectbox("اختر الشيت للربط:", all_sheet_names, key="sheet_to_link")
+                            
+                            current_sheets = get_machine_sheets(structure, selected_dept_link, selected_machine_link)
+                            if selected_sheet in current_sheets:
+                                st.info(f"ℹ️ الشيت '{selected_sheet}' مرتبط بالفعل بهذه الماكينة")
+                            else:
+                                if st.button("🔗 ربط الشيت", key="link_sheet_btn"):
+                                    success, msg = add_sheet_to_machine(structure, selected_dept_link, selected_machine_link, selected_sheet)
+                                    if success:
+                                        st.success(msg)
+                                        st.rerun()
+                                    else:
+                                        st.error(msg)
+                        else:
+                            st.warning("⚠ لا توجد شيتات في ملف Excel")
+                    else:
+                        st.warning(f"⚠ لا توجد ماكينات في قسم {selected_dept_link}")
+                else:
+                    st.warning("⚠ الرجاء إضافة قسم أولاً")
+            
+            with col2:
+                st.markdown("#### 🗑️ إلغاء ربط شيت من ماكينة")
+                if depts_list:
+                    selected_dept_unlink = st.selectbox("اختر القسم:", depts_list, key="unlink_sheet_dept")
+                    machines_list_unlink = list(structure["departments"].get(selected_dept_unlink, {}).get("machines", {}).keys())
+                    
+                    if machines_list_unlink:
+                        selected_machine_unlink = st.selectbox("اختر الماكينة:", machines_list_unlink, key="unlink_sheet_machine")
+                        
+                        current_sheets = get_machine_sheets(structure, selected_dept_unlink, selected_machine_unlink)
+                        if current_sheets:
+                            sheet_to_unlink = st.selectbox("اختر الشيت لإلغاء الربط:", current_sheets, key="sheet_to_unlink")
+                            if st.button("🗑️ إلغاء الربط", key="unlink_sheet_btn"):
+                                success, msg = delete_sheet_from_machine(structure, selected_dept_unlink, selected_machine_unlink, sheet_to_unlink)
+                                if success:
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
+                        else:
+                            st.info("ℹ️ لا توجد شيتات مرتبطة بهذه الماكينة")
+                    else:
+                        st.warning(f"⚠ لا توجد ماكينات في قسم {selected_dept_unlink}")
+                else:
+                    st.warning("⚠ الرجاء إضافة قسم أولاً")
+            
+            st.markdown("---")
+            st.markdown("#### ➕ إنشاء شيت جديد")
+            
+            col_create1, col_create2 = st.columns(2)
+            
+            with col_create1:
+                new_sheet_name = st.text_input("اسم الشيت الجديد:", key="new_sheet_name")
+            
+            with col_create2:
+                default_columns = st.text_area(
+                    "الأعمدة الافتراضية (كل عمود في سطر جديد):",
+                    value="Date\nEvent\nCorrection\nServised by\nTones\nImages\nNotes",
+                    key="new_sheet_columns",
+                    height=150
+                )
+            
+            if st.button("➕ إنشاء شيت جديد", key="create_sheet_btn"):
+                if new_sheet_name:
+                    if new_sheet_name in sheets_edit:
+                        st.warning(f"⚠ الشيت '{new_sheet_name}' موجود بالفعل")
+                    else:
+                        columns_list = [col.strip() for col in default_columns.split("\n") if col.strip()]
+                        if not columns_list:
+                            columns_list = ["Date", "Event", "Correction", "Servised by", "Tones", "Images", "Notes"]
+                        
+                        sheets_edit = create_new_sheet_in_excel(sheets_edit, new_sheet_name, columns_list)
+                        
+                        # حفظ التغييرات
+                        new_sheets = auto_save_to_github(
+                            sheets_edit,
+                            f"إنشاء شيت جديد: {new_sheet_name}"
+                        )
+                        
+                        if new_sheets is not None:
+                            sheets_edit = new_sheets
+                            st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' بنجاح")
+                            st.rerun()
+                        else:
+                            st.error("❌ فشل إنشاء الشيت")
+                else:
+                    st.warning("⚠ الرجاء إدخال اسم الشيت")
+    
+    # ==================== تبويب عرض الهيكل ====================
+    with tab4:
+        st.markdown("### 📊 عرض الهيكل التنظيمي")
+        
+        if structure["departments"]:
+            for dept_name, dept_data in structure["departments"].items():
+                with st.expander(f"🏭 {dept_name}", expanded=True):
+                    if dept_data["machines"]:
+                        for machine_name, machine_data in dept_data["machines"].items():
+                            st.markdown(f"**🔧 {machine_name}**")
+                            if machine_data["sheets"]:
+                                for sheet_name in machine_data["sheets"]:
+                                    st.markdown(f"  - 📄 {sheet_name}")
+                            else:
+                                st.markdown(f"  - *لا توجد شيتات مرتبطة*")
+                    else:
+                        st.markdown("*لا توجد ماكينات*")
+        else:
+            st.info("ℹ️ لا توجد أقسام حالياً")
+    
+    return sheets_edit
 
 # ===============================
 # 🖥 دالة إدارة البيانات (بدون أقسام وشيتات)
@@ -1374,6 +1857,7 @@ with st.sidebar:
 
 all_sheets = load_all_sheets()
 sheets_edit = load_sheets_for_edit()
+structure = load_structure()
 
 st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
 
@@ -1397,29 +1881,62 @@ if all_sheets:
             st.sidebar.dataframe(df_info.head(3), use_container_width=True)
 
 # تحديد التبويبات بناءً على الصلاحيات
-if permissions["can_manage_users"]:
-    tabs = st.tabs(APP_CONFIG["CUSTOM_TABS"] + ["👥 إدارة المستخدمين"])
-elif permissions["can_edit"]:
-    tabs = st.tabs(["📋 عرض البيانات", "🛠 تعديل وإدارة البيانات"])
-else:
-    tabs = st.tabs(["📋 عرض البيانات"])
+tabs_list = []
 
-# تبويب عرض البيانات
-with tabs[0]:
-    st.header("📋 عرض البيانات")
+# تبويب عرض البيانات (بشكل منظم)
+tabs_list.append("📋 عرض البيانات (منظم)")
+
+# تبويب عرض البيانات (جميع الشيتات)
+tabs_list.append("📋 عرض البيانات (جميع الشيتات)")
+
+# تبويب تعديل البيانات
+if permissions["can_edit"]:
+    tabs_list.append("🛠 تعديل وإدارة البيانات")
+
+# تبويب إدارة الهيكل التنظيمي
+if permissions["can_manage_structure"]:
+    tabs_list.append("🏗️ إدارة الأقسام والماكينات")
+
+# تبويب إدارة المستخدمين
+if permissions["can_manage_users"]:
+    tabs_list.append("👥 إدارة المستخدمين")
+
+tabs = st.tabs(tabs_list)
+
+tab_index = 0
+
+# تبويب عرض البيانات (منظم)
+with tabs[tab_index]:
+    st.header("📋 عرض البيانات حسب الأقسام والماكينات")
+    display_data_organized(all_sheets, structure)
+tab_index += 1
+
+# تبويب عرض البيانات (جميع الشيتات)
+with tabs[tab_index]:
+    st.header("📋 عرض البيانات (جميع الشيتات)")
     if all_sheets is None:
         st.warning("❗ الملف المحلي غير موجود. استخدم زر التحديث في الشريط الجانبي لتحميل الملف من GitHub.")
     else:
-        display_data(all_sheets)
+        display_data_simple(all_sheets)
+tab_index += 1
 
 # تبويب تعديل البيانات
-if permissions["can_edit"] and len(tabs) > 1:
-    with tabs[1]:
+if permissions["can_edit"] and tab_index < len(tabs):
+    with tabs[tab_index]:
         st.header("🛠 تعديل وإدارة البيانات")
         sheets_edit = manage_data_edit(sheets_edit)
+    tab_index += 1
 
-# تبويب إدارة المستخدمين (للمشرف فقط)
-if permissions["can_manage_users"] and len(tabs) > 2:
-    with tabs[2]:
+# تبويب إدارة الهيكل التنظيمي
+if permissions["can_manage_structure"] and tab_index < len(tabs):
+    with tabs[tab_index]:
+        st.header("🏗️ إدارة الأقسام والماكينات")
+        sheets_edit = manage_structure(sheets_edit)
+    tab_index += 1
+
+# تبويب إدارة المستخدمين
+if permissions["can_manage_users"] and tab_index < len(tabs):
+    with tabs[tab_index]:
         st.header("👥 إدارة المستخدمين")
         manage_users()
+    tab_index += 1
