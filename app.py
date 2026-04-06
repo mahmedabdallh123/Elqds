@@ -25,8 +25,8 @@ APP_CONFIG = {
     "APP_ICON": "🏭",
     "REPO_NAME": "mahmedabdallh123/Elqds",
     "BRANCH": "main",
-    "FILE_PATH": "l9.xlsx",
-    "LOCAL_FILE": "l9.xlsx",
+    "FILE_PATH": "l4.xlsx",
+    "LOCAL_FILE": "l4.xlsx",
     "MAX_ACTIVE_USERS": 5,
     "SESSION_DURATION_MINUTES": 60,
     "IMAGES_FOLDER": "event_images",
@@ -191,6 +191,7 @@ def logout_action():
 def login_ui():
     users = load_users()
     state = cleanup_sessions(load_state())
+    
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
         st.session_state.username = None
@@ -198,41 +199,63 @@ def login_ui():
         st.session_state.user_permissions = []
 
     st.title(f"{APP_CONFIG['APP_ICON']} تسجيل الدخول - {APP_CONFIG['APP_TITLE']}")
+    
     username_input = st.selectbox("👤 اختر المستخدم", list(users.keys()))
     password = st.text_input("🔑 كلمة المرور", type="password")
+    
     active_users = [u for u, v in state.items() if v.get("active")]
     active_count = len(active_users)
     st.caption(f"🔒 المستخدمون النشطون: {active_count} / {MAX_ACTIVE_USERS}")
 
-    if not st.session_state.logged_in:
-        if st.button("تسجيل الدخول"):
-            current_users = load_users()
-            if username_input in current_users and current_users[username_input]["password"] == password:
-                if username_input not in active_users and active_count < MAX_ACTIVE_USERS:
-                    state[username_input] = {"active": True, "login_time": datetime.now().isoformat()}
-                    save_state(state)
-                    st.session_state.logged_in = True
-                    st.session_state.username = username_input
-                    st.session_state.user_role = current_users[username_input].get("role", "viewer")
-                    st.session_state.user_permissions = current_users[username_input].get("permissions", ["view"])
-                    st.success(f"✅ تم تسجيل الدخول: {username_input}")
-                    st.rerun()
-                else:
-                    st.error("🚫 لا يمكن تسجيل الدخول")
+    if st.button("تسجيل الدخول", key="login_button"):
+        current_users = load_users()
+        
+        # التحقق من صحة اسم المستخدم وكلمة المرور
+        if username_input in current_users:
+            if current_users[username_input]["password"] == password:
+                # التحقق من عدم وجود جلسة نشطة لنفس المستخدم
+                if username_input in active_users:
+                    st.error("⚠ هذا المستخدم مسجل دخول بالفعل من جهاز آخر")
+                    return False
+                
+                # التحقق من عدم تجاوز الحد الأقصى
+                if active_count >= MAX_ACTIVE_USERS and username_input != "admin":
+                    st.error(f"🚫 الحد الأقصى للمستخدمين المتصلين ({MAX_ACTIVE_USERS}) تم الوصول إليه")
+                    return False
+                
+                # تسجيل الدخول
+                state[username_input] = {"active": True, "login_time": datetime.now().isoformat()}
+                save_state(state)
+                
+                st.session_state.logged_in = True
+                st.session_state.username = username_input
+                st.session_state.user_role = current_users[username_input].get("role", "viewer")
+                st.session_state.user_permissions = current_users[username_input].get("permissions", ["view"])
+                
+                st.success(f"✅ تم تسجيل الدخول بنجاح! مرحباً {username_input}")
+                st.rerun()
             else:
                 st.error("❌ كلمة المرور غير صحيحة")
+        else:
+            st.error("❌ اسم المستخدم غير موجود")
         return False
-    else:
+    
+    # إذا كان المستخدم مسجل الدخول بالفعل
+    if st.session_state.logged_in:
         username = st.session_state.username
         user_role = st.session_state.user_role
-        st.success(f"✅ مسجل الدخول: {username} ({user_role})")
+        st.success(f"✅ مسجل الدخول كـ: {username} ({user_role})")
+        
         rem = remaining_time(state, username)
         if rem:
             mins, secs = divmod(int(rem.total_seconds()), 60)
             st.info(f"⏳ الوقت المتبقي: {mins:02d}:{secs:02d}")
-        if st.button("🚪 تسجيل الخروج"):
+        
+        if st.button("🚪 تسجيل الخروج", key="logout_button"):
             logout_action()
         return True
+    
+    return False
 
 # ===============================
 # دوال ملف Excel
@@ -365,6 +388,8 @@ def display_data(all_sheets):
 
 def edit_sheet_with_save_button(sheets_edit):
     st.subheader("✏ تعديل البيانات")
+    if not sheets_edit:
+        return sheets_edit
     sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_sheet")
     df = sheets_edit[sheet_name].astype(str).copy()
     st.markdown(f"### 📋 تحرير: {sheet_name}")
@@ -446,19 +471,49 @@ setup_images_folder()
 # الشريط الجانبي
 with st.sidebar:
     st.header("👤 الجلسة")
-    if not st.session_state.get("logged_in"):
-        if not login_ui():
-            st.stop()
+    
+    # عرض واجهة تسجيل الدخول في الشريط الجانبي
+    users = load_users()
+    state = cleanup_sessions(load_state())
+    
+    if not st.session_state.get("logged_in", False):
+        username_input = st.selectbox("👤 المستخدم", list(users.keys()), key="sidebar_user")
+        password_input = st.text_input("🔑 كلمة المرور", type="password", key="sidebar_pass")
+        
+        if st.button("🔐 تسجيل الدخول", key="sidebar_login"):
+            if username_input in users and users[username_input]["password"] == password_input:
+                # التحقق من الجلسات النشطة
+                active_users = [u for u, v in state.items() if v.get("active")]
+                if username_input not in active_users or username_input == "admin":
+                    state[username_input] = {"active": True, "login_time": datetime.now().isoformat()}
+                    save_state(state)
+                    st.session_state.logged_in = True
+                    st.session_state.username = username_input
+                    st.session_state.user_role = users[username_input].get("role", "viewer")
+                    st.session_state.user_permissions = users[username_input].get("permissions", ["view"])
+                    st.success(f"✅ مرحباً {username_input}")
+                    st.rerun()
+                else:
+                    st.error("⚠ هذا المستخدم مسجل دخول بالفعل")
+            else:
+                st.error("❌ اسم المستخدم أو كلمة المرور غير صحيحة")
+        
+        st.stop()
     else:
-        state = cleanup_sessions(load_state())
         username = st.session_state.username
         user_role = st.session_state.user_role
+        st.success(f"✅ مرحباً {username} ({user_role})")
+        
         rem = remaining_time(state, username)
         if rem:
             mins, secs = divmod(int(rem.total_seconds()), 60)
-            st.success(f"👋 {username} | {user_role} | ⏳ {mins:02d}:{secs:02d}")
+            st.info(f"⏳ الوقت المتبقي: {mins:02d}:{secs:02d}")
+        
+        if st.button("🚪 تسجيل الخروج", key="sidebar_logout"):
+            logout_action()
     
     st.markdown("---")
+    
     if st.button("🔄 تحديث الملف", key="refresh_github"):
         if fetch_from_github_requests():
             st.rerun()
@@ -466,10 +521,6 @@ with st.sidebar:
     if st.button("🗑 مسح الكاش", key="clear_cache"):
         st.cache_data.clear()
         st.rerun()
-    
-    st.markdown("---")
-    if st.button("🚪 تسجيل الخروج", key="logout_btn"):
-        logout_action()
 
 # تحميل البيانات
 all_sheets = load_all_sheets()
@@ -484,28 +535,30 @@ user_permissions = st.session_state.get("user_permissions", ["view"])
 permissions = get_user_permissions(user_role, user_permissions)
 
 # عرض معلومات الشيتات في sidebar
-if all_sheets:
+if all_sheets and st.session_state.get("logged_in"):
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📂 الشيتات")
-    sheet_list = list(all_sheets.keys())
-    for sheet in sheet_list:
+    for sheet in list(all_sheets.keys()):
         df_info = all_sheets[sheet]
         st.sidebar.caption(f"📄 {sheet}: {len(df_info)} صف")
 
-# التبويبات الرئيسية
-if permissions["can_edit"]:
-    tabs = st.tabs(["📋 عرض البيانات", "🛠 تعديل البيانات"])
-else:
-    tabs = st.tabs(["📋 عرض البيانات"])
-
-with tabs[0]:
-    st.header("📋 عرض البيانات")
-    if all_sheets is None:
-        st.warning("❗ الملف غير موجود. استخدم زر التحديث")
+# التبويبات الرئيسية (تظهر فقط بعد تسجيل الدخول)
+if st.session_state.get("logged_in", False):
+    if permissions["can_edit"]:
+        tabs = st.tabs(["📋 عرض البيانات", "🛠 تعديل البيانات"])
     else:
-        display_data(all_sheets)
+        tabs = st.tabs(["📋 عرض البيانات"])
 
-if permissions["can_edit"] and len(tabs) > 1:
-    with tabs[1]:
-        st.header("🛠 تعديل البيانات")
-        sheets_edit = manage_data_edit(sheets_edit)
+    with tabs[0]:
+        st.header("📋 عرض البيانات")
+        if all_sheets is None:
+            st.warning("❗ الملف غير موجود. استخدم زر التحديث")
+        else:
+            display_data(all_sheets)
+
+    if permissions["can_edit"] and len(tabs) > 1:
+        with tabs[1]:
+            st.header("🛠 تعديل البيانات")
+            sheets_edit = manage_data_edit(sheets_edit)
+else:
+    st.info("👈 الرجاء تسجيل الدخول من الشريط الجانبي")
