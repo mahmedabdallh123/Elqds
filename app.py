@@ -37,17 +37,11 @@ APP_CONFIG = {
     
     # إعدادات الواجهة
     "SHOW_TECH_SUPPORT_TO_ALL": True,
-    "CUSTOM_TABS": ["📋 عرض البيانات", "🛠 تعديل وإدارة البيانات"],
     
     # إعدادات الصور
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
-    
-    # إعدادات الأعمدة الافتراضية
-    "DEFAULT_COLUMNS": [
-        "card", "Date", "Event", "Correction", "Servised by", "Tones", "Images"
-    ],
     
     # أسماء الأعمدة المتوقعة (للبحث الديناميكي)
     "EXPECTED_COLUMNS": {
@@ -754,27 +748,6 @@ def get_all_detected_columns(all_sheets):
     return detected
 
 # ===============================
-# 🏭 دوال لاستخراج معلومات الشيت
-# ===============================
-def get_sheet_info(sheet_name):
-    """استخراج معلومات من اسم الشيت (مثل الرقم)"""
-    numbers = re.findall(r'\d+', sheet_name)
-    if numbers:
-        return {
-            "name": sheet_name,
-            "has_number": True,
-            "numbers": numbers,
-            "first_number": int(numbers[0]) if numbers else None
-        }
-    else:
-        return {
-            "name": sheet_name,
-            "has_number": False,
-            "numbers": [],
-            "first_number": None
-        }
-
-# ===============================
 # 🖥 دوال العرض والتعديل الديناميكية
 # ===============================
 def display_dynamic_sheets(sheets_edit):
@@ -1202,85 +1175,6 @@ def display_data(all_sheets):
             st.dataframe(display_df, use_container_width=True, height=400)
 
 # ===============================
-# 🖥 دالة إدارة المستخدمين
-# ===============================
-def manage_users():
-    """إدارة المستخدمين (للمشرفين فقط)"""
-    st.subheader("👥 إدارة المستخدمين")
-    
-    users = load_users()
-    
-    st.markdown("### 📋 قائمة المستخدمين")
-    
-    users_list = []
-    for username, user_data in users.items():
-        users_list.append({
-            "اسم المستخدم": username,
-            "الدور": user_data.get("role", "viewer"),
-            "الصلاحيات": ", ".join(user_data.get("permissions", ["view"])),
-            "تاريخ الإنشاء": user_data.get("created_at", "").split("T")[0] if "T" in user_data.get("created_at", "") else user_data.get("created_at", ""),
-            "نشط": "✅" if user_data.get("active", False) else "❌"
-        })
-    
-    users_df = pd.DataFrame(users_list)
-    st.dataframe(users_df, use_container_width=True)
-    
-    st.markdown("---")
-    st.markdown("### ➕ إضافة مستخدم جديد")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        new_username = st.text_input("اسم المستخدم:", key="new_username")
-        new_password = st.text_input("كلمة المرور:", type="password", key="new_password")
-    
-    with col2:
-        new_role = st.selectbox("الدور:", ["viewer", "editor", "admin"], key="new_role")
-        new_permissions = st.multiselect(
-            "الصلاحيات (لغير الأدمن):",
-            ["view", "edit", "manage_sheets", "tech_support", "manage_users"],
-            default=["view"],
-            key="new_permissions"
-        )
-    
-    if st.button("➕ إضافة مستخدم", key="add_user_btn"):
-        if new_username and new_password:
-            if new_username in users:
-                st.warning(f"⚠ المستخدم '{new_username}' موجود بالفعل")
-            else:
-                user_data = {
-                    "password": new_password,
-                    "role": new_role,
-                    "created_at": datetime.now().isoformat(),
-                    "permissions": ["all"] if new_role == "admin" else new_permissions,
-                    "active": False
-                }
-                if add_user_to_github(new_username, user_data):
-                    st.success(f"✅ تم إضافة المستخدم '{new_username}' بنجاح")
-                    st.rerun()
-                else:
-                    st.error("❌ فشل إضافة المستخدم")
-        else:
-            st.warning("⚠ الرجاء إدخال اسم المستخدم وكلمة المرور")
-    
-    st.markdown("---")
-    st.markdown("### 🗑️ حذف مستخدم")
-    
-    users_to_delete = [u for u in users.keys() if u != "admin"]
-    
-    if users_to_delete:
-        user_to_delete = st.selectbox("اختر المستخدم للحذف:", users_to_delete, key="user_to_delete")
-        
-        if st.button("🗑️ حذف المستخدم", key="delete_user_btn"):
-            if delete_user_from_github(user_to_delete):
-                st.success(f"✅ تم حذف المستخدم '{user_to_delete}' بنجاح")
-                st.rerun()
-            else:
-                st.error("❌ فشل حذف المستخدم")
-    else:
-        st.info("ℹ️ لا توجد مستخدمين للحذف غير المشرف")
-
-# ===============================
 # 🖥 دالة إدارة البيانات (بدون أقسام وشيتات)
 # ===============================
 def manage_data_edit(sheets_edit):
@@ -1397,9 +1291,7 @@ if all_sheets:
             st.sidebar.dataframe(df_info.head(3), use_container_width=True)
 
 # تحديد التبويبات بناءً على الصلاحيات
-if permissions["can_manage_users"]:
-    tabs = st.tabs(APP_CONFIG["CUSTOM_TABS"] + ["👥 إدارة المستخدمين"])
-elif permissions["can_edit"]:
+if permissions["can_edit"]:
     tabs = st.tabs(["📋 عرض البيانات", "🛠 تعديل وإدارة البيانات"])
 else:
     tabs = st.tabs(["📋 عرض البيانات"])
@@ -1417,9 +1309,3 @@ if permissions["can_edit"] and len(tabs) > 1:
     with tabs[1]:
         st.header("🛠 تعديل وإدارة البيانات")
         sheets_edit = manage_data_edit(sheets_edit)
-
-# تبويب إدارة المستخدمين (للمشرف فقط)
-if permissions["can_manage_users"] and len(tabs) > 2:
-    with tabs[2]:
-        st.header("👥 إدارة المستخدمين")
-        manage_users()
