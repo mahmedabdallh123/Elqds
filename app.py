@@ -37,17 +37,11 @@ APP_CONFIG = {
     
     # إعدادات الواجهة
     "SHOW_TECH_SUPPORT_TO_ALL": True,
-    "CUSTOM_TABS": ["📋 عرض البيانات", "🛠 تعديل وإدارة البيانات"],
     
     # إعدادات الصور
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
-    
-    # إعدادات الأعمدة الافتراضية
-    "DEFAULT_COLUMNS": [
-        "card", "Date", "Event", "Correction", "Servised by", "Tones", "Images"
-    ],
     
     # أسماء الأعمدة المتوقعة (للبحث الديناميكي)
     "EXPECTED_COLUMNS": {
@@ -60,9 +54,6 @@ APP_CONFIG = {
         "images": ["images", "pictures", "صور", "مرفقات", "Images", "الصور", "المرفقات", "صورة", "رفق"]
     }
 }
-
-# ملف الهيكل التنظيمي (الأقسام والماكينات والشيتات)
-STRUCTURE_FILE = "structure.json"
 
 # ===============================
 # 🗂 إعدادات الملفات
@@ -77,174 +68,6 @@ IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
 GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/Elqds/refs/heads/main/users.json"
 GITHUB_REPO_USERS = "mahmedabdallh123/Elqds"
-
-# ===============================
-# 🧩 دوال إدارة الهيكل التنظيمي
-# ===============================
-def load_structure():
-    """تحميل هيكل الأقسام والماكينات والشيتات"""
-    if not os.path.exists(STRUCTURE_FILE):
-        # هيكل افتراضي
-        default_structure = {
-            "departments": {
-                "الميكانيكا": {
-                    "machines": {
-                        "ماكينة 1": {
-                            "sheets": ["Sheet1", "Sheet2"],
-                            "created_at": datetime.now().isoformat()
-                        },
-                        "ماكينة 2": {
-                            "sheets": ["Sheet3"],
-                            "created_at": datetime.now().isoformat()
-                        }
-                    },
-                    "created_at": datetime.now().isoformat()
-                },
-                "الكهرباء": {
-                    "machines": {
-                        "محول 1": {
-                            "sheets": ["Sheet4"],
-                            "created_at": datetime.now().isoformat()
-                        }
-                    },
-                    "created_at": datetime.now().isoformat()
-                },
-                "الإنتاج": {
-                    "machines": {
-                        "خط إنتاج 1": {
-                            "sheets": ["Sheet5"],
-                            "created_at": datetime.now().isoformat()
-                        }
-                    },
-                    "created_at": datetime.now().isoformat()
-                }
-            }
-        }
-        with open(STRUCTURE_FILE, "w", encoding="utf-8") as f:
-            json.dump(default_structure, f, indent=4, ensure_ascii=False)
-        return default_structure
-    
-    try:
-        with open(STRUCTURE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {"departments": {}}
-
-def save_structure(structure):
-    """حفظ هيكل الأقسام والماكينات والشيتات"""
-    try:
-        with open(STRUCTURE_FILE, "w", encoding="utf-8") as f:
-            json.dump(structure, f, indent=4, ensure_ascii=False)
-        return True
-    except Exception as e:
-        st.error(f"❌ خطأ في حفظ الهيكل: {e}")
-        return False
-
-def add_department(structure, dept_name):
-    """إضافة قسم جديد"""
-    if dept_name in structure["departments"]:
-        return False, "القسم موجود بالفعل"
-    
-    structure["departments"][dept_name] = {
-        "machines": {},
-        "created_at": datetime.now().isoformat()
-    }
-    save_structure(structure)
-    return True, f"تم إضافة القسم {dept_name} بنجاح"
-
-def delete_department(structure, dept_name):
-    """حذف قسم (مع جميع ماكيناته وشيتاته)"""
-    if dept_name not in structure["departments"]:
-        return False, "القسم غير موجود"
-    
-    del structure["departments"][dept_name]
-    save_structure(structure)
-    return True, f"تم حذف القسم {dept_name} بنجاح"
-
-def add_machine(structure, dept_name, machine_name):
-    """إضافة ماكينة جديدة في قسم معين"""
-    if dept_name not in structure["departments"]:
-        return False, "القسم غير موجود"
-    
-    if machine_name in structure["departments"][dept_name]["machines"]:
-        return False, "الماكينة موجودة بالفعل في هذا القسم"
-    
-    structure["departments"][dept_name]["machines"][machine_name] = {
-        "sheets": [],
-        "created_at": datetime.now().isoformat()
-    }
-    save_structure(structure)
-    return True, f"تم إضافة الماكينة {machine_name} في قسم {dept_name}"
-
-def delete_machine(structure, dept_name, machine_name):
-    """حذف ماكينة"""
-    if dept_name not in structure["departments"]:
-        return False, "القسم غير موجود"
-    
-    if machine_name not in structure["departments"][dept_name]["machines"]:
-        return False, "الماكينة غير موجودة"
-    
-    del structure["departments"][dept_name]["machines"][machine_name]
-    save_structure(structure)
-    return True, f"تم حذف الماكينة {machine_name} بنجاح"
-
-def add_sheet_to_machine(structure, dept_name, machine_name, sheet_name, all_sheets=None):
-    """إضافة شيت جديد لماكينة معينة"""
-    if dept_name not in structure["departments"]:
-        return False, "القسم غير موجود"
-    
-    if machine_name not in structure["departments"][dept_name]["machines"]:
-        return False, "الماكينة غير موجودة"
-    
-    if sheet_name in structure["departments"][dept_name]["machines"][machine_name]["sheets"]:
-        return False, "الشيت موجود بالفعل في هذه الماكينة"
-    
-    structure["departments"][dept_name]["machines"][machine_name]["sheets"].append(sheet_name)
-    save_structure(structure)
-    return True, f"تم إضافة الشيت {sheet_name} إلى الماكينة {machine_name}"
-
-def delete_sheet_from_machine(structure, dept_name, machine_name, sheet_name):
-    """حذف شيت من ماكينة"""
-    if dept_name not in structure["departments"]:
-        return False, "القسم غير موجود"
-    
-    if machine_name not in structure["departments"][dept_name]["machines"]:
-        return False, "الماكينة غير موجودة"
-    
-    if sheet_name not in structure["departments"][dept_name]["machines"][machine_name]["sheets"]:
-        return False, "الشيت غير موجود في هذه الماكينة"
-    
-    structure["departments"][dept_name]["machines"][machine_name]["sheets"].remove(sheet_name)
-    save_structure(structure)
-    return True, f"تم حذف الشيت {sheet_name} من الماكينة {machine_name}"
-
-def create_new_sheet_in_excel(sheets_edit, new_sheet_name, template_columns=None):
-    """إنشاء شيت جديد في ملف Excel"""
-    if template_columns is None:
-        # أعمدة افتراضية للشيت الجديد
-        template_columns = ["Date", "Event", "Correction", "Servised by", "Tones", "Images", "Notes"]
-    
-    new_df = pd.DataFrame(columns=template_columns)
-    sheets_edit[new_sheet_name] = new_df
-    return sheets_edit
-
-def get_machine_sheets(structure, dept_name, machine_name):
-    """الحصول على قائمة شيتات ماكينة معينة"""
-    if dept_name in structure["departments"] and machine_name in structure["departments"][dept_name]["machines"]:
-        return structure["departments"][dept_name]["machines"][machine_name]["sheets"]
-    return []
-
-def get_all_machines(structure):
-    """الحصول على جميع الماكينات مع أقسامها"""
-    machines = []
-    for dept_name, dept_data in structure["departments"].items():
-        for machine_name in dept_data["machines"].keys():
-            machines.append({
-                "department": dept_name,
-                "machine": machine_name,
-                "sheets": dept_data["machines"][machine_name]["sheets"]
-            })
-    return machines
 
 # -------------------------------
 # 🧩 دوال مساعدة للصور
@@ -799,415 +622,117 @@ def auto_save_to_github(sheets_dict, operation_description):
         st.error("❌ فشل الحفظ التلقائي")
         return sheets_dict
 
-# -------------------------------
-# 🧰 دوال مساعدة للمعالجة والنصوص
-# -------------------------------
-def normalize_name(s):
-    if s is None: return ""
-    s = str(s).replace("\n", "+")
-    s = re.sub(r"[^0-9a-zA-Z\u0600-\u06FF\+\s_/.-]", " ", s)
-    s = re.sub(r"\s+", " ", s).strip().lower()
-    return s
-
-def split_needed_services(needed_service_str):
-    if not isinstance(needed_service_str, str) or needed_service_str.strip() == "":
-        return []
-    parts = re.split(r"\+|,|\n|;", needed_service_str)
-    return [p.strip() for p in parts if p.strip() != ""]
-
-def highlight_cell(val, col_name):
-    color_map = {
-        "Service Needed": "background-color: #fff3cd; color:#856404; font-weight:bold;",
-        "Service Done": "background-color: #d4edda; color:#155724; font-weight:bold;",
-        "Service Didn't Done": "background-color: #f8d7da; color:#721c24; font-weight:bold;",
-        "Date": "background-color: #e7f1ff; color:#004085; font-weight:bold;",
-        "Tones": "background-color: #e8f8f5; color:#0d5c4a; font-weight:bold;",
-        "Event": "background-color: #e2f0d9; color:#2e6f32; font-weight:bold;",
-        "Correction": "background-color: #fdebd0; color:#7d6608; font-weight:bold;",
-        "Servised by": "background-color: #f0f0f0; color:#333; font-weight:bold;",
-        "Card Number": "background-color: #ebdef0; color:#4a235a; font-weight:bold;",
-        "Images": "background-color: #d6eaf8; color:#1b4f72; font-weight:bold;"
-    }
-    return color_map.get(col_name, "")
-
-def style_table(row):
-    return [highlight_cell(row[col], col) for col in row.index]
-
-def get_user_permissions(user_role, user_permissions):
-    """الحصول على صلاحيات المستخدم بناءً على الدور والصلاحيات"""
-    if user_role == "admin":
-        return {
-            "can_view": True,
-            "can_edit": True,
-            "can_manage_users": True,
-            "can_see_tech_support": True,
-            "can_manage_sheets": True,
-            "can_manage_structure": True
-        }
-    
-    elif user_role == "editor":
-        return {
-            "can_view": True,
-            "can_edit": True,
-            "can_manage_users": False,
-            "can_see_tech_support": False,
-            "can_manage_sheets": True,
-            "can_manage_structure": False
-        }
-    
-    else:
-        return {
-            "can_view": "view" in user_permissions or "edit" in user_permissions or "all" in user_permissions,
-            "can_edit": "edit" in user_permissions or "all" in user_permissions,
-            "can_manage_users": "manage_users" in user_permissions or "all" in user_permissions,
-            "can_see_tech_support": "tech_support" in user_permissions or "all" in user_permissions,
-            "can_manage_sheets": "manage_sheets" in user_permissions or "all" in user_permissions,
-            "can_manage_structure": "manage_structure" in user_permissions or "all" in user_permissions
-        }
-
 # ===============================
-# 🔧 دوال مساعدة للعثور على الأعمدة
+# 🔧 دوال إنشاء شيت جديد في ملف Excel على GitHub
 # ===============================
-def find_column_by_keywords(df, keywords_list):
-    """البحث عن عمود في DataFrame بناءً على قائمة كلمات مفتاحية"""
-    for col in df.columns:
-        col_lower = str(col).lower().strip()
-        for keyword in keywords_list:
-            if keyword.lower() in col_lower:
-                return col
-    return None
+def create_new_sheet_in_excel(sheets_edit, new_sheet_name, template_columns=None):
+    """إنشاء شيت جديد في ملف Excel"""
+    if template_columns is None:
+        # أعمدة افتراضية للشيت الجديد
+        template_columns = ["Date", "Event", "Correction", "Servised by", "Tones", "Images", "Notes"]
+    
+    new_df = pd.DataFrame(columns=template_columns)
+    sheets_edit[new_sheet_name] = new_df
+    return sheets_edit
 
-def find_all_matching_columns(df, keywords_list):
-    """البحث عن جميع الأعمدة المطابقة لقائمة كلمات مفتاحية"""
-    matching_cols = []
-    for col in df.columns:
-        col_lower = str(col).lower().strip()
-        for keyword in keywords_list:
-            if keyword.lower() in col_lower:
-                matching_cols.append(col)
-                break
-    return matching_cols
-
-def get_column_mapping(df):
-    """الحصول على تعيين الأعمدة المهمة بناءً على الكلمات المفتاحية"""
-    mapping = {
-        "card": find_column_by_keywords(df, APP_CONFIG["EXPECTED_COLUMNS"]["card"]),
-        "date": find_column_by_keywords(df, APP_CONFIG["EXPECTED_COLUMNS"]["date"]),
-        "event": find_column_by_keywords(df, APP_CONFIG["EXPECTED_COLUMNS"]["event"]),
-        "correction": find_column_by_keywords(df, APP_CONFIG["EXPECTED_COLUMNS"]["correction"]),
-        "servised_by": find_column_by_keywords(df, APP_CONFIG["EXPECTED_COLUMNS"]["servised_by"]),
-        "tones": find_column_by_keywords(df, APP_CONFIG["EXPECTED_COLUMNS"]["tones"]),
-        "images": find_column_by_keywords(df, APP_CONFIG["EXPECTED_COLUMNS"]["images"])
-    }
-    return mapping
-
-def get_all_detected_columns(all_sheets):
-    """الحصول على جميع الأعمدة المكتشفة من كل الشيتات"""
-    detected = {
-        "card": set(),
-        "date": set(),
-        "event": set(),
-        "correction": set(),
-        "servised_by": set(),
-        "tones": set(),
-        "images": set(),
-        "other": set()
-    }
+def add_new_sheet_to_github(sheets_edit):
+    """وظيفة إضافة شيت جديد إلى ملف Excel على GitHub"""
+    st.subheader("➕ إضافة شيت جديد إلى ملف Excel")
     
-    for sheet_name, df in all_sheets.items():
-        mapping = get_column_mapping(df)
-        
-        for key, col in mapping.items():
-            if col:
-                detected[key].add(col)
-        
-        mapped_cols = set([v for v in mapping.values() if v])
-        all_cols = set(df.columns)
-        detected["other"].update(all_cols - mapped_cols)
+    st.markdown("### 📝 إنشاء شيت جديد")
+    st.info("يمكنك إنشاء شيت جديد وإضافته إلى ملف Excel الموجود على GitHub")
     
-    return detected
-
-# ===============================
-# 🏭 دوال لاستخراج معلومات الشيت
-# ===============================
-def get_sheet_info(sheet_name):
-    """استخراج معلومات من اسم الشيت (مثل الرقم)"""
-    numbers = re.findall(r'\d+', sheet_name)
-    if numbers:
-        return {
-            "name": sheet_name,
-            "has_number": True,
-            "numbers": numbers,
-            "first_number": int(numbers[0]) if numbers else None
-        }
-    else:
-        return {
-            "name": sheet_name,
-            "has_number": False,
-            "numbers": [],
-            "first_number": None
-        }
-
-# ===============================
-# 🖥 دوال العرض والتعديل الديناميكية
-# ===============================
-def display_dynamic_sheets(sheets_edit):
-    """عرض جميع الشيتات بشكل ديناميكي"""
-    st.subheader("📂 جميع الشيتات")
-    
-    if not sheets_edit:
-        st.warning("⚠ لا توجد شيتات متاحة")
-        return
-    
-    sheet_tabs = st.tabs(list(sheets_edit.keys()))
-    
-    for i, (sheet_name, df) in enumerate(sheets_edit.items()):
-        with sheet_tabs[i]:
-            st.markdown(f"### 📋 {sheet_name}")
-            st.info(f"الصفوف: {len(df)} | الأعمدة: {len(df.columns)}")
-            
-            if st.checkbox(f"عرض جميع الأعمدة", key=f"show_all_{sheet_name}"):
-                st.dataframe(df, use_container_width=True)
-            else:
-                display_cols = []
-                for col in df.columns:
-                    col_lower = str(col).lower()
-                    if any(keyword in col_lower for keyword in ['card', 'date', 'event', 'correction', 'servised', 'serviced', 'images', 'صور', 'technician', 'فني']):
-                        display_cols.append(col)
-                
-                if display_cols:
-                    st.dataframe(df[display_cols], use_container_width=True)
-                else:
-                    st.dataframe(df.head(10), use_container_width=True)
-            
-            with st.expander("📊 إحصائيات الشيت", expanded=False):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("عدد الصفوف", len(df))
-                with col2:
-                    st.metric("عدد الأعمدة", len(df.columns))
-                with col3:
-                    non_empty = df.notna().sum().sum()
-                    total_cells = len(df) * len(df.columns)
-                    st.metric("خلايا غير فارغة", f"{non_empty}/{total_cells}")
-
-def create_dynamic_event_form(df, prefix="", default_values=None):
-    """إنشاء نموذج ديناميكي لإدخال بيانات الحدث بناءً على أعمدة الشيت"""
-    if default_values is None:
-        default_values = {}
-    
-    col_mapping = get_column_mapping(df)
-    
-    columns = df.columns.tolist()
-    
-    text_columns = []
-    date_columns = []
-    number_columns = []
-    image_columns = []
-    other_columns = []
-    
-    for col in columns:
-        col_lower = str(col).lower()
-        
-        if any(keyword in col_lower for keyword in ['image', 'صور', 'picture', 'صورة', 'مرفق']):
-            image_columns.append(col)
-        elif any(keyword in col_lower for keyword in ['date', 'تاريخ', 'time', 'وقت']):
-            date_columns.append(col)
-        elif any(keyword in col_lower for keyword in ['ton', 'طن', 'عدد', 'quantity', 'qty']):
-            number_columns.append(col)
-        elif any(keyword in col_lower for keyword in ['event', 'حدث', 'correction', 'تصحيح', 'notes', 'ملاحظات']):
-            text_columns.append(col)
-        else:
-            other_columns.append(col)
-    
-    form_data = {}
-    
-    st.markdown("#### 📝 البيانات الأساسية")
     col1, col2 = st.columns(2)
     
-    for i, col in enumerate(text_columns):
-        with col1 if i % 2 == 0 else col2:
-            default = default_values.get(col, "")
-            form_data[col] = st.text_area(f"{col}:", value=default, key=f"{prefix}_{col}_text", height=100)
-    
-    if date_columns:
-        st.markdown("#### 📅 التواريخ")
-        date_cols = st.columns(min(3, len(date_columns)))
-        for i, col in enumerate(date_columns):
-            with date_cols[i % 3]:
-                default = default_values.get(col, "")
-                form_data[col] = st.text_input(f"{col}:", value=default, key=f"{prefix}_{col}_date", placeholder="مثال: 20/5/2025")
-    
-    if number_columns:
-        st.markdown("#### 🔢 القيم الرقمية")
-        num_cols = st.columns(min(3, len(number_columns)))
-        for i, col in enumerate(number_columns):
-            with num_cols[i % 3]:
-                default = default_values.get(col, "")
-                form_data[col] = st.text_input(f"{col}:", value=default, key=f"{prefix}_{col}_num")
-    
-    if other_columns:
-        st.markdown("#### 📋 حقول إضافية")
-        other_cols = st.columns(3)
-        for i, col in enumerate(other_columns):
-            with other_cols[i % 3]:
-                default = default_values.get(col, "")
-                form_data[col] = st.text_input(f"{col}:", value=default, key=f"{prefix}_{col}_other")
-    
-    if image_columns:
-        st.markdown("#### 📷 الصور المرفقة")
-        for col in image_columns:
-            st.markdown(f"**{col}:**")
-            default_images = default_values.get(col, "")
-            if default_images:
-                st.info(f"الصور الحالية: {default_images}")
-                if st.checkbox(f"🗑️ حذف الصور الحالية لـ {col}", key=f"{prefix}_delete_{col}"):
-                    default_images = ""
-            
-            uploaded_files = st.file_uploader(
-                f"اختر الصور لـ {col}:",
-                type=APP_CONFIG["ALLOWED_IMAGE_TYPES"],
-                accept_multiple_files=True,
-                key=f"{prefix}_{col}_uploader"
-            )
-            
-            if uploaded_files:
-                saved_images = save_uploaded_images(uploaded_files)
-                if saved_images:
-                    if default_images:
-                        form_data[col] = default_images + "," + ",".join(saved_images)
-                    else:
-                        form_data[col] = ",".join(saved_images)
-            else:
-                form_data[col] = default_images
-    
-    return form_data
-
-def add_new_event_dynamic(sheets_edit):
-    """إضافة إيفينت جديد في أي شيت مع أي أعمدة"""
-    st.subheader("➕ إضافة حدث جديد")
-    
-    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="add_event_sheet_dynamic")
-    df = sheets_edit[sheet_name].copy()
-    
-    st.markdown(f"### 📝 إضافة حدث جديد في شيت: {sheet_name}")
-    st.info(f"الأعمدة المتاحة: {', '.join(df.columns.tolist())}")
-    
-    form_data = create_dynamic_event_form(df, prefix=f"add_{sheet_name}")
-    
-    if st.button("💾 إضافة الحدث الجديد", key=f"add_dynamic_event_btn_{sheet_name}"):
-        if not form_data:
-            st.warning("⚠ لم يتم إدخال أي بيانات")
-            return
+    with col1:
+        new_sheet_name = st.text_input("اسم الشيت الجديد:", key="new_sheet_name", placeholder="مثال: Sheet6 أو بيانات_2025")
         
-        new_row = {}
-        for col in df.columns:
-            if col in form_data and form_data[col]:
-                new_row[col] = form_data[col]
-            else:
-                new_row[col] = ""
-        
-        new_row_df = pd.DataFrame([new_row])
-        df_new = pd.concat([df, new_row_df], ignore_index=True)
-        
-        sheets_edit[sheet_name] = df_new
-        
-        new_sheets = auto_save_to_github(
-            sheets_edit,
-            f"إضافة حدث جديد في {sheet_name}"
+        if new_sheet_name:
+            # التحقق من وجود الشيت مسبقاً
+            if new_sheet_name in sheets_edit:
+                st.warning(f"⚠ الشيت '{new_sheet_name}' موجود بالفعل في الملف!")
+    
+    with col2:
+        default_columns = st.text_area(
+            "الأعمدة الافتراضية (كل عمود في سطر جديد):",
+            value="Date\nEvent\nCorrection\nServised by\nTones\nImages\nNotes",
+            key="new_sheet_columns",
+            height=150,
+            help="أدخل اسم كل عمود في سطر منفصل"
         )
-        if new_sheets is not None:
-            sheets_edit = new_sheets
-            st.success("✅ تم إضافة الحدث الجديد بنجاح!")
-            st.rerun()
-
-def edit_event_dynamic(sheets_edit):
-    """تعديل حدث في أي شيت مع أي أعمدة"""
-    st.subheader("✏ تعديل حدث")
     
-    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_event_sheet_dynamic")
-    df = sheets_edit[sheet_name].copy()
+    st.markdown("---")
+    st.markdown("### 📋 معاينة الشيت الجديد")
     
-    st.markdown(f"### 📋 البيانات الحالية في شيت: {sheet_name}")
+    # معاينة الأعمدة التي سيتم إنشاؤها
+    columns_list = [col.strip() for col in default_columns.split("\n") if col.strip()]
+    if not columns_list:
+        columns_list = ["Date", "Event", "Correction", "Servised by", "Tones", "Images", "Notes"]
     
-    display_df = df.copy()
-    for col in display_df.columns:
-        display_df[col] = display_df[col].astype(str).apply(lambda x: x[:50] + "..." if len(x) > 50 else x)
+    preview_df = pd.DataFrame(columns=columns_list)
+    st.dataframe(preview_df, use_container_width=True)
+    st.caption(f"عدد الأعمدة: {len(columns_list)} | سيتم إنشاء شيت فارغ بهذه الأعمدة")
     
-    st.dataframe(display_df.head(20), use_container_width=True)
+    st.markdown("---")
     
-    st.markdown("### 🔍 اختيار الصف للتعديل")
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
     
-    search_col = st.selectbox("ابحث في عمود:", df.columns.tolist(), key="search_col_dynamic")
-    search_value = st.text_input("قيمة البحث:", key="search_val_dynamic")
-    
-    if search_value:
-        mask = df[search_col].astype(str).str.contains(search_value, case=False, na=False)
-        matching_rows = df[mask]
-        
-        if not matching_rows.empty:
-            st.success(f"✅ تم العثور على {len(matching_rows)} صف")
+    with col_btn2:
+        if st.button("✅ إنشاء وإضافة الشيت الجديد", key="create_sheet_btn", type="primary", use_container_width=True):
+            if not new_sheet_name:
+                st.error("❌ الرجاء إدخال اسم الشيت الجديد")
+                return sheets_edit
             
-            matching_display = matching_rows.copy()
-            for col in matching_display.columns:
-                matching_display[col] = matching_display[col].astype(str).apply(lambda x: x[:50] + "..." if len(x) > 50 else x)
+            if new_sheet_name in sheets_edit:
+                st.error(f"❌ الشيت '{new_sheet_name}' موجود بالفعل في الملف!")
+                return sheets_edit
             
-            st.dataframe(matching_display, use_container_width=True)
+            # إنشاء الشيت الجديد
+            sheets_edit = create_new_sheet_in_excel(sheets_edit, new_sheet_name, columns_list)
             
-            row_indices = matching_rows.index.tolist()
-            selected_idx = st.selectbox(
-                "اختر رقم الصف للتعديل:",
-                row_indices,
-                format_func=lambda x: f"الصف {x}: {str(matching_rows.loc[x, search_col])[:50]}"
+            # حفظ التغييرات ورفعها إلى GitHub
+            new_sheets = auto_save_to_github(
+                sheets_edit,
+                f"إنشاء شيت جديد: {new_sheet_name}"
             )
             
-            if st.button("تحميل بيانات الصف", key="load_dynamic_row"):
-                st.session_state["editing_dynamic_row"] = selected_idx
-                st.session_state["editing_dynamic_sheet"] = sheet_name
-                st.session_state["editing_dynamic_data"] = df.loc[selected_idx].to_dict()
+            if new_sheets is not None:
+                st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' بنجاح ورفعه إلى GitHub!")
+                st.balloons()
                 st.rerun()
-        else:
-            st.warning("⚠ لا توجد نتائج مطابقة")
+            else:
+                st.error("❌ فشل إنشاء الشيت أو رفعه إلى GitHub")
     
-    if "editing_dynamic_row" in st.session_state and st.session_state.get("editing_dynamic_sheet") == sheet_name:
-        row_idx = st.session_state["editing_dynamic_row"]
-        original_data = st.session_state["editing_dynamic_data"]
-        
-        st.markdown(f"### ✏ تعديل الصف رقم {row_idx}")
-        
-        form_data = create_dynamic_event_form(df, prefix=f"edit_{sheet_name}_{row_idx}", default_values=original_data)
-        
-        col_edit1, col_edit2 = st.columns(2)
-        
-        with col_edit1:
-            if st.button("💾 حفظ التعديلات", key=f"save_dynamic_edit_{row_idx}", type="primary"):
-                for col in df.columns:
-                    if col in form_data:
-                        df.at[row_idx, col] = form_data[col]
-                
-                sheets_edit[sheet_name] = df
-                
-                new_sheets = auto_save_to_github(
-                    sheets_edit,
-                    f"تعديل حدث في {sheet_name} - الصف {row_idx}"
-                )
-                
-                if new_sheets is not None:
-                    sheets_edit = new_sheets
-                    st.success("✅ تم حفظ التعديلات بنجاح!")
-                    
-                    del st.session_state["editing_dynamic_row"]
-                    del st.session_state["editing_dynamic_sheet"]
-                    del st.session_state["editing_dynamic_data"]
-                    st.rerun()
-        
-        with col_edit2:
-            if st.button("↩️ إلغاء", key=f"cancel_dynamic_edit_{row_idx}"):
-                del st.session_state["editing_dynamic_row"]
-                del st.session_state["editing_dynamic_sheet"]
-                del st.session_state["editing_dynamic_data"]
-                st.rerun()
+    return sheets_edit
 
+# ===============================
+# 🖥 دالة عرض البيانات
+# ===============================
+def display_data_simple(all_sheets):
+    """عرض البيانات بشكل بسيط (جميع الشيتات)"""
+    if not all_sheets:
+        st.error("❌ لم يتم تحميل أي شيتات.")
+        return
+    
+    st.subheader("📋 عرض البيانات (جميع الشيتات)")
+    
+    sheet_tabs = st.tabs(list(all_sheets.keys()))
+    
+    for i, (sheet_name, df) in enumerate(all_sheets.items()):
+        with sheet_tabs[i]:
+            st.markdown(f"### 📄 {sheet_name}")
+            st.info(f"عدد الصفوف: {len(df)} | عدد الأعمدة: {len(df.columns)}")
+            
+            display_df = df.copy()
+            for col in display_df.columns:
+                if display_df[col].dtype == 'object':
+                    display_df[col] = display_df[col].astype(str).apply(lambda x: x[:100] + "..." if len(x) > 100 else x)
+            
+            st.dataframe(display_df, use_container_width=True, height=400)
+
+# ===============================
+# 🖥 دالة تعديل البيانات
+# ===============================
 def edit_sheet_with_save_button(sheets_edit):
     """تعديل بيانات الشيت مع زر حفظ يدوي"""
     st.subheader("✏ تعديل البيانات")
@@ -1239,7 +764,6 @@ def edit_sheet_with_save_button(sheets_edit):
     
     if has_changes:
         st.session_state.unsaved_changes[sheet_name] = True
-        
         st.warning("⚠ لديك تغييرات غير محفوظة!")
         
         col1, col2 = st.columns(2)
@@ -1257,9 +781,7 @@ def edit_sheet_with_save_button(sheets_edit):
                     sheets_edit = new_sheets
                     st.session_state.unsaved_changes[sheet_name] = False
                     st.success(f"✅ تم حفظ التغييرات بنجاح!")
-                    
                     st.session_state.original_sheets[sheet_name] = edited_df.copy()
-                    
                     st.rerun()
                 else:
                     st.error("❌ فشل حفظ التغييرات!")
@@ -1350,434 +872,55 @@ def manage_images():
     else:
         st.warning(f"⚠ مجلد الصور {IMAGES_FOLDER} غير موجود")
 
-# ===============================
-# 🖥 دالة عرض البيانات (بدون فحص)
-# ===============================
-def display_data_organized(all_sheets, structure):
-    """عرض البيانات بشكل منظم حسب الأقسام والماكينات"""
-    if not all_sheets:
-        st.error("❌ لم يتم تحميل أي شيتات.")
-        return
-    
-    st.subheader("📋 عرض البيانات (حسب الأقسام والماكينات)")
-    
-    if not structure["departments"]:
-        st.info("ℹ️ لا توجد أقسام. قم بإضافة أقسام وماكينات أولاً.")
-        return
-    
-    # إنشاء تبويبات للأقسام
-    dept_tabs = st.tabs(list(structure["departments"].keys()))
-    
-    for i, (dept_name, dept_data) in enumerate(structure["departments"].items()):
-        with dept_tabs[i]:
-            st.markdown(f"## 🏭 قسم: {dept_name}")
-            
-            if not dept_data["machines"]:
-                st.info(f"ℹ️ لا توجد ماكينات في قسم {dept_name}")
-                continue
-            
-            # إنشاء تبويبات للماكينات داخل القسم
-            machine_tabs = st.tabs(list(dept_data["machines"].keys()))
-            
-            for j, (machine_name, machine_data) in enumerate(dept_data["machines"].items()):
-                with machine_tabs[j]:
-                    st.markdown(f"### 🔧 ماكينة: {machine_name}")
-                    
-                    sheets_list = machine_data["sheets"]
-                    
-                    if not sheets_list:
-                        st.info(f"ℹ️ لا توجد شيتات مرتبطة بهذه الماكينة")
-                        continue
-                    
-                    # عرض الشيتات الخاصة بالماكينة
-                    for sheet_name in sheets_list:
-                        if sheet_name in all_sheets:
-                            df = all_sheets[sheet_name]
-                            
-                            with st.expander(f"📄 {sheet_name} - ({len(df)} صف)", expanded=False):
-                                st.info(f"عدد الصفوف: {len(df)} | عدد الأعمدة: {len(df.columns)}")
-                                
-                                display_df = df.copy()
-                                for col in display_df.columns:
-                                    if display_df[col].dtype == 'object':
-                                        display_df[col] = display_df[col].astype(str).apply(lambda x: x[:100] + "..." if len(x) > 100 else x)
-                                
-                                st.dataframe(display_df, use_container_width=True, height=300)
-                        else:
-                            st.warning(f"⚠ الشيت '{sheet_name}' غير موجود في ملف Excel")
-
-def display_data_simple(all_sheets):
-    """عرض البيانات بشكل بسيط (جميع الشيتات)"""
-    if not all_sheets:
-        st.error("❌ لم يتم تحميل أي شيتات.")
-        return
-    
-    st.subheader("📋 عرض البيانات (جميع الشيتات)")
-    
-    sheet_tabs = st.tabs(list(all_sheets.keys()))
-    
-    for i, (sheet_name, df) in enumerate(all_sheets.items()):
-        with sheet_tabs[i]:
-            st.markdown(f"### 📄 {sheet_name}")
-            st.info(f"عدد الصفوف: {len(df)} | عدد الأعمدة: {len(df.columns)}")
-            
-            display_df = df.copy()
-            for col in display_df.columns:
-                if display_df[col].dtype == 'object':
-                    display_df[col] = display_df[col].astype(str).apply(lambda x: x[:100] + "..." if len(x) > 100 else x)
-            
-            st.dataframe(display_df, use_container_width=True, height=400)
-
-# ===============================
-# 🖥 دالة إدارة المستخدمين
-# ===============================
-def manage_users():
-    """إدارة المستخدمين (للمشرفين فقط)"""
-    st.subheader("👥 إدارة المستخدمين")
-    
-    users = load_users()
-    
-    st.markdown("### 📋 قائمة المستخدمين")
-    
-    users_list = []
-    for username, user_data in users.items():
-        users_list.append({
-            "اسم المستخدم": username,
-            "الدور": user_data.get("role", "viewer"),
-            "الصلاحيات": ", ".join(user_data.get("permissions", ["view"])),
-            "تاريخ الإنشاء": user_data.get("created_at", "").split("T")[0] if "T" in user_data.get("created_at", "") else user_data.get("created_at", ""),
-            "نشط": "✅" if user_data.get("active", False) else "❌"
-        })
-    
-    users_df = pd.DataFrame(users_list)
-    st.dataframe(users_df, use_container_width=True)
-    
-    st.markdown("---")
-    st.markdown("### ➕ إضافة مستخدم جديد")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        new_username = st.text_input("اسم المستخدم:", key="new_username")
-        new_password = st.text_input("كلمة المرور:", type="password", key="new_password")
-    
-    with col2:
-        new_role = st.selectbox("الدور:", ["viewer", "editor", "admin"], key="new_role")
-        new_permissions = st.multiselect(
-            "الصلاحيات (لغير الأدمن):",
-            ["view", "edit", "manage_sheets", "tech_support", "manage_users", "manage_structure"],
-            default=["view"],
-            key="new_permissions"
-        )
-    
-    if st.button("➕ إضافة مستخدم", key="add_user_btn"):
-        if new_username and new_password:
-            if new_username in users:
-                st.warning(f"⚠ المستخدم '{new_username}' موجود بالفعل")
-            else:
-                user_data = {
-                    "password": new_password,
-                    "role": new_role,
-                    "created_at": datetime.now().isoformat(),
-                    "permissions": ["all"] if new_role == "admin" else new_permissions,
-                    "active": False
-                }
-                if add_user_to_github(new_username, user_data):
-                    st.success(f"✅ تم إضافة المستخدم '{new_username}' بنجاح")
-                    st.rerun()
-                else:
-                    st.error("❌ فشل إضافة المستخدم")
-        else:
-            st.warning("⚠ الرجاء إدخال اسم المستخدم وكلمة المرور")
-    
-    st.markdown("---")
-    st.markdown("### 🗑️ حذف مستخدم")
-    
-    users_to_delete = [u for u in users.keys() if u != "admin"]
-    
-    if users_to_delete:
-        user_to_delete = st.selectbox("اختر المستخدم للحذف:", users_to_delete, key="user_to_delete")
-        
-        if st.button("🗑️ حذف المستخدم", key="delete_user_btn"):
-            if delete_user_from_github(user_to_delete):
-                st.success(f"✅ تم حذف المستخدم '{user_to_delete}' بنجاح")
-                st.rerun()
-            else:
-                st.error("❌ فشل حذف المستخدم")
-    else:
-        st.info("ℹ️ لا توجد مستخدمين للحذف غير المشرف")
-
-# ===============================
-# 🖥 دالة إدارة الهيكل التنظيمي (الأقسام والماكينات والشيتات)
-# ===============================
-def manage_structure(sheets_edit):
-    """إدارة الأقسام والماكينات والشيتات"""
-    st.subheader("🏗️ إدارة الهيكل التنظيمي (الأقسام - الماكينات - الشيتات)")
-    
-    structure = load_structure()
-    
-    # تبويبات منفصلة للإدارة
-    tab1, tab2, tab3, tab4 = st.tabs(["🏭 إدارة الأقسام", "🔧 إدارة الماكينات", "📄 إدارة الشيتات", "📊 عرض الهيكل"])
-    
-    # ==================== تبويب إدارة الأقسام ====================
-    with tab1:
-        st.markdown("### 🏭 إدارة الأقسام")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("#### ➕ إضافة قسم جديد")
-            new_dept = st.text_input("اسم القسم:", key="new_dept")
-            if st.button("➕ إضافة قسم", key="add_dept_btn"):
-                if new_dept:
-                    success, msg = add_department(structure, new_dept)
-                    if success:
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-                else:
-                    st.warning("⚠ الرجاء إدخال اسم القسم")
-        
-        with col2:
-            st.markdown("#### 🗑️ حذف قسم")
-            depts_list = list(structure["departments"].keys())
-            if depts_list:
-                dept_to_delete = st.selectbox("اختر القسم للحذف:", depts_list, key="dept_to_delete")
-                if st.button("🗑️ حذف القسم", key="delete_dept_btn"):
-                    success, msg = delete_department(structure, dept_to_delete)
-                    if success:
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-            else:
-                st.info("ℹ️ لا توجد أقسام للحذف")
-        
-        # عرض الأقسام الحالية
-        st.markdown("#### 📋 الأقسام الحالية")
-        if structure["departments"]:
-            depts_data = []
-            for dept_name, dept_data in structure["departments"].items():
-                depts_data.append({
-                    "القسم": dept_name,
-                    "عدد الماكينات": len(dept_data["machines"]),
-                    "تاريخ الإنشاء": dept_data.get("created_at", "").split("T")[0] if "T" in dept_data.get("created_at", "") else dept_data.get("created_at", "")
-                })
-            st.dataframe(pd.DataFrame(depts_data), use_container_width=True)
-        else:
-            st.info("ℹ️ لا توجد أقسام حالياً")
-    
-    # ==================== تبويب إدارة الماكينات ====================
-    with tab2:
-        st.markdown("### 🔧 إدارة الماكينات")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("#### ➕ إضافة ماكينة جديدة")
-            depts_list = list(structure["departments"].keys())
-            if depts_list:
-                selected_dept = st.selectbox("اختر القسم:", depts_list, key="machine_dept")
-                new_machine = st.text_input("اسم الماكينة:", key="new_machine")
-                if st.button("➕ إضافة ماكينة", key="add_machine_btn"):
-                    if new_machine:
-                        success, msg = add_machine(structure, selected_dept, new_machine)
-                        if success:
-                            st.success(msg)
-                            st.rerun()
-                        else:
-                            st.error(msg)
-                    else:
-                        st.warning("⚠ الرجاء إدخال اسم الماكينة")
-            else:
-                st.warning("⚠ الرجاء إضافة قسم أولاً")
-        
-        with col2:
-            st.markdown("#### 🗑️ حذف ماكينة")
-            if depts_list:
-                dept_for_delete = st.selectbox("اختر القسم:", depts_list, key="delete_machine_dept")
-                machines_list = list(structure["departments"].get(dept_for_delete, {}).get("machines", {}).keys())
-                if machines_list:
-                    machine_to_delete = st.selectbox("اختر الماكينة للحذف:", machines_list, key="machine_to_delete")
-                    if st.button("🗑️ حذف الماكينة", key="delete_machine_btn"):
-                        success, msg = delete_machine(structure, dept_for_delete, machine_to_delete)
-                        if success:
-                            st.success(msg)
-                            st.rerun()
-                        else:
-                            st.error(msg)
-                else:
-                    st.info("ℹ️ لا توجد ماكينات في هذا القسم")
-            else:
-                st.info("ℹ️ لا توجد أقسام")
-        
-        # عرض الماكينات الحالية
-        st.markdown("#### 📋 الماكينات الحالية")
-        if structure["departments"]:
-            machines_data = []
-            for dept_name, dept_data in structure["departments"].items():
-                for machine_name, machine_data in dept_data["machines"].items():
-                    machines_data.append({
-                        "القسم": dept_name,
-                        "الماكينة": machine_name,
-                        "عدد الشيتات": len(machine_data["sheets"]),
-                        "تاريخ الإنشاء": machine_data.get("created_at", "").split("T")[0] if "T" in machine_data.get("created_at", "") else machine_data.get("created_at", "")
-                    })
-            if machines_data:
-                st.dataframe(pd.DataFrame(machines_data), use_container_width=True)
-            else:
-                st.info("ℹ️ لا توجد ماكينات حالياً")
-        else:
-            st.info("ℹ️ لا توجد أقسام")
-    
-    # ==================== تبويب إدارة الشيتات ====================
-    with tab3:
-        st.markdown("### 📄 إدارة الشيتات")
-        
-        # التأكد من وجود sheets_edit
-        if sheets_edit is None:
-            st.warning("⚠ لا يمكن تحميل ملف Excel. تأكد من وجود الملف.")
-        else:
-            all_sheet_names = list(sheets_edit.keys())
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("#### 🔗 ربط شيت موجود بماكينة")
-                if depts_list:
-                    selected_dept_link = st.selectbox("اختر القسم:", depts_list, key="link_sheet_dept")
-                    machines_list_link = list(structure["departments"].get(selected_dept_link, {}).get("machines", {}).keys())
-                    
-                    if machines_list_link:
-                        selected_machine_link = st.selectbox("اختر الماكينة:", machines_list_link, key="link_sheet_machine")
-                        
-                        if all_sheet_names:
-                            selected_sheet = st.selectbox("اختر الشيت للربط:", all_sheet_names, key="sheet_to_link")
-                            
-                            current_sheets = get_machine_sheets(structure, selected_dept_link, selected_machine_link)
-                            if selected_sheet in current_sheets:
-                                st.info(f"ℹ️ الشيت '{selected_sheet}' مرتبط بالفعل بهذه الماكينة")
-                            else:
-                                if st.button("🔗 ربط الشيت", key="link_sheet_btn"):
-                                    success, msg = add_sheet_to_machine(structure, selected_dept_link, selected_machine_link, selected_sheet)
-                                    if success:
-                                        st.success(msg)
-                                        st.rerun()
-                                    else:
-                                        st.error(msg)
-                        else:
-                            st.warning("⚠ لا توجد شيتات في ملف Excel")
-                    else:
-                        st.warning(f"⚠ لا توجد ماكينات في قسم {selected_dept_link}")
-                else:
-                    st.warning("⚠ الرجاء إضافة قسم أولاً")
-            
-            with col2:
-                st.markdown("#### 🗑️ إلغاء ربط شيت من ماكينة")
-                if depts_list:
-                    selected_dept_unlink = st.selectbox("اختر القسم:", depts_list, key="unlink_sheet_dept")
-                    machines_list_unlink = list(structure["departments"].get(selected_dept_unlink, {}).get("machines", {}).keys())
-                    
-                    if machines_list_unlink:
-                        selected_machine_unlink = st.selectbox("اختر الماكينة:", machines_list_unlink, key="unlink_sheet_machine")
-                        
-                        current_sheets = get_machine_sheets(structure, selected_dept_unlink, selected_machine_unlink)
-                        if current_sheets:
-                            sheet_to_unlink = st.selectbox("اختر الشيت لإلغاء الربط:", current_sheets, key="sheet_to_unlink")
-                            if st.button("🗑️ إلغاء الربط", key="unlink_sheet_btn"):
-                                success, msg = delete_sheet_from_machine(structure, selected_dept_unlink, selected_machine_unlink, sheet_to_unlink)
-                                if success:
-                                    st.success(msg)
-                                    st.rerun()
-                                else:
-                                    st.error(msg)
-                        else:
-                            st.info("ℹ️ لا توجد شيتات مرتبطة بهذه الماكينة")
-                    else:
-                        st.warning(f"⚠ لا توجد ماكينات في قسم {selected_dept_unlink}")
-                else:
-                    st.warning("⚠ الرجاء إضافة قسم أولاً")
-            
-            st.markdown("---")
-            st.markdown("#### ➕ إنشاء شيت جديد")
-            
-            col_create1, col_create2 = st.columns(2)
-            
-            with col_create1:
-                new_sheet_name = st.text_input("اسم الشيت الجديد:", key="new_sheet_name")
-            
-            with col_create2:
-                default_columns = st.text_area(
-                    "الأعمدة الافتراضية (كل عمود في سطر جديد):",
-                    value="Date\nEvent\nCorrection\nServised by\nTones\nImages\nNotes",
-                    key="new_sheet_columns",
-                    height=150
-                )
-            
-            if st.button("➕ إنشاء شيت جديد", key="create_sheet_btn"):
-                if new_sheet_name:
-                    if new_sheet_name in sheets_edit:
-                        st.warning(f"⚠ الشيت '{new_sheet_name}' موجود بالفعل")
-                    else:
-                        columns_list = [col.strip() for col in default_columns.split("\n") if col.strip()]
-                        if not columns_list:
-                            columns_list = ["Date", "Event", "Correction", "Servised by", "Tones", "Images", "Notes"]
-                        
-                        sheets_edit = create_new_sheet_in_excel(sheets_edit, new_sheet_name, columns_list)
-                        
-                        # حفظ التغييرات
-                        new_sheets = auto_save_to_github(
-                            sheets_edit,
-                            f"إنشاء شيت جديد: {new_sheet_name}"
-                        )
-                        
-                        if new_sheets is not None:
-                            sheets_edit = new_sheets
-                            st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' بنجاح")
-                            st.rerun()
-                        else:
-                            st.error("❌ فشل إنشاء الشيت")
-                else:
-                    st.warning("⚠ الرجاء إدخال اسم الشيت")
-    
-    # ==================== تبويب عرض الهيكل ====================
-    with tab4:
-        st.markdown("### 📊 عرض الهيكل التنظيمي")
-        
-        if structure["departments"]:
-            for dept_name, dept_data in structure["departments"].items():
-                with st.expander(f"🏭 {dept_name}", expanded=True):
-                    if dept_data["machines"]:
-                        for machine_name, machine_data in dept_data["machines"].items():
-                            st.markdown(f"**🔧 {machine_name}**")
-                            if machine_data["sheets"]:
-                                for sheet_name in machine_data["sheets"]:
-                                    st.markdown(f"  - 📄 {sheet_name}")
-                            else:
-                                st.markdown(f"  - *لا توجد شيتات مرتبطة*")
-                    else:
-                        st.markdown("*لا توجد ماكينات*")
-        else:
-            st.info("ℹ️ لا توجد أقسام حالياً")
-    
-    return sheets_edit
-
-# ===============================
-# 🖥 دالة إدارة البيانات (بدون أقسام وشيتات)
-# ===============================
 def manage_data_edit(sheets_edit):
-    """إدارة البيانات (عرض وتعديل وإضافة) بدون إدارة أقسام وشيتات"""
+    """إدارة البيانات (عرض وتعديل وإضافة)"""
     if sheets_edit is None:
         st.warning("❗ الملف المحلي غير موجود. اضغط تحديث من GitHub في الشريط الجانبي أولًا.")
         return sheets_edit
     
-    display_dynamic_sheets(sheets_edit)
+    # عرض جميع الشيتات
+    st.subheader("📂 جميع الشيتات")
     
+    if not sheets_edit:
+        st.warning("⚠ لا توجد شيتات متاحة")
+        return sheets_edit
+    
+    sheet_tabs = st.tabs(list(sheets_edit.keys()))
+    
+    for i, (sheet_name, df) in enumerate(sheets_edit.items()):
+        with sheet_tabs[i]:
+            st.markdown(f"### 📋 {sheet_name}")
+            st.info(f"الصفوف: {len(df)} | الأعمدة: {len(df.columns)}")
+            
+            if st.checkbox(f"عرض جميع الأعمدة", key=f"show_all_{sheet_name}"):
+                st.dataframe(df, use_container_width=True)
+            else:
+                display_cols = []
+                for col in df.columns:
+                    col_lower = str(col).lower()
+                    if any(keyword in col_lower for keyword in ['card', 'date', 'event', 'correction', 'servised', 'serviced', 'images', 'صور', 'technician', 'فني']):
+                        display_cols.append(col)
+                
+                if display_cols:
+                    st.dataframe(df[display_cols], use_container_width=True)
+                else:
+                    st.dataframe(df.head(10), use_container_width=True)
+            
+            with st.expander("📊 إحصائيات الشيت", expanded=False):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("عدد الصفوف", len(df))
+                with col2:
+                    st.metric("عدد الأعمدة", len(df.columns))
+                with col3:
+                    non_empty = df.notna().sum().sum()
+                    total_cells = len(df) * len(df.columns)
+                    st.metric("خلايا غير فارغة", f"{non_empty}/{total_cells}")
+    
+    # تبويبات التعديل
     tab_names = [
         "✏ تعديل بيانات شيت",
-        "➕ إضافة حدث جديد",
-        "✏ تعديل حدث",
+        "➕ إضافة شيت جديد",
         "📷 إدارة الصور"
     ]
     
@@ -1787,18 +930,15 @@ def manage_data_edit(sheets_edit):
         sheets_edit = edit_sheet_with_save_button(sheets_edit)
     
     with tabs_edit[1]:
-        add_new_event_dynamic(sheets_edit)
+        sheets_edit = add_new_sheet_to_github(sheets_edit)
     
     with tabs_edit[2]:
-        edit_event_dynamic(sheets_edit)
-    
-    with tabs_edit[3]:
         manage_images()
     
     return sheets_edit
 
 # ===============================
-# 🖥 الواجهة الرئيسية المدمجة
+# 🖥 الواجهة الرئيسية
 # ===============================
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 
@@ -1857,14 +997,13 @@ with st.sidebar:
 
 all_sheets = load_all_sheets()
 sheets_edit = load_sheets_for_edit()
-structure = load_structure()
 
 st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
 
 username = st.session_state.get("username")
 user_role = st.session_state.get("user_role", "viewer")
 user_permissions = st.session_state.get("user_permissions", ["view"])
-permissions = get_user_permissions(user_role, user_permissions)
+can_edit = (user_role == "admin" or user_role == "editor" or "edit" in user_permissions or "all" in user_permissions)
 
 if all_sheets:
     st.sidebar.markdown("---")
@@ -1880,63 +1019,24 @@ if all_sheets:
         if st.sidebar.checkbox("عرض عينة من البيانات"):
             st.sidebar.dataframe(df_info.head(3), use_container_width=True)
 
-# تحديد التبويبات بناءً على الصلاحيات
-tabs_list = []
+# تبويبات التطبيق
+tabs_list = ["📋 عرض البيانات"]
 
-# تبويب عرض البيانات (بشكل منظم)
-tabs_list.append("📋 عرض البيانات (منظم)")
-
-# تبويب عرض البيانات (جميع الشيتات)
-tabs_list.append("📋 عرض البيانات (جميع الشيتات)")
-
-# تبويب تعديل البيانات
-if permissions["can_edit"]:
+if can_edit:
     tabs_list.append("🛠 تعديل وإدارة البيانات")
-
-# تبويب إدارة الهيكل التنظيمي
-if permissions["can_manage_structure"]:
-    tabs_list.append("🏗️ إدارة الأقسام والماكينات")
-
-# تبويب إدارة المستخدمين
-if permissions["can_manage_users"]:
-    tabs_list.append("👥 إدارة المستخدمين")
 
 tabs = st.tabs(tabs_list)
 
-tab_index = 0
-
-# تبويب عرض البيانات (منظم)
-with tabs[tab_index]:
-    st.header("📋 عرض البيانات حسب الأقسام والماكينات")
-    display_data_organized(all_sheets, structure)
-tab_index += 1
-
-# تبويب عرض البيانات (جميع الشيتات)
-with tabs[tab_index]:
-    st.header("📋 عرض البيانات (جميع الشيتات)")
+# تبويب عرض البيانات
+with tabs[0]:
+    st.header("📋 عرض البيانات")
     if all_sheets is None:
         st.warning("❗ الملف المحلي غير موجود. استخدم زر التحديث في الشريط الجانبي لتحميل الملف من GitHub.")
     else:
         display_data_simple(all_sheets)
-tab_index += 1
 
 # تبويب تعديل البيانات
-if permissions["can_edit"] and tab_index < len(tabs):
-    with tabs[tab_index]:
+if can_edit and len(tabs) > 1:
+    with tabs[1]:
         st.header("🛠 تعديل وإدارة البيانات")
         sheets_edit = manage_data_edit(sheets_edit)
-    tab_index += 1
-
-# تبويب إدارة الهيكل التنظيمي
-if permissions["can_manage_structure"] and tab_index < len(tabs):
-    with tabs[tab_index]:
-        st.header("🏗️ إدارة الأقسام والماكينات")
-        sheets_edit = manage_structure(sheets_edit)
-    tab_index += 1
-
-# تبويب إدارة المستخدمين
-if permissions["can_manage_users"] and tab_index < len(tabs):
-    with tabs[tab_index]:
-        st.header("👥 إدارة المستخدمين")
-        manage_users()
-    tab_index += 1
