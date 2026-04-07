@@ -43,15 +43,18 @@ APP_CONFIG = {
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
     
+    # إعدادات الأعمدة الافتراضية للشيت الجديد (مع إضافة عمود المعدة)
+    "DEFAULT_SHEET_COLUMNS": ["Date", "Equipment", "Event", "Correction", "Servised by", "Tones", "Images", "Notes"],
+    
     # أسماء الأعمدة المتوقعة (للبحث الديناميكي)
     "EXPECTED_COLUMNS": {
-        "card": ["card", "machine", "رقم", "ماكينة", "جهاز", "كارد", "Card Number", "Card", "Machine No", "Machine", "الماكينة", "رقم الماكينة", "رقم الجهاز"],
-        "date": ["date", "تاريخ", "time", "وقت", "Date", "DATE", "التاريخ", "التوقيت", "تاريخ الحدث", "تاريخ التصحيح"],
-        "event": ["event", "حدث", "issue", "مشكلة", "Event", "الحدث", "المشكلة", "Issue", "وصف المشكلة", "الحدث/المشكلة"],
-        "correction": ["correction", "تصحيح", "solution", "حل", "Correction", "التصحيح", "الحل", "Solution", "الإجراء", "الإجراء المتخذ"],
-        "servised_by": ["servised", "serviced", "service", "technician", "فني", "تم بواسطة", "Servised by", "Serviced by", "Technician", "الفني", "المشغل", "اسم الفني", "القائم بالعمل"],
-        "tones": ["tones", "طن", "أطنان", "ton", "tone", "Tones", "TON", "الطن", "الوزن", "الإنتاج", "الكمية"],
-        "images": ["images", "pictures", "صور", "مرفقات", "Images", "الصور", "المرفقات", "صورة", "رفق"]
+        "equipment": ["equipment", "machine", "معدة", "ماكينة", "جهاز", "Equipment", "Machine", "القطعة", "المعدة", "المحرك"],
+        "date": ["date", "تاريخ", "time", "وقت", "Date", "DATE", "التاريخ", "التوقيت"],
+        "event": ["event", "حدث", "issue", "مشكلة", "Event", "الحدث", "المشكلة", "Issue"],
+        "correction": ["correction", "تصحيح", "solution", "حل", "Correction", "التصحيح", "الحل", "Solution"],
+        "servised_by": ["servised", "serviced", "service", "technician", "فني", "تم بواسطة", "Servised by", "Serviced by", "Technician"],
+        "tones": ["tones", "طن", "أطنان", "ton", "tone", "Tones", "TON", "الطن", "الوزن", "الإنتاج"],
+        "images": ["images", "pictures", "صور", "مرفقات", "Images", "الصور", "المرفقات"]
     }
 }
 
@@ -63,11 +66,82 @@ STATE_FILE = "state.json"
 SESSION_DURATION = timedelta(minutes=APP_CONFIG["SESSION_DURATION_MINUTES"])
 MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
+EQUIPMENT_CONFIG_FILE = "equipment_config.json"  # ملف لحفظ تكوينات المعدات لكل شيت
 
 # إنشاء رابط GitHub تلقائياً من الإعدادات
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
 GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/Elqds/refs/heads/main/users.json"
 GITHUB_REPO_USERS = "mahmedabdallh123/Elqds"
+
+# -------------------------------
+# 🧩 دوال إدارة تكوينات المعدات لكل شيت
+# -------------------------------
+def load_equipment_config():
+    """تحميل تكوينات المعدات لكل شيت"""
+    if not os.path.exists(EQUIPMENT_CONFIG_FILE):
+        default_config = {}
+        with open(EQUIPMENT_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(default_config, f, indent=4, ensure_ascii=False)
+        return default_config
+    
+    try:
+        with open(EQUIPMENT_CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_equipment_config(config):
+    """حفظ تكوينات المعدات لكل شيت"""
+    try:
+        with open(EQUIPMENT_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        st.error(f"❌ خطأ في حفظ تكوين المعدات: {e}")
+        return False
+
+def get_sheet_equipment(sheet_name, config):
+    """الحصول على قائمة المعدات لشيت معين"""
+    if sheet_name in config:
+        return config[sheet_name].get("equipment_list", [])
+    return []
+
+def add_equipment_to_sheet(sheet_name, equipment_name, config):
+    """إضافة معدة جديدة لشيت معين"""
+    if sheet_name not in config:
+        config[sheet_name] = {"equipment_list": [], "created_at": datetime.now().isoformat()}
+    
+    if equipment_name in config[sheet_name]["equipment_list"]:
+        return False, f"المعدة '{equipment_name}' موجودة بالفعل في هذا الشيت"
+    
+    config[sheet_name]["equipment_list"].append(equipment_name)
+    save_equipment_config(config)
+    return True, f"تم إضافة المعدة '{equipment_name}' بنجاح"
+
+def remove_equipment_from_sheet(sheet_name, equipment_name, config):
+    """حذف معدة من شيت معين"""
+    if sheet_name not in config:
+        return False, "الشيت غير موجود في التكوين"
+    
+    if equipment_name not in config[sheet_name]["equipment_list"]:
+        return False, "المعدة غير موجودة في هذا الشيت"
+    
+    config[sheet_name]["equipment_list"].remove(equipment_name)
+    save_equipment_config(config)
+    return True, f"تم حذف المعدة '{equipment_name}' بنجاح"
+
+def update_equipment_in_sheet(sheet_name, old_name, new_name, config):
+    """تحديث اسم معدة في شيت معين"""
+    if sheet_name not in config:
+        return False, "الشيت غير موجود في التكوين"
+    
+    if old_name not in config[sheet_name]["equipment_list"]:
+        return False, "المعدة غير موجودة"
+    
+    idx = config[sheet_name]["equipment_list"].index(old_name)
+    config[sheet_name]["equipment_list"][idx] = new_name
+    save_equipment_config(config)
+    return True, f"تم تحديث اسم المعدة بنجاح"
 
 # -------------------------------
 # 🧩 دوال مساعدة للصور
@@ -129,32 +203,6 @@ def get_image_url(image_filename):
     if os.path.exists(file_path):
         return file_path
     return None
-
-def display_images(image_filenames, caption="الصور المرفقة"):
-    """عرض الصور في واجهة المستخدم"""
-    if not image_filenames:
-        return
-    
-    st.markdown(f"**{caption}:**")
-    
-    images_per_row = 3
-    images = image_filenames.split(',') if isinstance(image_filenames, str) else image_filenames
-    
-    for i in range(0, len(images), images_per_row):
-        cols = st.columns(images_per_row)
-        for j in range(images_per_row):
-            idx = i + j
-            if idx < len(images):
-                image_filename = images[idx].strip()
-                with cols[j]:
-                    image_path = get_image_url(image_filename)
-                    if image_path and os.path.exists(image_path):
-                        try:
-                            st.image(image_path, caption=image_filename, use_container_width=True)
-                        except:
-                            st.write(f"📷 {image_filename}")
-                    else:
-                        st.write(f"📷 {image_filename} (غير موجود)")
 
 # -------------------------------
 # 🧩 دوال مساعدة للملفات والحالة
@@ -290,41 +338,6 @@ def load_users():
 def save_users_to_github(users_data):
     """حفظ بيانات المستخدمين إلى GitHub"""
     return upload_users_to_github(users_data)
-
-def update_user_in_github(username, user_data):
-    """تحديث بيانات مستخدم محدد في GitHub"""
-    try:
-        users = load_users()
-        users[username] = user_data
-        return save_users_to_github(users)
-    except Exception as e:
-        st.error(f"❌ خطأ في تحديث المستخدم {username}: {e}")
-        return False
-
-def add_user_to_github(username, user_data):
-    """إضافة مستخدم جديد إلى GitHub"""
-    try:
-        users = load_users()
-        if username in users:
-            st.warning(f"⚠ المستخدم '{username}' موجود بالفعل")
-            return False
-        users[username] = user_data
-        return save_users_to_github(users)
-    except Exception as e:
-        st.error(f"❌ خطأ في إضافة المستخدم {username}: {e}")
-        return False
-
-def delete_user_from_github(username):
-    """حذف مستخدم من GitHub"""
-    try:
-        users = load_users()
-        if username in users:
-            del users[username]
-            return save_users_to_github(users)
-        return False
-    except Exception as e:
-        st.error(f"❌ خطأ في حذف المستخدم {username}: {e}")
-        return False
 
 def load_state():
     if not os.path.exists(STATE_FILE):
@@ -623,55 +636,323 @@ def auto_save_to_github(sheets_dict, operation_description):
         return sheets_dict
 
 # ===============================
-# 🔧 دوال إنشاء شيت جديد في ملف Excel على GitHub
+# 🔧 دوال إنشاء وإدارة الشيتات مع فهرس المعدات
 # ===============================
 def create_new_sheet_in_excel(sheets_edit, new_sheet_name, template_columns=None):
-    """إنشاء شيت جديد في ملف Excel"""
+    """إنشاء شيت جديد في ملف Excel مع أعمدة تشمل Equipment"""
     if template_columns is None:
-        # أعمدة افتراضية للشيت الجديد
-        template_columns = ["Date", "Event", "Correction", "Servised by", "Tones", "Images", "Notes"]
+        template_columns = APP_CONFIG["DEFAULT_SHEET_COLUMNS"]
     
     new_df = pd.DataFrame(columns=template_columns)
     sheets_edit[new_sheet_name] = new_df
     return sheets_edit
 
-def add_new_sheet_to_github(sheets_edit):
-    """وظيفة إضافة شيت جديد إلى ملف Excel على GitHub"""
+def add_new_event_with_equipment(sheets_edit, sheet_name, equipment_list):
+    """إضافة حدث جديد مع اختيار المعدة من القائمة"""
+    st.markdown(f"### 📝 إضافة حدث جديد في شيت: {sheet_name}")
+    
+    if not equipment_list:
+        st.warning("⚠ لا توجد معدات مضافة في هذا الشيت. يرجى إضافة معدات أولاً من قسم 'إدارة المعدات'")
+        return sheets_edit
+    
+    df = sheets_edit[sheet_name].copy()
+    
+    # إنشاء نموذج الإدخال مع قائمة المعدات
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        selected_equipment = st.selectbox("🔧 اختر المعدة:", equipment_list, key=f"equipment_select_{sheet_name}")
+        event_date = st.date_input("📅 التاريخ:", value=datetime.now(), key=f"date_{sheet_name}")
+        event_desc = st.text_area("📝 الحدث/العطل:", height=100, key=f"event_{sheet_name}", placeholder="وصف العطل أو المشكلة...")
+    
+    with col2:
+        correction_desc = st.text_area("🔧 التصحيح/الإجراء المتخذ:", height=100, key=f"correction_{sheet_name}", placeholder="ما الذي تم إصلاحه أو الإجراء الذي تم...")
+        servised_by = st.text_input("👨‍🔧 تم بواسطة (الفني):", key=f"servised_{sheet_name}", placeholder="اسم الفني أو المشغل")
+        tones = st.text_input("⚖️ الأطنان/الكمية:", key=f"tones_{sheet_name}", placeholder="مثال: 5.5 طن")
+    
+    # صور مرفقة
+    st.markdown("#### 📷 الصور المرفقة")
+    uploaded_files = st.file_uploader(
+        "اختر الصور:",
+        type=APP_CONFIG["ALLOWED_IMAGE_TYPES"],
+        accept_multiple_files=True,
+        key=f"images_{sheet_name}"
+    )
+    
+    images_str = ""
+    if uploaded_files:
+        saved_images = save_uploaded_images(uploaded_files)
+        if saved_images:
+            images_str = ",".join(saved_images)
+    
+    # ملاحظات إضافية
+    notes = st.text_area("📝 ملاحظات إضافية:", key=f"notes_{sheet_name}", placeholder="أي ملاحظات إضافية...")
+    
+    if st.button("✅ إضافة الحدث", key=f"submit_event_{sheet_name}", type="primary"):
+        new_row = {
+            "Date": event_date.strftime("%Y-%m-%d"),
+            "Equipment": selected_equipment,
+            "Event": event_desc,
+            "Correction": correction_desc,
+            "Servised by": servised_by,
+            "Tones": tones,
+            "Images": images_str,
+            "Notes": notes
+        }
+        
+        # إضافة أي أعمدة إضافية موجودة في DataFrame
+        for col in df.columns:
+            if col not in new_row:
+                new_row[col] = ""
+        
+        new_row_df = pd.DataFrame([new_row])
+        df_new = pd.concat([df, new_row_df], ignore_index=True)
+        sheets_edit[sheet_name] = df_new
+        
+        new_sheets = auto_save_to_github(
+            sheets_edit,
+            f"إضافة حدث جديد في {sheet_name} - المعدة: {selected_equipment}"
+        )
+        
+        if new_sheets is not None:
+            st.success(f"✅ تم إضافة الحدث بنجاح للمعدة '{selected_equipment}'!")
+            st.rerun()
+    
+    return sheets_edit
+
+def manage_sheet_equipment(sheet_name, config):
+    """إدارة قائمة المعدات لشيت معين"""
+    st.markdown(f"### 🔧 إدارة المعدات في شيت: {sheet_name}")
+    
+    equipment_list = get_sheet_equipment(sheet_name, config)
+    
+    # عرض المعدات الحالية
+    if equipment_list:
+        st.markdown("#### 📋 المعدات الحالية:")
+        for eq in equipment_list:
+            st.markdown(f"- 🔹 {eq}")
+    else:
+        st.info("ℹ️ لا توجد معدات مضافة بعد. أضف معدات جديدة باستخدام النموذج أدناه.")
+    
+    st.markdown("---")
+    
+    # إضافة معدة جديدة
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### ➕ إضافة معدة جديدة")
+        new_equipment = st.text_input("اسم المعدة:", key=f"new_eq_{sheet_name}", placeholder="مثال: محرك رئيسي 1, مضخة مياه, ضاغط هواء")
+        
+        if st.button("➕ إضافة", key=f"add_eq_{sheet_name}"):
+            if new_equipment:
+                success, msg = add_equipment_to_sheet(sheet_name, new_equipment, config)
+                if success:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+            else:
+                st.warning("⚠ الرجاء إدخال اسم المعدة")
+    
+    with col2:
+        st.markdown("#### 🗑️ حذف معدة")
+        if equipment_list:
+            eq_to_delete = st.selectbox("اختر المعدة للحذف:", equipment_list, key=f"del_eq_{sheet_name}")
+            if st.button("🗑️ حذف", key=f"delete_eq_{sheet_name}"):
+                success, msg = remove_equipment_from_sheet(sheet_name, eq_to_delete, config)
+                if success:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+        else:
+            st.info("ℹ️ لا توجد معدات لحذفها")
+    
+    # تعديل اسم معدة
+    if equipment_list:
+        st.markdown("---")
+        st.markdown("#### ✏️ تعديل اسم معدة")
+        col_edit1, col_edit2 = st.columns(2)
+        
+        with col_edit1:
+            eq_to_edit = st.selectbox("اختر المعدة للتعديل:", equipment_list, key=f"edit_eq_select_{sheet_name}")
+        
+        with col_edit2:
+            new_eq_name = st.text_input("الاسم الجديد:", key=f"edit_eq_name_{sheet_name}")
+        
+        if st.button("💾 حفظ التعديل", key=f"save_eq_edit_{sheet_name}"):
+            if new_eq_name:
+                success, msg = update_equipment_in_sheet(sheet_name, eq_to_edit, new_eq_name, config)
+                if success:
+                    # تحديث البيانات في الشيت لتغيير اسم المعدة في جميع الصفوف
+                    st.success(msg)
+                    st.info("⚠ ملاحظة: سيتم تحديث اسم المعدة في السجلات المستقبلية فقط. السجلات السابقة ستبقى بالاسم القديم.")
+                    st.rerun()
+                else:
+                    st.error(msg)
+            else:
+                st.warning("⚠ الرجاء إدخال الاسم الجديد")
+
+def display_sheet_data_with_filter(sheet_name, df, equipment_list):
+    """عرض بيانات الشيت مع فلتر حسب المعدة"""
+    st.markdown(f"### 📄 {sheet_name}")
+    st.info(f"عدد الصفوف: {len(df)} | عدد الأعمدة: {len(df.columns)}")
+    
+    # فلتر حسب المعدة
+    if equipment_list and "Equipment" in df.columns:
+        st.markdown("#### 🔍 فلتر حسب المعدة:")
+        filter_col1, filter_col2 = st.columns([2, 1])
+        
+        with filter_col1:
+            selected_filter = st.selectbox(
+                "اختر المعدة:", 
+                ["جميع المعدات"] + equipment_list,
+                key=f"filter_{sheet_name}"
+            )
+        
+        with filter_col2:
+            if st.button("🔄 عرض الكل", key=f"reset_filter_{sheet_name}"):
+                st.session_state[f"filter_{sheet_name}"] = "جميع المعدات"
+                st.rerun()
+        
+        if selected_filter != "جميع المعدات":
+            df = df[df["Equipment"] == selected_filter]
+            st.info(f"🔍 عرض الأعطال للمعدة: {selected_filter} - عدد السجلات: {len(df)}")
+    
+    # عرض البيانات
+    display_df = df.copy()
+    for col in display_df.columns:
+        if display_df[col].dtype == 'object':
+            display_df[col] = display_df[col].astype(str).apply(lambda x: x[:100] + "..." if len(x) > 100 else x)
+    
+    st.dataframe(display_df, use_container_width=True, height=400)
+    
+    # إحصائيات سريعة
+    if "Equipment" in df.columns and len(df) > 0:
+        with st.expander("📊 إحصائيات الأعطال حسب المعدة", expanded=False):
+            stats = df["Equipment"].value_counts().reset_index()
+            stats.columns = ["المعدة", "عدد الأعطال"]
+            st.dataframe(stats, use_container_width=True)
+
+def search_across_sheets(all_sheets, equipment_config):
+    """البحث في جميع الشيتات مع فلتر حسب المعدة"""
+    st.subheader("🔍 بحث متقدم في جميع السجلات")
+    
+    if not all_sheets:
+        st.warning("لا توجد بيانات للبحث")
+        return
+    
+    # إعدادات البحث
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        search_term = st.text_input("🔎 كلمة البحث:", placeholder="أدخل نصاً للبحث...")
+    
+    with col2:
+        # جمع كل المعدات من جميع الشيتات
+        all_equipment = []
+        for sheet_name in all_sheets.keys():
+            all_equipment.extend(get_sheet_equipment(sheet_name, equipment_config))
+        all_equipment = list(set(all_equipment))
+        
+        filter_equipment = st.selectbox(
+            "🔧 فلتر حسب المعدة:",
+            ["الكل"] + all_equipment,
+            key="search_equipment_filter"
+        )
+    
+    with col3:
+        search_in_column = st.selectbox(
+            "📋 البحث في عمود:",
+            ["الكل", "Equipment", "Event", "Correction", "Notes"],
+            key="search_column"
+        )
+    
+    if st.button("🔍 بحث", key="search_button", type="primary"):
+        results = []
+        
+        for sheet_name, df in all_sheets.items():
+            df_filtered = df.copy()
+            
+            # تطبيق فلتر المعدة
+            if filter_equipment != "الكل" and "Equipment" in df_filtered.columns:
+                df_filtered = df_filtered[df_filtered["Equipment"] == filter_equipment]
+            
+            # تطبيق البحث النصي
+            if search_term:
+                if search_in_column == "الكل":
+                    # بحث في جميع الأعمدة النصية
+                    mask = pd.Series([False] * len(df_filtered))
+                    for col in df_filtered.select_dtypes(include=['object']).columns:
+                        mask = mask | df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
+                    df_filtered = df_filtered[mask]
+                else:
+                    if search_in_column in df_filtered.columns:
+                        df_filtered = df_filtered[df_filtered[search_in_column].astype(str).str.contains(search_term, case=False, na=False)]
+            
+            if not df_filtered.empty:
+                df_filtered["المصدر"] = sheet_name
+                results.append(df_filtered)
+        
+        if results:
+            combined_results = pd.concat(results, ignore_index=True)
+            st.success(f"✅ تم العثور على {len(combined_results)} نتيجة")
+            
+            # عرض النتائج
+            display_results = combined_results.copy()
+            for col in display_results.columns:
+                if display_results[col].dtype == 'object':
+                    display_results[col] = display_results[col].astype(str).apply(lambda x: x[:80] + "..." if len(x) > 80 else x)
+            
+            st.dataframe(display_results, use_container_width=True, height=500)
+            
+            # تصدير النتائج
+            csv = combined_results.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                "📥 تحميل النتائج كملف CSV",
+                csv,
+                f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                "text/csv",
+                key='download-csv'
+            )
+        else:
+            st.warning("⚠ لا توجد نتائج مطابقة للبحث")
+
+def add_new_sheet_to_github(sheets_edit, equipment_config):
+    """وظيفة إضافة شيت جديد إلى ملف Excel على GitHub مع إعدادات المعدات"""
     st.subheader("➕ إضافة شيت جديد إلى ملف Excel")
     
     st.markdown("### 📝 إنشاء شيت جديد")
-    st.info("يمكنك إنشاء شيت جديد وإضافته إلى ملف Excel الموجود على GitHub")
+    st.info("سيتم إنشاء شيت جديد يمثل قسماً أو محطة، ويمكنك لاحقاً إضافة المعدات الخاصة بهذا القسم")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        new_sheet_name = st.text_input("اسم الشيت الجديد:", key="new_sheet_name", placeholder="مثال: Sheet6 أو بيانات_2025")
+        new_sheet_name = st.text_input("اسم الشيت الجديد:", key="new_sheet_name", placeholder="مثال: قسم الميكانيكا, محطة الكهرباء")
         
         if new_sheet_name:
-            # التحقق من وجود الشيت مسبقاً
             if new_sheet_name in sheets_edit:
                 st.warning(f"⚠ الشيت '{new_sheet_name}' موجود بالفعل في الملف!")
     
     with col2:
         default_columns = st.text_area(
             "الأعمدة الافتراضية (كل عمود في سطر جديد):",
-            value="Date\nEvent\nCorrection\nServised by\nTones\nImages\nNotes",
+            value="\n".join(APP_CONFIG["DEFAULT_SHEET_COLUMNS"]),
             key="new_sheet_columns",
             height=150,
-            help="أدخل اسم كل عمود في سطر منفصل"
+            help="تأكد من وجود عمود 'Equipment' لتتمكن من إضافة المعدات"
         )
     
     st.markdown("---")
     st.markdown("### 📋 معاينة الشيت الجديد")
     
-    # معاينة الأعمدة التي سيتم إنشاؤها
     columns_list = [col.strip() for col in default_columns.split("\n") if col.strip()]
-    if not columns_list:
-        columns_list = ["Date", "Event", "Correction", "Servised by", "Tones", "Images", "Notes"]
+    if "Equipment" not in columns_list:
+        st.warning("⚠ تأكد من وجود عمود 'Equipment' في الأعمدة لتتمكن من ربط المعدات بالأعطال")
     
     preview_df = pd.DataFrame(columns=columns_list)
     st.dataframe(preview_df, use_container_width=True)
-    st.caption(f"عدد الأعمدة: {len(columns_list)} | سيتم إنشاء شيت فارغ بهذه الأعمدة")
+    st.caption(f"عدد الأعمدة: {len(columns_list)}")
     
     st.markdown("---")
     
@@ -697,111 +978,17 @@ def add_new_sheet_to_github(sheets_edit):
             )
             
             if new_sheets is not None:
+                # تهيئة تكوين المعدات للشيت الجديد
+                if new_sheet_name not in equipment_config:
+                    equipment_config[new_sheet_name] = {"equipment_list": [], "created_at": datetime.now().isoformat()}
+                    save_equipment_config(equipment_config)
+                
                 st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' بنجاح ورفعه إلى GitHub!")
+                st.info(f"ℹ️ يمكنك الآن إضافة المعدات لهذا القسم من قسم 'إدارة المعدات'")
                 st.balloons()
                 st.rerun()
             else:
                 st.error("❌ فشل إنشاء الشيت أو رفعه إلى GitHub")
-    
-    return sheets_edit
-
-# ===============================
-# 🖥 دالة عرض البيانات
-# ===============================
-def display_data_simple(all_sheets):
-    """عرض البيانات بشكل بسيط (جميع الشيتات)"""
-    if not all_sheets:
-        st.error("❌ لم يتم تحميل أي شيتات.")
-        return
-    
-    st.subheader("📋 عرض البيانات (جميع الشيتات)")
-    
-    sheet_tabs = st.tabs(list(all_sheets.keys()))
-    
-    for i, (sheet_name, df) in enumerate(all_sheets.items()):
-        with sheet_tabs[i]:
-            st.markdown(f"### 📄 {sheet_name}")
-            st.info(f"عدد الصفوف: {len(df)} | عدد الأعمدة: {len(df.columns)}")
-            
-            display_df = df.copy()
-            for col in display_df.columns:
-                if display_df[col].dtype == 'object':
-                    display_df[col] = display_df[col].astype(str).apply(lambda x: x[:100] + "..." if len(x) > 100 else x)
-            
-            st.dataframe(display_df, use_container_width=True, height=400)
-
-# ===============================
-# 🖥 دالة تعديل البيانات
-# ===============================
-def edit_sheet_with_save_button(sheets_edit):
-    """تعديل بيانات الشيت مع زر حفظ يدوي"""
-    st.subheader("✏ تعديل البيانات")
-    
-    if "original_sheets" not in st.session_state:
-        st.session_state.original_sheets = sheets_edit.copy()
-    
-    if "unsaved_changes" not in st.session_state:
-        st.session_state.unsaved_changes = {}
-    
-    sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="edit_sheet")
-    
-    if sheet_name not in st.session_state.unsaved_changes:
-        st.session_state.unsaved_changes[sheet_name] = False
-    
-    df = sheets_edit[sheet_name].astype(str).copy()
-    
-    st.markdown(f"### 📋 تحرير شيت: {sheet_name}")
-    st.info(f"عدد الصفوف: {len(df)} | عدد الأعمدة: {len(df.columns)}")
-    
-    edited_df = st.data_editor(
-        df, 
-        num_rows="dynamic", 
-        use_container_width=True,
-        key=f"editor_{sheet_name}"
-    )
-    
-    has_changes = not edited_df.equals(df)
-    
-    if has_changes:
-        st.session_state.unsaved_changes[sheet_name] = True
-        st.warning("⚠ لديك تغييرات غير محفوظة!")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("💾 حفظ التغييرات", key=f"save_{sheet_name}", type="primary"):
-                sheets_edit[sheet_name] = edited_df.astype(object)
-                
-                new_sheets = auto_save_to_github(
-                    sheets_edit,
-                    f"تعديل يدوي في شيت {sheet_name}"
-                )
-                
-                if new_sheets is not None:
-                    sheets_edit = new_sheets
-                    st.session_state.unsaved_changes[sheet_name] = False
-                    st.success(f"✅ تم حفظ التغييرات بنجاح!")
-                    st.session_state.original_sheets[sheet_name] = edited_df.copy()
-                    st.rerun()
-                else:
-                    st.error("❌ فشل حفظ التغييرات!")
-        
-        with col2:
-            if st.button("↩️ تراجع عن التغييرات", key=f"undo_{sheet_name}"):
-                if sheet_name in st.session_state.original_sheets:
-                    sheets_edit[sheet_name] = st.session_state.original_sheets[sheet_name].astype(object)
-                    st.session_state.unsaved_changes[sheet_name] = False
-                    st.info(f"↩️ تم التراجع عن التغييرات")
-                    st.rerun()
-                else:
-                    st.warning("⚠ لا توجد بيانات أصلية للتراجع!")
-    else:
-        if st.session_state.unsaved_changes.get(sheet_name, False):
-            st.info("ℹ️ التغييرات السابقة تم حفظها.")
-            st.session_state.unsaved_changes[sheet_name] = False
-        
-        if st.button("🔄 تحديث البيانات", key=f"refresh_{sheet_name}"):
-            st.rerun()
     
     return sheets_edit
 
@@ -872,67 +1059,82 @@ def manage_images():
     else:
         st.warning(f"⚠ مجلد الصور {IMAGES_FOLDER} غير موجود")
 
-def manage_data_edit(sheets_edit):
-    """إدارة البيانات (عرض وتعديل وإضافة)"""
+def manage_data_edit(sheets_edit, equipment_config):
+    """إدارة البيانات (عرض وتعديل وإضافة) مع نظام المعدات"""
     if sheets_edit is None:
         st.warning("❗ الملف المحلي غير موجود. اضغط تحديث من GitHub في الشريط الجانبي أولًا.")
         return sheets_edit
     
-    # عرض جميع الشيتات
-    st.subheader("📂 جميع الشيتات")
-    
-    if not sheets_edit:
-        st.warning("⚠ لا توجد شيتات متاحة")
-        return sheets_edit
-    
-    sheet_tabs = st.tabs(list(sheets_edit.keys()))
-    
-    for i, (sheet_name, df) in enumerate(sheets_edit.items()):
-        with sheet_tabs[i]:
-            st.markdown(f"### 📋 {sheet_name}")
-            st.info(f"الصفوف: {len(df)} | الأعمدة: {len(df.columns)}")
-            
-            if st.checkbox(f"عرض جميع الأعمدة", key=f"show_all_{sheet_name}"):
-                st.dataframe(df, use_container_width=True)
-            else:
-                display_cols = []
-                for col in df.columns:
-                    col_lower = str(col).lower()
-                    if any(keyword in col_lower for keyword in ['card', 'date', 'event', 'correction', 'servised', 'serviced', 'images', 'صور', 'technician', 'فني']):
-                        display_cols.append(col)
-                
-                if display_cols:
-                    st.dataframe(df[display_cols], use_container_width=True)
-                else:
-                    st.dataframe(df.head(10), use_container_width=True)
-            
-            with st.expander("📊 إحصائيات الشيت", expanded=False):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("عدد الصفوف", len(df))
-                with col2:
-                    st.metric("عدد الأعمدة", len(df.columns))
-                with col3:
-                    non_empty = df.notna().sum().sum()
-                    total_cells = len(df) * len(df.columns)
-                    st.metric("خلايا غير فارغة", f"{non_empty}/{total_cells}")
-    
     # تبويبات التعديل
     tab_names = [
-        "✏ تعديل بيانات شيت",
+        "📋 عرض وإدارة البيانات",
+        "➕ إضافة حدث جديد",
+        "🔧 إدارة المعدات",
         "➕ إضافة شيت جديد",
         "📷 إدارة الصور"
     ]
     
     tabs_edit = st.tabs(tab_names)
     
+    # تبويب عرض وإدارة البيانات
     with tabs_edit[0]:
-        sheets_edit = edit_sheet_with_save_button(sheets_edit)
+        st.subheader("📋 جميع الشيتات")
+        
+        if not sheets_edit:
+            st.warning("⚠ لا توجد شيتات متاحة")
+        else:
+            sheet_tabs = st.tabs(list(sheets_edit.keys()))
+            
+            for i, (sheet_name, df) in enumerate(sheets_edit.items()):
+                with sheet_tabs[i]:
+                    equipment_list = get_sheet_equipment(sheet_name, equipment_config)
+                    display_sheet_data_with_filter(sheet_name, df, equipment_list)
+                    
+                    # زر تعديل البيانات
+                    with st.expander("✏️ تعديل البيانات المباشر", expanded=False):
+                        st.warning("⚠ كن حذراً عند التعديل المباشر للبيانات")
+                        edited_df = st.data_editor(
+                            df.astype(str),
+                            num_rows="dynamic",
+                            use_container_width=True,
+                            key=f"editor_{sheet_name}"
+                        )
+                        
+                        if st.button(f"💾 حفظ التغييرات في {sheet_name}", key=f"save_edit_{sheet_name}"):
+                            sheets_edit[sheet_name] = edited_df.astype(object)
+                            new_sheets = auto_save_to_github(sheets_edit, f"تعديل بيانات في {sheet_name}")
+                            if new_sheets is not None:
+                                sheets_edit = new_sheets
+                                st.success("✅ تم حفظ التغييرات!")
+                                st.rerun()
     
+    # تبويب إضافة حدث جديد
     with tabs_edit[1]:
-        sheets_edit = add_new_sheet_to_github(sheets_edit)
+        if not sheets_edit:
+            st.warning("⚠ لا توجد شيتات متاحة")
+        else:
+            sheet_name = st.selectbox("اختر الشيت (القسم/المحطة):", list(sheets_edit.keys()), key="add_event_sheet")
+            equipment_list = get_sheet_equipment(sheet_name, equipment_config)
+            
+            if not equipment_list:
+                st.warning(f"⚠ لا توجد معدات مضافة في شيت '{sheet_name}'. يرجى إضافة معدات أولاً من تبويب 'إدارة المعدات'")
+            else:
+                sheets_edit = add_new_event_with_equipment(sheets_edit, sheet_name, equipment_list)
     
+    # تبويب إدارة المعدات
     with tabs_edit[2]:
+        if not sheets_edit:
+            st.warning("⚠ لا توجد شيتات متاحة")
+        else:
+            sheet_name = st.selectbox("اختر الشيت (القسم/المحطة):", list(sheets_edit.keys()), key="manage_eq_sheet")
+            manage_sheet_equipment(sheet_name, equipment_config)
+    
+    # تبويب إضافة شيت جديد
+    with tabs_edit[3]:
+        sheets_edit = add_new_sheet_to_github(sheets_edit, equipment_config)
+    
+    # تبويب إدارة الصور
+    with tabs_edit[4]:
         manage_images()
     
     return sheets_edit
@@ -943,6 +1145,7 @@ def manage_data_edit(sheets_edit):
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 
 setup_images_folder()
+equipment_config = load_equipment_config()
 
 with st.sidebar:
     st.header("👤 الجلسة")
@@ -1016,11 +1219,14 @@ if all_sheets:
         df_info = all_sheets[selected_sheet_info]
         st.sidebar.info(f"**{selected_sheet_info}:** {len(df_info)} صف × {len(df_info.columns)} عمود")
         
+        equipment_count = len(get_sheet_equipment(selected_sheet_info, equipment_config))
+        st.sidebar.caption(f"🔧 عدد المعدات في هذا القسم: {equipment_count}")
+        
         if st.sidebar.checkbox("عرض عينة من البيانات"):
             st.sidebar.dataframe(df_info.head(3), use_container_width=True)
 
 # تبويبات التطبيق
-tabs_list = ["📋 عرض البيانات"]
+tabs_list = ["📋 عرض البيانات", "🔍 بحث متقدم"]
 
 if can_edit:
     tabs_list.append("🛠 تعديل وإدارة البيانات")
@@ -1029,14 +1235,23 @@ tabs = st.tabs(tabs_list)
 
 # تبويب عرض البيانات
 with tabs[0]:
-    st.header("📋 عرض البيانات")
+    st.header("📋 عرض البيانات حسب الأقسام")
     if all_sheets is None:
         st.warning("❗ الملف المحلي غير موجود. استخدم زر التحديث في الشريط الجانبي لتحميل الملف من GitHub.")
     else:
-        display_data_simple(all_sheets)
+        sheet_tabs = st.tabs(list(all_sheets.keys()))
+        for i, (sheet_name, df) in enumerate(all_sheets.items()):
+            with sheet_tabs[i]:
+                equipment_list = get_sheet_equipment(sheet_name, equipment_config)
+                display_sheet_data_with_filter(sheet_name, df, equipment_list)
+
+# تبويب بحث متقدم
+with tabs[1]:
+    st.header("🔍 بحث متقدم في جميع السجلات")
+    search_across_sheets(all_sheets, equipment_config)
 
 # تبويب تعديل البيانات
-if can_edit and len(tabs) > 1:
-    with tabs[1]:
+if can_edit and len(tabs) > 2:
+    with tabs[2]:
         st.header("🛠 تعديل وإدارة البيانات")
-        sheets_edit = manage_data_edit(sheets_edit)
+        sheets_edit = manage_data_edit(sheets_edit, equipment_config)
