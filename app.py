@@ -8,8 +8,19 @@ import shutil
 import re
 from datetime import datetime, timedelta
 import io
-import plotly.graph_objects as go
 from github import Github, GithubException
+
+# محاولة استيراد Plotly
+try:
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    try:
+        import matplotlib.pyplot as plt
+        MATPLOTLIB_AVAILABLE = True
+    except ImportError:
+        MATPLOTLIB_AVAILABLE = False
 
 # إعدادات التطبيق
 APP_CONFIG = {
@@ -541,34 +552,27 @@ def show_machine_details(df):
             st.metric("⏳ الأيام المتبقية", days_left)
             st.metric("⚖️ آخر كمية", machine_data.get('آخر كمية', 'غير محدد'))
         
+        # عرض العداد التنازلي كنص بدلاً من رسم بياني
         if machine_data.get('عدد الأيام المتبقية') and str(machine_data.get('عدد الأيام المتبقية')).isdigit():
             days_left = int(machine_data.get('عدد الأيام المتبقية'))
             interval = int(machine_data.get('المدة (أيام)', 90))
             
             st.subheader("📊 العداد التنازلي")
             
-            fig = go.Figure(go.Indicator(
-                mode="gauge+number+delta",
-                value=days_left,
-                title={"text": f"الأيام المتبقية حتى موعد التشحيم التالي"},
-                delta={"reference": 0, "increasing": {"color": "red"}},
-                gauge={
-                    "axis": {"range": [0, interval]},
-                    "bar": {"color": "darkorange"},
-                    "steps": [
-                        {"range": [0, interval*0.3], "color": "red"},
-                        {"range": [interval*0.3, interval*0.7], "color": "orange"},
-                        {"range": [interval*0.7, interval], "color": "lightgreen"}
-                    ],
-                    "threshold": {
-                        "line": {"color": "red", "width": 4},
-                        "thickness": 0.75,
-                        "value": 0
-                    }
-                }
-            ))
-            fig.update_layout(height=300)
-            st.plotly_chart(fig, use_container_width=True)
+            # عرض شريط تقدم بسيط
+            progress = max(0, min(100, (interval - days_left) / interval * 100))
+            st.progress(progress / 100)
+            
+            # عرض الأيام المتبقية بشكل واضح
+            if days_left <= 0:
+                st.error(f"🔴 **متأخر بـ {abs(days_left)} يوم** - يجب التشحيم فوراً!")
+            elif days_left <= 7:
+                st.warning(f"🟡 **متبقي {days_left} يوم** - يجب التشحيم قريباً!")
+            else:
+                st.success(f"🟢 **متبقي {days_left} يوم** - الحالة جيدة")
+            
+            # عرض شريط المعلومات
+            st.caption(f"المدة الإجمالية: {interval} يوم | تم: {interval - days_left} يوم | متبقي: {days_left} يوم")
 
 def show_reports(df):
     st.header("📊 التقارير والإحصائيات")
@@ -591,12 +595,6 @@ def show_reports(df):
             status_stats = df["حالة التشحيم"].value_counts().reset_index()
             status_stats.columns = ["الحالة", "العدد"]
             st.dataframe(status_stats, use_container_width=True)
-        
-        st.subheader("📊 توزيع الماكينات حسب نوع المادة")
-        if not material_stats.empty:
-            fig = go.Figure(data=[go.Pie(labels=material_stats["نوع المادة"], values=material_stats["العدد"], hole=0.3)])
-            fig.update_layout(title="نسبة الماكينات حسب نوع مادة التشحيم")
-            st.plotly_chart(fig, use_container_width=True)
     
     with tab2:
         st.subheader("🔴 الماكينات المتأخرة عن موعد التشحيم")
