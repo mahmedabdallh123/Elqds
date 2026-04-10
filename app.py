@@ -39,7 +39,7 @@ APP_CONFIG = {
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
-    "DEFAULT_SHEET_COLUMNS": ["التاريخ", "رقم الماكينة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "الطن", "الصور", "القسم", "ملاحظات"],
+    "DEFAULT_SHEET_COLUMNS": ["التاريخ", "رقم الماكينة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "الطن", "الصور", "القسم", "ملاحظات"]
 }
 
 USERS_FILE = "users.json"
@@ -410,7 +410,7 @@ def update_event_in_sheet(sheets_edit, sheet_name, row_index, event_data, new_im
     df.loc[row_index, "رقم الماكينة"] = event_data.get("رقم الماكينة", df.loc[row_index, "رقم الماكينة"])
     df.loc[row_index, "الحدث/العطل"] = event_data.get("الحدث/العطل", df.loc[row_index, "الحدث/العطل"])
     df.loc[row_index, "الإجراء التصحيحي"] = event_data.get("الإجراء التصحيحي", df.loc[row_index, "الإجراء التصحيحي"])
-    df.loc[row_index, "تم بواسطة"] = event_data.get("تم بواسطة", st.session_state.get("username", ""))
+    df.loc[row_index, "تم بواسطة"] = event_data.get("تم بواسطة", df.loc[row_index, "تم بواسطة"])
     df.loc[row_index, "الطن"] = event_data.get("الطن", df.loc[row_index, "الطن"])
     df.loc[row_index, "القسم"] = event_data.get("القسم", df.loc[row_index, "القسم"])
     df.loc[row_index, "ملاحظات"] = event_data.get("ملاحظات", df.loc[row_index, "ملاحظات"])
@@ -468,9 +468,9 @@ def advanced_search(all_sheets, search_text, machine_number, section, start_date
         if machine_number and "رقم الماكينة" in df_filtered.columns:
             df_filtered = df_filtered[df_filtered["رقم الماكينة"].astype(str).str.contains(machine_number, case=False, na=False)]
         
-        # فلتر حسب القسم
+        # فلتر حسب القسم (نصي)
         if section and section != "الكل" and "القسم" in df_filtered.columns:
-            df_filtered = df_filtered[df_filtered["القسم"] == section]
+            df_filtered = df_filtered[df_filtered["القسم"].astype(str).str.contains(section, case=False, na=False)]
         
         # فلتر حسب التاريخ
         if start_date and end_date and "التاريخ" in df_filtered.columns:
@@ -509,7 +509,7 @@ def display_sheet_data_with_events(sheet_name, df, unique_id, sheets_edit, can_e
             sections = ["الكل"] + sorted(df["القسم"].dropna().unique().tolist())
             selected_section = st.selectbox("فلتر حسب القسم:", sections, key=f"section_filter_{unique_id}")
             if selected_section != "الكل":
-                df = df[df["القسم"] == selected_section]
+                df = df[df["القسم"].astype(str) == selected_section]
     
     st.markdown("---")
     
@@ -575,7 +575,7 @@ def display_sheet_data_with_events(sheet_name, df, unique_id, sheets_edit, can_e
                         edit_correction = st.text_area("الإجراء التصحيحي:", value=row.get('الإجراء التصحيحي', ''), height=100)
                         edit_done_by = st.text_input("تم بواسطة:", value=row.get('تم بواسطة', ''))
                         edit_tones = st.text_input("الطن:", value=row.get('الطن', ''))
-                        edit_section = st.selectbox("القسم:", APP_CONFIG["SECTIONS"], index=APP_CONFIG["SECTIONS"].index(row.get('القسم', '')) if row.get('القسم', '') in APP_CONFIG["SECTIONS"] else 0)
+                        edit_section = st.text_input("القسم:", value=row.get('القسم', ''), placeholder="أدخل اسم القسم...")
                         edit_notes = st.text_area("ملاحظات:", value=row.get('ملاحظات', ''), height=100)
                         
                         # إدارة الصور
@@ -650,9 +650,9 @@ def show_add_event(all_sheets, sheets_edit):
         
         with col2:
             correction_desc = st.text_area("🔧 الإجراء التصحيحي:", height=100, placeholder="الإجراء الذي تم اتخاذه...")
-            done_by = st.text_input("👨‍🔧 تم بواسطة:", value=st.session_state.get("username", ""))
+            done_by = st.text_input("👨‍🔧 تم بواسطة:", value=st.session_state.get("username", ""), placeholder="اسم الشخص الذي قام بالعملية")
             tones = st.text_input("⚖️ الطن:", placeholder="الطن (إن وجد)")
-            section = st.selectbox("🏢 القسم:", APP_CONFIG["SECTIONS"])
+            section = st.text_input("🏢 القسم:", placeholder="أدخل اسم القسم... (مثال: قسم الإنتاج، قسم الصيانة)")
             notes = st.text_area("📝 ملاحظات:", height=80, placeholder="ملاحظات إضافية...")
         
         images = st.file_uploader("🖼️ رفع الصور:", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], accept_multiple_files=True)
@@ -708,8 +708,7 @@ def show_advanced_search(all_sheets):
             machine_number = st.text_input("🔢 رقم الماكينة:", placeholder="أدخل رقم الماكينة...")
         
         with col2:
-            sections = ["الكل"] + APP_CONFIG["SECTIONS"]
-            section = st.selectbox("🏢 القسم:", sections)
+            section = st.text_input("🏢 القسم:", placeholder="أدخل اسم القسم للبحث...")
             
             use_date_filter = st.checkbox("فلتر بالتاريخ")
             if use_date_filter:
