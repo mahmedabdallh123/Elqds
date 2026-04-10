@@ -2012,7 +2012,7 @@ def add_new_event(sheets_edit):
             st.rerun()
 
 # -------------------------------
-# 🖥 دالة تعديل الإيفينت والكوريكشن - مع خاصية إدارة الصور
+# 🖥 دالة تعديل الإيفينت والكوريكشن - مع خاصية إدارة الصور (مصححة)
 # -------------------------------
 def edit_events_and_corrections(sheets_edit):
     """تعديل الإيفينت والكوريكشن مع إدارة الصور"""
@@ -2094,9 +2094,12 @@ def edit_events_and_corrections(sheets_edit):
         
         existing_images = []
         if images_col and images_col in editing_data:
-            existing_images_str = editing_data.get(images_col, "")
-            if existing_images_str and existing_images_str != "-":
-                existing_images = [img.strip() for img in existing_images_str.split(",") if img.strip()]
+            existing_images_str = editing_data.get(images_col)
+            # التحقق من أن القيمة ليست None أو NaN أو float
+            if existing_images_str is not None and pd.notna(existing_images_str):
+                existing_images_str = str(existing_images_str).strip()
+                if existing_images_str and existing_images_str != "-":
+                    existing_images = [img.strip() for img in existing_images_str.split(",") if img.strip()]
         
         if existing_images:
             st.markdown("**الصور الحالية:**")
