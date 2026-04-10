@@ -45,7 +45,7 @@ APP_CONFIG = {
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
-    "DEFAULT_SHEET_COLUMNS": ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "الطن", "الصور", "ملاحظات"],
+    "DEFAULT_SHEET_COLUMNS": ["التاريخ", " رقم الماكينة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "الطن", "الصور", "قسم"],
 }
 
 USERS_FILE = "users.json"
