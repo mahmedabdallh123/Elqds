@@ -469,7 +469,7 @@ def advanced_search(all_sheets, search_text, machine_number, section, start_date
             df_filtered = df_filtered[df_filtered["رقم الماكينة"].astype(str).str.contains(machine_number, case=False, na=False)]
         
         # فلتر حسب القسم (نصي)
-        if section and section != "الكل" and "القسم" in df_filtered.columns:
+        if section and section != "" and "القسم" in df_filtered.columns:
             df_filtered = df_filtered[df_filtered["القسم"].astype(str).str.contains(section, case=False, na=False)]
         
         # فلتر حسب التاريخ
@@ -700,6 +700,9 @@ def show_advanced_search(all_sheets):
         st.warning("لا توجد بيانات للبحث")
         return
     
+    # متغير لتخزين نتائج البحث
+    search_results = None
+    
     with st.form(key="search_form"):
         col1, col2 = st.columns(2)
         
@@ -725,43 +728,47 @@ def show_advanced_search(all_sheets):
         
         if submitted:
             with st.spinner("جاري البحث..."):
-                results = advanced_search(all_sheets, search_text, machine_number, section, start_date, end_date)
-                
-                if not results.empty:
-                    st.success(f"✅ تم العثور على {len(results)} نتيجة")
+                search_results = advanced_search(all_sheets, search_text, machine_number, section, start_date, end_date)
+    
+    # عرض النتائج خارج النموذج
+    if search_results is not None:
+        if not search_results.empty:
+            st.success(f"✅ تم العثور على {len(search_results)} نتيجة")
+            
+            # زر التحميل خارج النموذج
+            csv = search_results.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 تحميل نتائج البحث", csv, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", "text/csv")
+            
+            st.markdown("---")
+            
+            # عرض النتائج
+            for idx, row in search_results.iterrows():
+                with st.expander(f"📋 {row.get('التاريخ', '')} - {row.get('رقم الماكينة', '')} - {row.get('الحدث/العطل', '')[:50]}"):
+                    col1, col2 = st.columns(2)
                     
-                    # عرض النتائج
-                    for idx, row in results.iterrows():
-                        with st.expander(f"📋 {row.get('التاريخ', '')} - {row.get('رقم الماكينة', '')} - {row.get('الحدث/العطل', '')[:50]}"):
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                st.markdown(f"**📅 التاريخ:** {row.get('التاريخ', '')}")
-                                st.markdown(f"**🔢 رقم الماكينة:** {row.get('رقم الماكينة', '')}")
-                                st.markdown(f"**⚙️ الحدث/العطل:** {row.get('الحدث/العطل', '')}")
-                                st.markdown(f"**🔧 الإجراء التصحيحي:** {row.get('الإجراء التصحيحي', '')}")
-                                st.markdown(f"**🏢 القسم:** {row.get('القسم', '')}")
-                                st.markdown(f"**📝 الشيت:** {row.get('اسم الشيت', '')}")
-                            
-                            with col2:
-                                st.markdown(f"**👨‍🔧 تم بواسطة:** {row.get('تم بواسطة', '')}")
-                                st.markdown(f"**⚖️ الطن:** {row.get('الطن', '')}")
-                                st.markdown(f"**📝 ملاحظات:** {row.get('ملاحظات', '')}")
-                                
-                                # عرض الصور
-                                images_str = row.get('الصور', '')
-                                if images_str and isinstance(images_str, str):
-                                    st.markdown("**🖼️ الصور:**")
-                                    for img in images_str.split(", "):
-                                        img_path = os.path.join(IMAGES_FOLDER, img)
-                                        if os.path.exists(img_path):
-                                            st.image(img_path, width=150)
+                    with col1:
+                        st.markdown(f"**📅 التاريخ:** {row.get('التاريخ', '')}")
+                        st.markdown(f"**🔢 رقم الماكينة:** {row.get('رقم الماكينة', '')}")
+                        st.markdown(f"**⚙️ الحدث/العطل:** {row.get('الحدث/العطل', '')}")
+                        st.markdown(f"**🔧 الإجراء التصحيحي:** {row.get('الإجراء التصحيحي', '')}")
+                        st.markdown(f"**🏢 القسم:** {row.get('القسم', '')}")
+                        st.markdown(f"**📝 الشيت:** {row.get('اسم الشيت', '')}")
                     
-                    # تصدير النتائج
-                    csv = results.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 تحميل نتائج البحث", csv, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", "text/csv")
-                else:
-                    st.warning("❌ لا توجد نتائج مطابقة للبحث")
+                    with col2:
+                        st.markdown(f"**👨‍🔧 تم بواسطة:** {row.get('تم بواسطة', '')}")
+                        st.markdown(f"**⚖️ الطن:** {row.get('الطن', '')}")
+                        st.markdown(f"**📝 ملاحظات:** {row.get('ملاحظات', '')}")
+                        
+                        # عرض الصور
+                        images_str = row.get('الصور', '')
+                        if images_str and isinstance(images_str, str):
+                            st.markdown("**🖼️ الصور:**")
+                            for img in images_str.split(", "):
+                                img_path = os.path.join(IMAGES_FOLDER, img)
+                                if os.path.exists(img_path):
+                                    st.image(img_path, width=150)
+        else:
+            st.warning("❌ لا توجد نتائج مطابقة للبحث")
 
 def show_add_machine(sheets_edit):
     """إضافة ماكينة جديدة"""
