@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from base64 import b64decode
 import uuid
 import io
+from PIL import Image
 
 # محاولة استيراد Plotly مع معالجة الخطأ
 try:
@@ -45,7 +46,7 @@ APP_CONFIG = {
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
-    "DEFAULT_SHEET_COLUMNS": ["التاريخ", "المعدة", "اسم قطعه الغيار", "المقاس", "العدد ف معده", "نوع التشحيم", "الكميه", "عدد ساعات التشغيل"],
+    "DEFAULT_SHEET_COLUMNS": ["التاريخ", "المعدة", "اسم قطعه الغيار", "المقاس", "العدد ف معده", "نوع التشحيم", "الكميه", "عدد ساعات التشغيل", "الصور"],
 }
 
 USERS_FILE = "users.json"
@@ -58,6 +59,97 @@ EQUIPMENT_CONFIG_FILE = "equipment_config.json"
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
 GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/Elqds/refs/heads/main/users.json"
 GITHUB_REPO_USERS = "mahmedabdallh123/Elqds"
+
+# ------------------------------- دوال إدارة الصور -------------------------------
+def ensure_images_folder():
+    """إنشاء مجلد الصور إذا لم يكن موجوداً"""
+    if not os.path.exists(IMAGES_FOLDER):
+        os.makedirs(IMAGES_FOLDER)
+
+def save_image_locally(image_file, image_id):
+    """حفظ الصورة محلياً"""
+    ensure_images_folder()
+    file_extension = image_file.name.split('.')[-1].lower()
+    filename = f"{image_id}.{file_extension}"
+    filepath = os.path.join(IMAGES_FOLDER, filename)
+    
+    with open(filepath, "wb") as f:
+        f.write(image_file.getbuffer())
+    
+    return filename, filepath
+
+def upload_image_to_github(image_file, image_id):
+    """رفع الصورة إلى GitHub"""
+    try:
+        token = st.secrets.get("github", {}).get("token", None)
+        if not token:
+            return None, "❌ لم يتم العثور على GitHub token"
+        
+        if not GITHUB_AVAILABLE:
+            return None, "❌ PyGithub غير متوفر"
+        
+        g = Github(token)
+        repo = g.get_repo(APP_CONFIG["REPO_NAME"])
+        
+        file_extension = image_file.name.split('.')[-1].lower()
+        filename = f"{image_id}.{file_extension}"
+        github_path = f"{IMAGES_FOLDER}/{filename}"
+        
+        # حفظ مؤقتاً لقراءة المحتوى
+        temp_path = f"temp_{image_id}.{file_extension}"
+        with open(temp_path, "wb") as f:
+            f.write(image_file.getbuffer())
+        
+        with open(temp_path, "rb") as f:
+            content = f.read()
+        
+        os.remove(temp_path)
+        
+        try:
+            # محاولة رفع الصورة إلى GitHub
+            contents = repo.get_contents(github_path, ref=APP_CONFIG["BRANCH"])
+            result = repo.update_file(
+                path=github_path,
+                message=f"تحديث صورة {filename}",
+                content=content,
+                sha=contents.sha,
+                branch=APP_CONFIG["BRANCH"]
+            )
+        except GithubException as e:
+            if e.status == 404:
+                result = repo.create_file(
+                    path=github_path,
+                    message=f"إضافة صورة {filename}",
+                    content=content,
+                    branch=APP_CONFIG["BRANCH"]
+                )
+            else:
+                raise e
+        
+        # الحصول على رابط الصورة
+        image_url = f"https://raw.githubusercontent.com/{APP_CONFIG['REPO_NAME']}/{APP_CONFIG['BRANCH']}/{github_path}"
+        return image_url, None
+        
+    except Exception as e:
+        return None, str(e)
+
+def get_image_url_from_github(image_filename):
+    """الحصول على رابط الصورة من GitHub"""
+    if not image_filename:
+        return None
+    return f"https://raw.githubusercontent.com/{APP_CONFIG['REPO_NAME']}/{APP_CONFIG['BRANCH']}/{IMAGES_FOLDER}/{image_filename}"
+
+def display_image(image_path_or_url):
+    """عرض الصورة"""
+    try:
+        if image_path_or_url.startswith('http'):
+            st.image(image_path_or_url, use_container_width=True)
+        elif os.path.exists(image_path_or_url):
+            st.image(image_path_or_url, use_container_width=True)
+        else:
+            st.info("الصورة غير متوفرة")
+    except Exception as e:
+        st.error(f"خطأ في عرض الصورة: {e}")
 
 # ------------------------------- دوال تصدير البيانات -------------------------------
 def export_sheet_to_excel(sheets_dict, sheet_name):
@@ -297,7 +389,7 @@ def login_ui():
             logout_action()
         return True
 
-# ------------------------------- دوال الملفات (المعدلة) -------------------------------
+# ------------------------------- دوال الملفات -------------------------------
 def fetch_from_github_requests():
     try:
         response = requests.get(GITHUB_EXCEL_URL, stream=True, timeout=15)
@@ -441,6 +533,13 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
             df = df[df["المعدة"] == selected_filter]
             st.info(f"عرض لماكينة: {selected_filter} - السجلات: {len(df)}")
     
+    # عرض الصور إذا وجدت في البيانات
+    if "الصور" in df.columns:
+        for idx, row in df.iterrows():
+            if row.get("الصور"):
+                with st.expander(f"🖼️ صورة السجل {idx+1}"):
+                    display_image(row["الصور"])
+    
     display_df = df.copy()
     for col in display_df.columns:
         if display_df[col].dtype == 'object':
@@ -550,9 +649,9 @@ def search_across_sheets(all_sheets):
         else:
             st.warning("لا توجد نتائج مطابقة للبحث")
 
-# ==================== دوال إضافة البيانات (معدلة) ====================
+# ==================== دوال إضافة البيانات (مع إضافة الصور) ====================
 def add_new_data_entry(sheets_edit, sheet_name):
-    """إضافة بيانات جديدة (بدلاً من حدث عطل)"""
+    """إضافة بيانات جديدة مع إمكانية رفع الصور"""
     st.markdown(f"### 📝 إضافة بيانات جديدة في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
     equipment_list = get_equipment_list_from_sheet(df)
@@ -561,7 +660,7 @@ def add_new_data_entry(sheets_edit, sheet_name):
         st.warning("⚠ لا توجد ماكينات مسجلة في هذا القسم. يرجى إضافة ماكينة أولاً من تبويب 'إدارة الماكينات'")
         return sheets_edit
     
-    with st.form(key="add_data_form"):
+    with st.form(key="add_data_form", clear_on_submit=False):
         st.markdown("#### 📋 بيانات الصيانة")
         
         col1, col2 = st.columns(2)
@@ -579,9 +678,40 @@ def add_new_data_entry(sheets_edit, sheet_name):
         
         notes = st.text_area("📝 ملاحظات إضافية:", height=80, placeholder="أي ملاحظات إضافية...")
         
+        st.markdown("---")
+        st.markdown("#### 🖼️ إضافة صور")
+        
+        uploaded_images = st.file_uploader(
+            "اختر الصور (يمكنك اختيار عدة صور)",
+            type=APP_CONFIG["ALLOWED_IMAGE_TYPES"],
+            accept_multiple_files=True,
+            key=f"image_uploader_{sheet_name}"
+        )
+        
+        if uploaded_images:
+            for img in uploaded_images:
+                if img.size > APP_CONFIG["MAX_IMAGE_SIZE_MB"] * 1024 * 1024:
+                    st.warning(f"الصورة {img.name} حجمها أكبر من {APP_CONFIG['MAX_IMAGE_SIZE_MB']}MB")
+        
         submitted = st.form_submit_button("✅ إضافة البيانات", type="primary")
         
         if submitted:
+            # إنشاء معرف فريد للبيانات
+            record_id = str(uuid.uuid4())
+            
+            # رفع الصور وحفظ روابطها
+            image_urls = []
+            if uploaded_images:
+                with st.spinner("جاري رفع الصور..."):
+                    for i, img in enumerate(uploaded_images):
+                        image_id = f"{record_id}_{i}"
+                        image_url, error = upload_image_to_github(img, image_id)
+                        if image_url:
+                            image_urls.append(image_url)
+                        else:
+                            st.error(f"فشل رفع الصورة {img.name}: {error}")
+            
+            # إنشاء سجل البيانات
             new_row = {
                 "التاريخ": event_date.strftime("%Y-%m-%d"),
                 "المعدة": selected_equipment,
@@ -591,7 +721,8 @@ def add_new_data_entry(sheets_edit, sheet_name):
                 "نوع التشحيم": lubrication_type,
                 "الكميه": quantity,
                 "عدد ساعات التشغيل": operating_hours,
-                "ملاحظات": notes
+                "ملاحظات": notes,
+                "الصور": ", ".join(image_urls) if image_urls else ""
             }
             
             # إضافة أي أعمدة موجودة في DataFrame ولكن ليست في new_row
@@ -605,7 +736,10 @@ def add_new_data_entry(sheets_edit, sheet_name):
             
             if save_and_push_to_github(sheets_edit, f"إضافة بيانات جديدة في قسم {sheet_name} للماكينة {selected_equipment}"):
                 st.cache_data.clear()
-                st.success("✅ تم إضافة البيانات بنجاح ورفعها إلى GitHub!")
+                if image_urls:
+                    st.success(f"✅ تم إضافة البيانات و {len(image_urls)} صورة بنجاح ورفعها إلى GitHub!")
+                else:
+                    st.success("✅ تم إضافة البيانات بنجاح ورفعها إلى GitHub!")
                 st.rerun()
             else:
                 st.error("❌ فشل الحفظ")
