@@ -426,7 +426,7 @@ def delete_event_from_sheet(sheets_edit, sheet_name, row_index):
     return sheets_edit, True, "تم حذف الحدث بنجاح"
 
 # ------------------------------- دوال البحث المتقدم في جميع الشيتات -------------------------------
-def search_in_all_sheets(all_sheets, search_text, machine_number, section, start_date, end_date):
+def search_in_all_sheets(all_sheets, search_text, machine_number, section, start_date, end_date, use_date_filter):
     """بحث متقدم في جميع الشيتات (الماكينات) وجميع الأعمدة"""
     if not all_sheets:
         return pd.DataFrame()
@@ -439,31 +439,39 @@ def search_in_all_sheets(all_sheets, search_text, machine_number, section, start
         
         df_filtered = df.copy()
         
-        # فلتر حسب النص (يبحث في كل الأعمدة النصية)
-        if search_text:
+        # تطبيق الفلاتر حسب المدخلات فقط (وليس كلها معاً)
+        
+        # 1. فلتر حسب النص العام (يبحث في كل الأعمدة)
+        if search_text and search_text.strip() != "":
             mask = pd.Series([False] * len(df_filtered))
-            # البحث في جميع الأعمدة النصية
             for col in df_filtered.columns:
                 if df_filtered[col].dtype == 'object':
-                    mask = mask | df_filtered[col].astype(str).str.contains(search_text, case=False, na=False)
+                    try:
+                        mask = mask | df_filtered[col].astype(str).str.contains(search_text, case=False, na=False)
+                    except:
+                        pass
             df_filtered = df_filtered[mask]
         
-        # فلتر حسب رقم الماكينة
-        if machine_number and "رقم الماكينة" in df_filtered.columns:
-            df_filtered = df_filtered[df_filtered["رقم الماكينة"].astype(str).str.contains(machine_number, case=False, na=False)]
+        # 2. فلتر حسب رقم الماكينة (بحث دقيق)
+        if machine_number and machine_number.strip() != "":
+            if "رقم الماكينة" in df_filtered.columns:
+                df_filtered = df_filtered[df_filtered["رقم الماكينة"].astype(str).str.contains(machine_number, case=False, na=False)]
         
-        # فلتر حسب القسم
-        if section and section != "" and "القسم" in df_filtered.columns:
-            df_filtered = df_filtered[df_filtered["القسم"].astype(str).str.contains(section, case=False, na=False)]
+        # 3. فلتر حسب القسم (بحث دقيق)
+        if section and section.strip() != "":
+            if "القسم" in df_filtered.columns:
+                df_filtered = df_filtered[df_filtered["القسم"].astype(str).str.contains(section, case=False, na=False)]
         
-        # فلتر حسب التاريخ
-        if start_date and end_date and "التاريخ" in df_filtered.columns:
-            try:
-                df_filtered["التاريخ"] = pd.to_datetime(df_filtered["التاريخ"], errors='coerce')
-                mask = (df_filtered["التاريخ"].dt.date >= start_date) & (df_filtered["التاريخ"].dt.date <= end_date)
-                df_filtered = df_filtered[mask]
-            except:
-                pass
+        # 4. فلتر حسب التاريخ
+        if use_date_filter and start_date and end_date:
+            if "التاريخ" in df_filtered.columns:
+                try:
+                    df_filtered["التاريخ_temp"] = pd.to_datetime(df_filtered["التاريخ"], errors='coerce')
+                    mask = (df_filtered["التاريخ_temp"].dt.date >= start_date) & (df_filtered["التاريخ_temp"].dt.date <= end_date)
+                    df_filtered = df_filtered[mask]
+                    df_filtered = df_filtered.drop(columns=["التاريخ_temp"])
+                except Exception as e:
+                    pass
         
         if not df_filtered.empty:
             df_filtered["الماكينة (الشيت)"] = sheet_name
@@ -699,10 +707,10 @@ def show_advanced_search(all_sheets):
         
         with col1:
             search_text = st.text_input("🔎 بحث عام (نص):", placeholder="ابحث في أي عمود (حدث، إجراء، ملاحظات، قسم، رقم ماكينة...)")
-            machine_number = st.text_input("🔢 رقم الماكينة (بحث دقيق):", placeholder="أدخل رقم الماكينة بالكامل أو جزء منه")
+            machine_number = st.text_input("🔢 رقم الماكينة:", placeholder="أدخل رقم الماكينة بالكامل أو جزء منه")
         
         with col2:
-            section = st.text_input("🏢 القسم (بحث دقيق):", placeholder="أدخل اسم القسم بالكامل أو جزء منه")
+            section = st.text_input("🏢 القسم:", placeholder="أدخل اسم القسم بالكامل أو جزء منه")
             
             use_date_filter = st.checkbox("فلتر بالتاريخ")
             if use_date_filter:
@@ -715,11 +723,22 @@ def show_advanced_search(all_sheets):
                 start_date = None
                 end_date = None
         
+        st.markdown("---")
+        st.caption("💡 ملاحظة: يمكنك البحث باستخدام معيار واحد أو أكثر. اترك الحقول الفارغة إذا لا تريد استخدامها.")
+        
         submitted = st.form_submit_button("🔍 بحث", type="primary", use_container_width=True)
         
         if submitted:
             with st.spinner("جاري البحث في جميع الماكينات..."):
-                search_results = search_in_all_sheets(all_sheets, search_text, machine_number, section, start_date, end_date)
+                search_results = search_in_all_sheets(
+                    all_sheets, 
+                    search_text, 
+                    machine_number, 
+                    section, 
+                    start_date, 
+                    end_date, 
+                    use_date_filter
+                )
     
     # عرض النتائج خارج النموذج
     if search_results is not None:
@@ -732,7 +751,7 @@ def show_advanced_search(all_sheets):
             
             # زر التحميل
             csv = search_results.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 تحميل نتائج البحث", csv, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", "text/csv")
+            st.download_button("📥 تحميل نتائج البحث (CSV)", csv, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", "text/csv")
             
             st.markdown("---")
             
