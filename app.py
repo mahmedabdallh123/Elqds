@@ -544,7 +544,7 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
             df = df[df["المعدة"] == selected_filter]
             st.info(f"عرض لماكينة: {selected_filter} - السجلات: {len(df)}")
     
-    # عرض البيانات مع الصور
+    # عرض البيانات مع الصور وخيار التعديل
     for idx, row in df.iterrows():
         with st.expander(f"📋 السجل #{idx+1} - التاريخ: {row.get('التاريخ', '')} - الماكينة: {row.get('المعدة', '')}"):
             if "الصور" in row and row["الصور"] and row["الصور"] != "":
@@ -570,6 +570,60 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
             
             if row.get('ملاحظات', ''):
                 st.markdown(f"**📝 ملاحظات:** {row.get('ملاحظات', '')}")
+            
+            # زر التعديل
+            if st.button(f"✏️ تعديل هذا السجل", key=f"edit_btn_{unique_id}_{idx}"):
+                st.session_state[f"editing_{unique_id}_{idx}"] = True
+                st.rerun()
+            
+            # نموذج التعديل
+            if st.session_state.get(f"editing_{unique_id}_{idx}", False):
+                st.markdown("---")
+                st.markdown("### ✏️ تعديل البيانات")
+                
+                with st.form(key=f"edit_form_{unique_id}_{idx}"):
+                    # حقول التعديل
+                    edit_date = st.date_input("📅 التاريخ:", value=pd.to_datetime(row.get('التاريخ', datetime.now())).date() if row.get('التاريخ') else datetime.now().date())
+                    edit_equipment = st.text_input("🔧 الماكينة:", value=row.get('المعدة', ''))
+                    edit_spare_part = st.text_input("🔩 اسم قطعه الغيار:", value=row.get('اسم قطعه الغيار', ''))
+                    edit_size = st.text_input("📏 المقاس:", value=row.get('المقاس', ''))
+                    edit_qty_equipment = st.number_input("🔢 العدد ف معده:", value=int(row.get('العدد ف معده', 0)) if row.get('العدد ف معده') else 0, step=1)
+                    edit_lubrication = st.text_input("🛢️ نوع التشحيم:", value=row.get('نوع التشحيم', ''))
+                    edit_quantity = st.number_input("📦 الكميه:", value=float(row.get('الكميه', 0)) if row.get('الكميه') else 0.0, step=0.1)
+                    edit_hours = st.number_input("⏱️ عدد ساعات التشغيل:", value=float(row.get('عدد ساعات التشغيل', 0)) if row.get('عدد ساعات التشغيل') else 0.0, step=0.5)
+                    edit_notes = st.text_area("📝 ملاحظات:", value=row.get('ملاحظات', ''))
+                    
+                    col_save, col_cancel = st.columns(2)
+                    with col_save:
+                        save_btn = st.form_submit_button("💾 حفظ التعديلات", type="primary")
+                    with col_cancel:
+                        cancel_btn = st.form_submit_button("❌ إلغاء")
+                    
+                    if save_btn:
+                        # تحديث البيانات
+                        df.at[idx, "التاريخ"] = edit_date.strftime("%Y-%m-%d")
+                        df.at[idx, "المعدة"] = edit_equipment
+                        df.at[idx, "اسم قطعه الغيار"] = edit_spare_part
+                        df.at[idx, "المقاس"] = edit_size
+                        df.at[idx, "العدد ف معده"] = edit_qty_equipment
+                        df.at[idx, "نوع التشحيم"] = edit_lubrication
+                        df.at[idx, "الكميه"] = edit_quantity
+                        df.at[idx, "عدد ساعات التشغيل"] = edit_hours
+                        df.at[idx, "ملاحظات"] = edit_notes
+                        
+                        sheets_edit[sheet_name] = df
+                        
+                        if save_and_push_to_github(sheets_edit, f"تعديل سجل في قسم {sheet_name}"):
+                            st.cache_data.clear()
+                            st.success("✅ تم تعديل البيانات بنجاح!")
+                            st.session_state[f"editing_{unique_id}_{idx}"] = False
+                            st.rerun()
+                        else:
+                            st.error("❌ فشل حفظ التعديلات")
+                    
+                    if cancel_btn:
+                        st.session_state[f"editing_{unique_id}_{idx}"] = False
+                        st.rerun()
     
     # عرض جدول البيانات
     display_df = df.copy()
@@ -702,7 +756,7 @@ def search_across_sheets(all_sheets):
             combined_results = pd.concat(results, ignore_index=True)
             st.success(f"✅ تم العثور على {len(combined_results)} نتيجة")
             
-            # عرض النتائج مع الصور والبيانات
+            # عرض النتائج مع الصور والبيانات وخيار التعديل
             for idx, row in combined_results.iterrows():
                 with st.container():
                     st.markdown(f"### 📋 نتيجة البحث #{idx + 1}")
@@ -1008,6 +1062,58 @@ def manage_machines(sheets_edit, sheet_name):
                 else:
                     st.error(msg)
 
+def edit_record(sheets_edit, sheet_name, row_index, current_data):
+    """تعديل سجل موجود"""
+    st.markdown("### ✏️ تعديل البيانات")
+    
+    with st.form(key=f"edit_record_form_{sheet_name}_{row_index}"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            new_date = st.date_input("التاريخ:", value=pd.to_datetime(current_data.get('التاريخ', datetime.now())).date())
+            new_equipment = st.text_input("المعدة:", value=current_data.get('المعدة', ''))
+            new_spare_part = st.text_input("اسم قطعه الغيار:", value=current_data.get('اسم قطعه الغيار', ''))
+            new_size = st.text_input("المقاس:", value=current_data.get('المقاس', ''))
+        
+        with col2:
+            new_qty_equipment = st.number_input("العدد ف معده:", value=int(current_data.get('العدد ف معده', 0)) if current_data.get('العدد ف معده') else 0, step=1)
+            new_lubrication = st.text_input("نوع التشحيم:", value=current_data.get('نوع التشحيم', ''))
+            new_quantity = st.number_input("الكميه:", value=float(current_data.get('الكميه', 0)) if current_data.get('الكميه') else 0.0, step=0.1)
+            new_hours = st.number_input("عدد ساعات التشغيل:", value=float(current_data.get('عدد ساعات التشغيل', 0)) if current_data.get('عدد ساعات التشغيل') else 0.0, step=0.5)
+        
+        new_notes = st.text_area("ملاحظات:", value=current_data.get('ملاحظات', ''))
+        
+        col_save, col_cancel = st.columns(2)
+        with col_save:
+            save_btn = st.form_submit_button("💾 حفظ التعديلات", type="primary")
+        with col_cancel:
+            cancel_btn = st.form_submit_button("❌ إلغاء")
+        
+        if save_btn:
+            # تحديث DataFrame
+            df = sheets_edit[sheet_name]
+            df.at[row_index, "التاريخ"] = new_date.strftime("%Y-%m-%d")
+            df.at[row_index, "المعدة"] = new_equipment
+            df.at[row_index, "اسم قطعه الغيار"] = new_spare_part
+            df.at[row_index, "المقاس"] = new_size
+            df.at[row_index, "العدد ف معده"] = new_qty_equipment
+            df.at[row_index, "نوع التشحيم"] = new_lubrication
+            df.at[row_index, "الكميه"] = new_quantity
+            df.at[row_index, "عدد ساعات التشغيل"] = new_hours
+            df.at[row_index, "ملاحظات"] = new_notes
+            
+            sheets_edit[sheet_name] = df
+            
+            if save_and_push_to_github(sheets_edit, f"تعديل سجل في قسم {sheet_name}"):
+                st.cache_data.clear()
+                st.success("✅ تم تعديل البيانات بنجاح!")
+                st.rerun()
+            else:
+                st.error("❌ فشل حفظ التعديلات")
+        
+        if cancel_btn:
+            st.rerun()
+
 def manage_data_edit(sheets_edit):
     if sheets_edit is None:
         st.warning("الملف غير موجود. استخدم زر 'تحديث من GitHub' في الشريط الجانبي أولاً")
@@ -1023,9 +1129,10 @@ def manage_data_edit(sheets_edit):
             for i, (dept_name, df) in enumerate(sheets_edit.items()):
                 with dept_tabs[i]:
                     display_sheet_data(dept_name, df, f"view_{dept_name}", sheets_edit)
-                    with st.expander("✏️ تعديل مباشر للبيانات", expanded=False):
+                    with st.expander("✏️ تعديل مباشر للبيانات (جدول)", expanded=False):
+                        st.info("يمكنك تعديل البيانات مباشرة في الجدول أدناه")
                         edited_df = st.data_editor(df.astype(str), num_rows="dynamic", use_container_width=True, key=f"editor_{dept_name}")
-                        if st.button(f"💾 حفظ", key=f"save_{dept_name}"):
+                        if st.button(f"💾 حفظ التعديلات", key=f"save_{dept_name}"):
                             sheets_edit[dept_name] = edited_df.astype(object)
                             if save_and_push_to_github(sheets_edit, f"تعديل بيانات في قسم {dept_name}"):
                                 st.cache_data.clear()
