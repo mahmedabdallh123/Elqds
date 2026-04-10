@@ -12,114 +12,159 @@ import uuid
 import io
 from PIL import Image
 
-# ------------------------ باقي الكود (دوال المستخدمين، الملفات، الصور، الأحداث، إلخ) كما هو سابق ------------------------
-# ... (لم يتغير شيء في الأجزاء السابقة حتى دوال البحث) ...
+# ------------------------ باقي الكود كما هو (دوال المستخدمين، الملفات، الصور، الأحداث، العرض) ------------------------
+# ... (نفس الكود السابق حتى دوال البحث) ...
 
-# ------------------------------- دوال إدارة الماكينات (الشيتات) -------------------------------
-def rename_sheet(sheets_edit, old_name, new_name):
-    """إعادة تسمية شيت (ماكينة)"""
-    if old_name not in sheets_edit:
-        return sheets_edit, False, "الماكينة غير موجودة"
-    if new_name in sheets_edit:
-        return sheets_edit, False, "الاسم الجديد موجود بالفعل"
-    clean_name = re.sub(r'[\\/*?:"<>|]', '_', new_name.strip())
-    if not clean_name:
-        return sheets_edit, False, "اسم غير صالح"
-    sheets_edit[clean_name] = sheets_edit.pop(old_name)
-    return sheets_edit, True, f"تم تغيير اسم الماكينة من '{old_name}' إلى '{clean_name}'"
-
-def delete_sheet(sheets_edit, sheet_name):
-    """حذف شيت (ماكينة) بالكامل مع جميع سجلاتها"""
-    if sheet_name not in sheets_edit:
-        return sheets_edit, False, "الماكينة غير موجودة"
-    # حذف الصور المرتبطة بالسجلات (اختياري، قد تبقى صور بدون مرجع)
-    del sheets_edit[sheet_name]
-    return sheets_edit, True, f"تم حذف الماكينة '{sheet_name}' وجميع سجلاتها"
-
-# ------------------------------- دوال العرض (معدلة) -------------------------------
-def display_sheet_data_with_events(sheet_name, df, unique_id, sheets_edit, can_edit):
-    """عرض بيانات الشيت مع إمكانية تعديل وحذف الأحداث، وتعديل/حذف الماكينة نفسها"""
-    st.markdown(f"### {sheet_name}")
+# ------------------------------- دوال البحث المتقدم -------------------------------
+def search_in_all_sheets(all_sheets, search_text, machine_number, section, start_date, end_date, use_date_filter):
+    """
+    البحث في جميع الشيتات:
+    - search_text: بحث عام في جميع الأعمدة النصية (اختياري)
+    - machine_number: بحث دقيق في عمود 'رقم الماكينة' (اختياري)
+    - section: بحث دقيق في عمود 'القسم' (اختياري)
+    - start_date, end_date: فلترة التاريخ (اختياري)
+    """
+    if not all_sheets:
+        return pd.DataFrame()
     
-    # أزرار إدارة الماكينة (تعديل الاسم وحذف الماكينة)
-    if can_edit:
-        col_rename, col_delete = st.columns(2)
-        with col_rename:
-            if st.button(f"✏️ تعديل اسم الماكينة", key=f"rename_machine_{unique_id}"):
-                st.session_state[f"rename_mode_{unique_id}"] = True
-        with col_delete:
-            if st.button(f"🗑️ حذف الماكينة بالكامل", key=f"delete_machine_{unique_id}"):
-                st.session_state[f"confirm_delete_{unique_id}"] = True
+    all_results = []
+    
+    for sheet_name, df in all_sheets.items():
+        if df.empty:
+            continue
         
-        # نموذج إعادة التسمية
-        if st.session_state.get(f"rename_mode_{unique_id}", False):
-            with st.form(key=f"rename_form_{unique_id}"):
-                new_name = st.text_input("الاسم الجديد للماكينة:", value=sheet_name)
-                submitted = st.form_submit_button("تأكيد التعديل")
-                if submitted:
-                    new_sheets_edit, success, msg = rename_sheet(sheets_edit, sheet_name, new_name)
-                    if success:
-                        if save_to_github(new_sheets_edit, f"تعديل اسم الماكينة من {sheet_name} إلى {new_name}"):
-                            st.success(msg)
-                            st.session_state[f"rename_mode_{unique_id}"] = False
-                            st.cache_data.clear()
-                            st.rerun()
-                        else:
-                            st.error("فشل الحفظ")
-                    else:
-                        st.error(msg)
-            if st.button("إلغاء", key=f"cancel_rename_{unique_id}"):
-                st.session_state[f"rename_mode_{unique_id}"] = False
-                st.rerun()
+        df_filtered = df.copy()
         
-        # تأكيد حذف الماكينة
-        if st.session_state.get(f"confirm_delete_{unique_id}", False):
-            st.warning(f"⚠️ هل أنت متأكد من حذف الماكينة '{sheet_name}' وجميع سجلاتها؟ هذا الإجراء لا يمكن التراجع عنه.")
-            col_yes, col_no = st.columns(2)
-            with col_yes:
-                if st.button("نعم، احذف", key=f"confirm_yes_{unique_id}"):
-                    new_sheets_edit, success, msg = delete_sheet(sheets_edit, sheet_name)
-                    if success:
-                        if save_to_github(new_sheets_edit, f"حذف الماكينة {sheet_name}"):
-                            st.success(msg)
-                            st.cache_data.clear()
-                            st.rerun()
-                        else:
-                            st.error("فشل الحفظ")
-                    else:
-                        st.error(msg)
-            with col_no:
-                if st.button("لا، إلغاء", key=f"confirm_no_{unique_id}"):
-                    st.session_state[f"confirm_delete_{unique_id}"] = False
-                    st.rerun()
+        # 1. تطبيق البحث العام (نص) - يبحث في كل الأعمدة النصية
+        if search_text and search_text.strip() != "":
+            mask = pd.Series([False] * len(df_filtered))
+            for col in df_filtered.columns:
+                if df_filtered[col].dtype == 'object':  # أعمدة نصية
+                    try:
+                        mask = mask | df_filtered[col].astype(str).str.contains(search_text, case=False, na=False)
+                    except:
+                        pass
+            df_filtered = df_filtered[mask]
+        
+        # 2. فلتر دقيق برقم الماكينة (إذا تم إدخاله)
+        if machine_number and machine_number.strip() != "":
+            if "رقم الماكينة" in df_filtered.columns:
+                df_filtered = df_filtered[df_filtered["رقم الماكينة"].astype(str).str.contains(machine_number, case=False, na=False)]
+        
+        # 3. فلتر دقيق بالقسم (إذا تم إدخاله)
+        if section and section.strip() != "":
+            if "القسم" in df_filtered.columns:
+                df_filtered = df_filtered[df_filtered["القسم"].astype(str).str.contains(section, case=False, na=False)]
+        
+        # 4. فلتر التاريخ (إذا تم تفعيله)
+        if use_date_filter and start_date and end_date:
+            if "التاريخ" in df_filtered.columns:
+                try:
+                    df_filtered["التاريخ_temp"] = pd.to_datetime(df_filtered["التاريخ"], errors='coerce')
+                    mask = (df_filtered["التاريخ_temp"].dt.date >= start_date) & (df_filtered["التاريخ_temp"].dt.date <= end_date)
+                    df_filtered = df_filtered[mask]
+                    df_filtered = df_filtered.drop(columns=["التاريخ_temp"])
+                except Exception:
+                    pass
+        
+        if not df_filtered.empty:
+            df_filtered["الماكينة (الشيت)"] = sheet_name
+            all_results.append(df_filtered)
     
-    st.info(f"عدد السجلات: {len(df)} | عدد الأعمدة: {len(df.columns)}")
+    if all_results:
+        return pd.concat(all_results, ignore_index=True)
+    return pd.DataFrame()
+
+def show_advanced_search(all_sheets):
+    """تبويب البحث المتقدم - مع فصل البحث العام عن البحث الدقيق"""
+    st.header("🔍 بحث متقدم")
     
-    # فلتر حسب رقم الماكينة والقسم (كما هو)
-    col_filter1, col_filter2 = st.columns(2)
-    with col_filter1:
-        if "رقم الماكينة" in df.columns:
-            machines = ["الكل"] + sorted(df["رقم الماكينة"].dropna().unique().astype(str).tolist())
-            selected_machine = st.selectbox("فلتر حسب رقم الماكينة:", machines, key=f"machine_filter_{unique_id}")
-            if selected_machine != "الكل":
-                df = df[df["رقم الماكينة"].astype(str) == selected_machine]
-    with col_filter2:
-        if "القسم" in df.columns:
-            sections = ["الكل"] + sorted(df["القسم"].dropna().unique().tolist())
-            selected_section = st.selectbox("فلتر حسب القسم:", sections, key=f"section_filter_{unique_id}")
-            if selected_section != "الكل":
-                df = df[df["القسم"].astype(str) == selected_section]
+    if not all_sheets:
+        st.warning("لا توجد بيانات للبحث")
+        return
+    
+    total_sheets = len(all_sheets)
+    total_records = sum(len(df) for df in all_sheets.values())
+    st.info(f"📊 إجمالي الماكينات: {total_sheets} | إجمالي الأحداث المسجلة: {total_records}")
     
     st.markdown("---")
     
-    # عرض الأحداث (مع إمكانية تعديل وحذف كل حدث) - كما هو موجود سابقاً
-    if not df.empty:
-        for idx, row in df.iterrows():
-            with st.expander(f"📋 {row.get('التاريخ', 'تاريخ غير محدد')} - {row.get('رقم الماكينة', 'رقم غير محدد')} - {row.get('الحدث/العطل', 'حدث غير محدد')[:50]}"):
-                # ... (نفس الكود السابق لعرض تفاصيل الحدث وأزرار تعديل/حذف الحدث) ...
-                # (لم يتغير شيء في هذا الجزء)
-                pass
-    else:
-        st.info("لا توجد سجلات")
+    search_results = None
+    
+    with st.form(key="search_form"):
+        st.subheader("🔎 بحث عام (نصي)")
+        search_text = st.text_input("", placeholder="ابحث في أي نص (حدث، إجراء، ملاحظات، رقم ماكينة، قسم...)")
+        
+        st.markdown("---")
+        st.subheader("🎯 بحث دقيق")
+        col1, col2 = st.columns(2)
+        with col1:
+            machine_number = st.text_input("🔢 رقم الماكينة", placeholder="أدخل رقم الماكينة كاملاً أو جزء منه")
+        with col2:
+            section = st.text_input("🏢 القسم", placeholder="أدخل اسم القسم كاملاً أو جزء منه")
+        
+        st.markdown("---")
+        st.subheader("📅 فلتر التاريخ")
+        use_date_filter = st.checkbox("تفعيل الفلتر بالتاريخ")
+        if use_date_filter:
+            col_date1, col_date2 = st.columns(2)
+            with col_date1:
+                start_date = st.date_input("من تاريخ", value=datetime.now() - timedelta(days=30))
+            with col_date2:
+                end_date = st.date_input("إلى تاريخ", value=datetime.now())
+        else:
+            start_date = None
+            end_date = None
+        
+        st.caption("💡 يمكنك استخدام البحث العام مع البحث الدقيق معاً. اترك الحقول الفارغة إذا لم ترد استخدامها.")
+        
+        submitted = st.form_submit_button("🔍 بحث", type="primary", use_container_width=True)
+        
+        if submitted:
+            with st.spinner("جاري البحث في جميع الماكينات..."):
+                search_results = search_in_all_sheets(
+                    all_sheets,
+                    search_text,
+                    machine_number,
+                    section,
+                    start_date,
+                    end_date,
+                    use_date_filter
+                )
+    
+    # عرض النتائج خارج النموذج
+    if search_results is not None:
+        if not search_results.empty:
+            st.success(f"✅ تم العثور على {len(search_results)} نتيجة")
+            machines_found = search_results["الماكينة (الشيت)"].nunique()
+            st.info(f"📊 موزعة على {machines_found} ماكينة/ماكينات")
+            
+            csv = search_results.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 تحميل النتائج (CSV)", csv, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", "text/csv")
+            
+            st.markdown("---")
+            for idx, row in search_results.iterrows():
+                with st.expander(f"📋 {row.get('التاريخ', '')} | {row.get('رقم الماكينة', '')} | {row.get('الماكينة (الشيت)', '')} | {row.get('الحدث/العطل', '')[:50]}"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown(f"**🏭 الماكينة (الشيت):** {row.get('الماكينة (الشيت)', '')}")
+                        st.markdown(f"**📅 التاريخ:** {row.get('التاريخ', '')}")
+                        st.markdown(f"**🔢 رقم الماكينة:** {row.get('رقم الماكينة', '')}")
+                        st.markdown(f"**⚙️ الحدث/العطل:** {row.get('الحدث/العطل', '')}")
+                        st.markdown(f"**🔧 الإجراء التصحيحي:** {row.get('الإجراء التصحيحي', '')}")
+                    with col2:
+                        st.markdown(f"**👨‍🔧 تم بواسطة:** {row.get('تم بواسطة', '')}")
+                        st.markdown(f"**⚖️ الطن:** {row.get('الطن', '')}")
+                        st.markdown(f"**🏢 القسم:** {row.get('القسم', '')}")
+                        st.markdown(f"**📝 ملاحظات:** {row.get('ملاحظات', '')}")
+                        images_str = row.get('الصور', '')
+                        if images_str and isinstance(images_str, str):
+                            st.markdown("**🖼️ الصور:**")
+                            for img in images_str.split(", "):
+                                img_path = os.path.join(IMAGES_FOLDER, img)
+                                if os.path.exists(img_path):
+                                    st.image(img_path, width=150)
+        else:
+            st.warning("❌ لا توجد نتائج مطابقة لبحثك")
 
-# ------------------------ باقي الكود (الواجهة الرئيسية) كما هو ------------------------
+# ------------------------ باقي الكود (الواجهة الرئيسية) بدون تغيير ------------------------
