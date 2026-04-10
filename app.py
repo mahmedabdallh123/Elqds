@@ -66,18 +66,6 @@ def ensure_images_folder():
     if not os.path.exists(IMAGES_FOLDER):
         os.makedirs(IMAGES_FOLDER)
 
-def save_image_locally(image_file, image_id):
-    """حفظ الصورة محلياً"""
-    ensure_images_folder()
-    file_extension = image_file.name.split('.')[-1].lower()
-    filename = f"{image_id}.{file_extension}"
-    filepath = os.path.join(IMAGES_FOLDER, filename)
-    
-    with open(filepath, "wb") as f:
-        f.write(image_file.getbuffer())
-    
-    return filename, filepath
-
 def upload_image_to_github(image_file, image_id):
     """رفع الصورة إلى GitHub"""
     try:
@@ -133,39 +121,46 @@ def upload_image_to_github(image_file, image_id):
     except Exception as e:
         return None, str(e)
 
-def get_image_url_from_github(image_filename):
-    """الحصول على رابط الصورة من GitHub"""
-    if not image_filename:
-        return None
-    return f"https://raw.githubusercontent.com/{APP_CONFIG['REPO_NAME']}/{APP_CONFIG['BRANCH']}/{IMAGES_FOLDER}/{image_filename}"
+def display_image(image_url, width=400):
+    """عرض الصورة بشكل كبير"""
+    if image_url and isinstance(image_url, str) and image_url.startswith('http'):
+        try:
+            st.image(image_url, width=width)
+        except Exception as e:
+            st.caption("📷 لا يمكن عرض الصورة")
+    elif image_url and image_url != "":
+        st.caption("📷 رابط صورة غير صالح")
 
-def display_image(image_path_or_url, width=200):
-    """عرض الصورة"""
-    try:
-        if image_path_or_url and isinstance(image_path_or_url, str):
-            if image_path_or_url.startswith('http'):
-                st.image(image_path_or_url, width=width)
-            elif os.path.exists(image_path_or_url):
-                st.image(image_path_or_url, width=width)
-            else:
-                st.caption("📷 لا توجد صورة")
-    except Exception as e:
-        st.caption("📷 خطأ في عرض الصورة")
-
-def display_images_in_row(image_urls, max_images=3):
-    """عرض عدة صور في صف واحد"""
-    if not image_urls:
-        return
-    
-    urls_list = [url.strip() for url in image_urls.split(',') if url.strip()]
-    if not urls_list:
-        return
-    
-    cols = st.columns(min(len(urls_list), max_images))
-    for i, col in enumerate(cols):
-        if i < len(urls_list):
-            with col:
-                display_image(urls_list[i], width=150)
+def display_image_with_data(image_url, data_row, index):
+    """عرض الصورة بشكل كبير وفوقها البيانات"""
+    if image_url and image_url != "":
+        # عرض الصورة بشكل كبير
+        st.markdown(f"### 🖼️ الصورة #{index + 1}")
+        display_image(image_url, width=500)
+        
+        # عرض البيانات أسفل الصورة
+        st.markdown("### 📋 بيانات الصيانة")
+        
+        # إنشاء عمودين لعرض البيانات
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown(f"**📅 التاريخ:** {data_row.get('التاريخ', '')}")
+            st.markdown(f"**🔧 الماكينة:** {data_row.get('المعدة', '')}")
+            st.markdown(f"**🔩 اسم قطعه الغيار:** {data_row.get('اسم قطعه الغيار', '')}")
+            st.markdown(f"**📏 المقاس:** {data_row.get('المقاس', '')}")
+            st.markdown(f"**🔢 العدد ف معده:** {data_row.get('العدد ف معده', '')}")
+        
+        with col2:
+            st.markdown(f"**🛢️ نوع التشحيم:** {data_row.get('نوع التشحيم', '')}")
+            st.markdown(f"**📦 الكميه:** {data_row.get('الكميه', '')}")
+            st.markdown(f"**⏱️ عدد ساعات التشغيل:** {data_row.get('عدد ساعات التشغيل', '')}")
+            st.markdown(f"**🏭 القسم:** {data_row.get('القسم', '')}")
+        
+        if data_row.get('ملاحظات', ''):
+            st.markdown(f"**📝 ملاحظات:** {data_row.get('ملاحظات', '')}")
+        
+        st.markdown("---")
 
 # ------------------------------- دوال تصدير البيانات -------------------------------
 def export_sheet_to_excel(sheets_dict, sheet_name):
@@ -549,13 +544,34 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
             df = df[df["المعدة"] == selected_filter]
             st.info(f"عرض لماكينة: {selected_filter} - السجلات: {len(df)}")
     
-    # عرض الصور إذا وجدت في البيانات
-    if "الصور" in df.columns:
-        for idx, row in df.iterrows():
-            if row.get("الصور") and row.get("الصور") != "":
-                with st.expander(f"🖼️ صورة السجل {idx+1} - {row.get('التاريخ', '')} - {row.get('اسم قطعه الغيار', '')}"):
-                    display_images_in_row(row["الصور"])
+    # عرض البيانات مع الصور
+    for idx, row in df.iterrows():
+        with st.expander(f"📋 السجل #{idx+1} - التاريخ: {row.get('التاريخ', '')} - الماكينة: {row.get('المعدة', '')}"):
+            if "الصور" in row and row["الصور"] and row["الصور"] != "":
+                # عرض الصورة أولاً
+                st.markdown("### 🖼️ الصورة المرفقة")
+                image_urls = [url.strip() for url in row["الصور"].split(',') if url.strip()]
+                if image_urls:
+                    display_image(image_urls[0], width=500)
+            
+            # عرض البيانات
+            st.markdown("### 📋 بيانات الصيانة")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"**📅 التاريخ:** {row.get('التاريخ', '')}")
+                st.markdown(f"**🔧 الماكينة:** {row.get('المعدة', '')}")
+                st.markdown(f"**🔩 اسم قطعه الغيار:** {row.get('اسم قطعه الغيار', '')}")
+                st.markdown(f"**📏 المقاس:** {row.get('المقاس', '')}")
+            with col2:
+                st.markdown(f"**🔢 العدد ف معده:** {row.get('العدد ف معده', '')}")
+                st.markdown(f"**🛢️ نوع التشحيم:** {row.get('نوع التشحيم', '')}")
+                st.markdown(f"**📦 الكميه:** {row.get('الكميه', '')}")
+                st.markdown(f"**⏱️ عدد ساعات التشغيل:** {row.get('عدد ساعات التشغيل', '')}")
+            
+            if row.get('ملاحظات', ''):
+                st.markdown(f"**📝 ملاحظات:** {row.get('ملاحظات', '')}")
     
+    # عرض جدول البيانات
     display_df = df.copy()
     for col in display_df.columns:
         if display_df[col].dtype == 'object':
@@ -686,38 +702,41 @@ def search_across_sheets(all_sheets):
             combined_results = pd.concat(results, ignore_index=True)
             st.success(f"✅ تم العثور على {len(combined_results)} نتيجة")
             
-            # عرض النتائج مع الصور
-            st.markdown("### 📋 نتائج البحث")
-            
+            # عرض النتائج مع الصور والبيانات
             for idx, row in combined_results.iterrows():
                 with st.container():
-                    st.markdown("---")
-                    col_img, col_data = st.columns([1, 3])
+                    st.markdown(f"### 📋 نتيجة البحث #{idx + 1}")
                     
-                    with col_img:
-                        if "الصور" in row and row["الصور"] and row["الصور"] != "":
-                            display_images_in_row(row["الصور"], max_images=2)
-                        else:
-                            st.caption("📷 لا توجد صور")
+                    # عرض الصورة أولاً إذا وجدت
+                    if "الصور" in row and row["الصور"] and row["الصور"] != "":
+                        st.markdown("#### 🖼️ الصورة المرفقة")
+                        image_urls = [url.strip() for url in row["الصور"].split(',') if url.strip()]
+                        if image_urls:
+                            display_image(image_urls[0], width=500)
                     
-                    with col_data:
+                    # عرض البيانات أسفل الصورة
+                    st.markdown("#### 📋 بيانات الصيانة")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
                         st.markdown(f"**📅 التاريخ:** {row.get('التاريخ', '')}")
                         st.markdown(f"**🏭 القسم:** {row.get('القسم', '')}")
                         st.markdown(f"**🔧 الماكينة:** {row.get('المعدة', '')}")
                         st.markdown(f"**🔩 اسم قطعه الغيار:** {row.get('اسم قطعه الغيار', '')}")
                         st.markdown(f"**📏 المقاس:** {row.get('المقاس', '')}")
+                    
+                    with col2:
                         st.markdown(f"**🔢 العدد ف معده:** {row.get('العدد ف معده', '')}")
                         st.markdown(f"**🛢️ نوع التشحيم:** {row.get('نوع التشحيم', '')}")
                         st.markdown(f"**📦 الكميه:** {row.get('الكميه', '')}")
                         st.markdown(f"**⏱️ عدد ساعات التشغيل:** {row.get('عدد ساعات التشغيل', '')}")
-                        if row.get('ملاحظات', ''):
-                            st.markdown(f"**📝 ملاحظات:** {row.get('ملاحظات', '')}")
                     
-                    with st.expander("🔍 عرض جميع البيانات"):
-                        st.json(row.to_dict())
+                    if row.get('ملاحظات', ''):
+                        st.markdown(f"**📝 ملاحظات:** {row.get('ملاحظات', '')}")
+                    
+                    st.markdown("---")
             
             # أزرار التصدير
-            st.markdown("---")
             col_export1, col_export2 = st.columns(2)
             with col_export1:
                 excel_file = export_filtered_results_to_excel(combined_results, "نتائج_البحث")
