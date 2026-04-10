@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from base64 import b64decode
 import uuid
 import io
+from PIL import Image
 
 # محاولة استيراد Plotly مع معالجة الخطأ
 try:
@@ -19,13 +20,6 @@ try:
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
-    try:
-        import matplotlib.pyplot as plt
-        import matplotlib.dates as mdates
-        plt.rcParams['font.family'] = 'Arial'
-        MATPLOTLIB_AVAILABLE = True
-    except ImportError:
-        MATPLOTLIB_AVAILABLE = False
 
 try:
     from github import Github, GithubException
@@ -45,7 +39,8 @@ APP_CONFIG = {
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
-    "DEFAULT_SHEET_COLUMNS": ["التاريخ", " رقم الماكينة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "الطن", "الصور", "قسم"],
+    "DEFAULT_SHEET_COLUMNS": ["التاريخ", "رقم الماكينة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "الطن", "الصور", "القسم", "ملاحظات"],
+    "SECTIONS": ["قسم الإنتاج", "قسم التعبئة", "قسم الصيانة", "قسم الكهرباء", "قسم الميكانيكا", "قسم التشحيم", "أخرى"]
 }
 
 USERS_FILE = "users.json"
@@ -53,6 +48,10 @@ STATE_FILE = "state.json"
 SESSION_DURATION = timedelta(minutes=APP_CONFIG["SESSION_DURATION_MINUTES"])
 MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
+
+# إنشاء مجلد الصور إذا لم يكن موجوداً
+if not os.path.exists(IMAGES_FOLDER):
+    os.makedirs(IMAGES_FOLDER)
 
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
 GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/Elqds/refs/heads/main/users.json"
@@ -75,24 +74,6 @@ def download_users_from_github():
             except:
                 pass
         return {"admin": {"password": "admin123", "role": "admin", "created_at": datetime.now().isoformat(), "permissions": ["all"], "active": False}}
-
-def upload_users_to_github(users_data):
-    try:
-        token = st.secrets.get("github", {}).get("token", None)
-        if not token:
-            return False
-        g = Github(token)
-        repo = g.get_repo(GITHUB_REPO_USERS)
-        users_json = json.dumps(users_data, indent=4, ensure_ascii=False, sort_keys=True)
-        try:
-            contents = repo.get_contents("users.json", ref="main")
-            repo.update_file(path="users.json", message="تحديث ملف المستخدمين", content=users_json, sha=contents.sha, branch="main")
-            return True
-        except:
-            repo.create_file(path="users.json", message="إنشاء ملف المستخدمين", content=users_json, branch="main")
-            return True
-    except:
-        return False
 
 def load_users():
     try:
@@ -317,128 +298,532 @@ def save_to_github(sheets_dict, commit_message):
         st.error(f"❌ خطأ عام: {str(e)}")
         return False
 
+# ------------------------------- دوال الصور -------------------------------
+def save_image(image_file, event_id):
+    try:
+        ext = image_file.name.split('.')[-1]
+        filename = f"{event_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
+        filepath = os.path.join(IMAGES_FOLDER, filename)
+        with open(filepath, "wb") as f:
+            f.write(image_file.getbuffer())
+        return filename
+    except Exception as e:
+        st.error(f"خطأ في حفظ الصورة: {e}")
+        return None
+
+def delete_image(filename):
+    try:
+        filepath = os.path.join(IMAGES_FOLDER, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            return True
+    except:
+        pass
+    return False
+
+# ------------------------------- دوال الأحداث -------------------------------
+def get_all_events(all_sheets):
+    """جمع جميع الأحداث من جميع الشيتات في DataFrame واحد"""
+    if not all_sheets:
+        return pd.DataFrame()
+    
+    all_events = []
+    for sheet_name, df in all_sheets.items():
+        if not df.empty:
+            df_copy = df.copy()
+            df_copy["اسم الشيت"] = sheet_name
+            all_events.append(df_copy)
+    
+    if all_events:
+        return pd.concat(all_events, ignore_index=True)
+    return pd.DataFrame()
+
+def add_event_to_sheet(sheets_edit, sheet_name, event_data, images):
+    """إضافة حدث جديد مع الصور"""
+    if sheet_name not in sheets_edit:
+        return sheets_edit, False, "الشيت غير موجود"
+    
+    df = sheets_edit[sheet_name]
+    
+    # حفظ الصور
+    image_names = []
+    for img in images:
+        event_id = str(uuid.uuid4())[:8]
+        img_name = save_image(img, event_id)
+        if img_name:
+            image_names.append(img_name)
+    
+    # إنشاء السجل الجديد
+    new_row = {
+        "التاريخ": event_data.get("التاريخ", datetime.now().strftime("%Y-%m-%d")),
+        "رقم الماكينة": event_data.get("رقم الماكينة", ""),
+        "الحدث/العطل": event_data.get("الحدث/العطل", ""),
+        "الإجراء التصحيحي": event_data.get("الإجراء التصحيحي", ""),
+        "تم بواسطة": event_data.get("تم بواسطة", st.session_state.get("username", "")),
+        "الطن": event_data.get("الطن", ""),
+        "الصور": ", ".join(image_names) if image_names else "",
+        "القسم": event_data.get("القسم", ""),
+        "ملاحظات": event_data.get("ملاحظات", "")
+    }
+    
+    # إضافة الأعمدة المفقودة
+    for col in df.columns:
+        if col not in new_row:
+            new_row[col] = ""
+    
+    new_row_df = pd.DataFrame([new_row])
+    sheets_edit[sheet_name] = pd.concat([df, new_row_df], ignore_index=True)
+    
+    return sheets_edit, True, "تم إضافة الحدث بنجاح"
+
+def update_event_in_sheet(sheets_edit, sheet_name, row_index, event_data, new_images, images_to_delete):
+    """تحديث حدث موجود"""
+    if sheet_name not in sheets_edit:
+        return sheets_edit, False, "الشيت غير موجود"
+    
+    df = sheets_edit[sheet_name]
+    
+    if row_index >= len(df):
+        return sheets_edit, False, "الحدث غير موجود"
+    
+    # حذف الصور المحددة للحذف
+    current_images = df.loc[row_index, "الصور"] if "الصور" in df.columns else ""
+    if current_images and isinstance(current_images, str):
+        old_images = current_images.split(", ")
+        for img in images_to_delete:
+            if img in old_images:
+                delete_image(img)
+    
+    # حفظ الصور الجديدة
+    new_image_names = []
+    for img in new_images:
+        event_id = str(uuid.uuid4())[:8]
+        img_name = save_image(img, event_id)
+        if img_name:
+            new_image_names.append(img_name)
+    
+    # تجميع الصور النهائية
+    remaining_images = [img for img in old_images if img not in images_to_delete] if current_images else []
+    all_images = remaining_images + new_image_names
+    
+    # تحديث البيانات
+    df.loc[row_index, "التاريخ"] = event_data.get("التاريخ", df.loc[row_index, "التاريخ"])
+    df.loc[row_index, "رقم الماكينة"] = event_data.get("رقم الماكينة", df.loc[row_index, "رقم الماكينة"])
+    df.loc[row_index, "الحدث/العطل"] = event_data.get("الحدث/العطل", df.loc[row_index, "الحدث/العطل"])
+    df.loc[row_index, "الإجراء التصحيحي"] = event_data.get("الإجراء التصحيحي", df.loc[row_index, "الإجراء التصحيحي"])
+    df.loc[row_index, "تم بواسطة"] = event_data.get("تم بواسطة", st.session_state.get("username", ""))
+    df.loc[row_index, "الطن"] = event_data.get("الطن", df.loc[row_index, "الطن"])
+    df.loc[row_index, "القسم"] = event_data.get("القسم", df.loc[row_index, "القسم"])
+    df.loc[row_index, "ملاحظات"] = event_data.get("ملاحظات", df.loc[row_index, "ملاحظات"])
+    df.loc[row_index, "الصور"] = ", ".join(all_images) if all_images else ""
+    
+    sheets_edit[sheet_name] = df
+    return sheets_edit, True, "تم تحديث الحدث بنجاح"
+
+def delete_event_from_sheet(sheets_edit, sheet_name, row_index):
+    """حذف حدث مع حذف الصور المرتبطة"""
+    if sheet_name not in sheets_edit:
+        return sheets_edit, False, "الشيت غير موجود"
+    
+    df = sheets_edit[sheet_name]
+    
+    if row_index >= len(df):
+        return sheets_edit, False, "الحدث غير موجود"
+    
+    # حذف الصور المرتبطة
+    if "الصور" in df.columns:
+        images_str = df.loc[row_index, "الصور"]
+        if images_str and isinstance(images_str, str):
+            for img in images_str.split(", "):
+                delete_image(img)
+    
+    # حذف السجل
+    sheets_edit[sheet_name] = df.drop(row_index).reset_index(drop=True)
+    
+    return sheets_edit, True, "تم حذف الحدث بنجاح"
+
+# ------------------------------- دوال البحث المتقدم -------------------------------
+def advanced_search(all_sheets, search_text, machine_number, section, start_date, end_date):
+    """بحث متقدم في جميع الأحداث"""
+    results = []
+    
+    if not all_sheets:
+        return pd.DataFrame()
+    
+    for sheet_name, df in all_sheets.items():
+        if df.empty:
+            continue
+        
+        df_filtered = df.copy()
+        
+        # فلتر حسب النص
+        if search_text:
+            mask = pd.Series([False] * len(df_filtered))
+            search_cols = ["الحدث/العطل", "الإجراء التصحيحي", "ملاحظات"]
+            for col in search_cols:
+                if col in df_filtered.columns:
+                    mask = mask | df_filtered[col].astype(str).str.contains(search_text, case=False, na=False)
+            df_filtered = df_filtered[mask]
+        
+        # فلتر حسب رقم الماكينة
+        if machine_number and "رقم الماكينة" in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered["رقم الماكينة"].astype(str).str.contains(machine_number, case=False, na=False)]
+        
+        # فلتر حسب القسم
+        if section and section != "الكل" and "القسم" in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered["القسم"] == section]
+        
+        # فلتر حسب التاريخ
+        if start_date and end_date and "التاريخ" in df_filtered.columns:
+            try:
+                df_filtered["التاريخ"] = pd.to_datetime(df_filtered["التاريخ"], errors='coerce')
+                mask = (df_filtered["التاريخ"].dt.date >= start_date) & (df_filtered["التاريخ"].dt.date <= end_date)
+                df_filtered = df_filtered[mask]
+            except:
+                pass
+        
+        if not df_filtered.empty:
+            df_filtered["اسم الشيت"] = sheet_name
+            results.append(df_filtered)
+    
+    if results:
+        return pd.concat(results, ignore_index=True)
+    return pd.DataFrame()
+
 # ------------------------------- دوال العرض -------------------------------
-def display_sheet_data(sheet_name, df, unique_id):
+def display_sheet_data_with_events(sheet_name, df, unique_id, sheets_edit, can_edit):
+    """عرض بيانات الشيت مع إمكانية تعديل وحذف الأحداث"""
     st.markdown(f"### {sheet_name}")
     st.info(f"عدد السجلات: {len(df)} | عدد الأعمدة: {len(df.columns)}")
     
-    # فلتر حسب المعدة (عرض فقط)
-    equipment_list = []
-    if "المعدة" in df.columns:
-        equipment_list = df["المعدة"].dropna().unique()
-        equipment_list = [str(e).strip() for e in equipment_list if str(e).strip() != ""]
-        equipment_list = sorted(equipment_list)
+    # فلتر
+    col_filter1, col_filter2 = st.columns(2)
+    with col_filter1:
+        if "رقم الماكينة" in df.columns:
+            machines = ["الكل"] + sorted(df["رقم الماكينة"].dropna().unique().astype(str).tolist())
+            selected_machine = st.selectbox("فلتر حسب رقم الماكينة:", machines, key=f"machine_filter_{unique_id}")
+            if selected_machine != "الكل":
+                df = df[df["رقم الماكينة"].astype(str) == selected_machine]
     
-    if equipment_list:
-        st.markdown("#### فلتر حسب المعدة (عرض فقط):")
-        selected_filter = st.selectbox(
-            "اختر المعدة:", 
-            ["جميع المعدات"] + equipment_list,
-            key=f"filter_{unique_id}"
-        )
-        if selected_filter != "جميع المعدات":
-            df = df[df["المعدة"] == selected_filter]
-            st.info(f"عرض للمعدة: {selected_filter} - السجلات: {len(df)}")
+    with col_filter2:
+        if "القسم" in df.columns:
+            sections = ["الكل"] + sorted(df["القسم"].dropna().unique().tolist())
+            selected_section = st.selectbox("فلتر حسب القسم:", sections, key=f"section_filter_{unique_id}")
+            if selected_section != "الكل":
+                df = df[df["القسم"] == selected_section]
     
-    display_df = df.copy()
-    for col in display_df.columns:
-        if display_df[col].dtype == 'object':
-            display_df[col] = display_df[col].astype(str).apply(lambda x: x[:100] + "..." if len(x) > 100 else x)
-    st.dataframe(display_df, use_container_width=True, height=400)
+    st.markdown("---")
+    
+    # عرض البيانات في جدول قابل للتعديل
+    if not df.empty:
+        for idx, row in df.iterrows():
+            with st.expander(f"📋 {row.get('التاريخ', 'تاريخ غير محدد')} - {row.get('رقم الماكينة', 'رقم غير محدد')} - {row.get('الحدث/العطل', 'حدث غير محدد')[:50]}"):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown(f"**📅 التاريخ:** {row.get('التاريخ', '')}")
+                    st.markdown(f"**🔢 رقم الماكينة:** {row.get('رقم الماكينة', '')}")
+                    st.markdown(f"**⚙️ الحدث/العطل:** {row.get('الحدث/العطل', '')}")
+                    st.markdown(f"**🔧 الإجراء التصحيحي:** {row.get('الإجراء التصحيحي', '')}")
+                    st.markdown(f"**👨‍🔧 تم بواسطة:** {row.get('تم بواسطة', '')}")
+                
+                with col2:
+                    st.markdown(f"**⚖️ الطن:** {row.get('الطن', '')}")
+                    st.markdown(f"**🏢 القسم:** {row.get('القسم', '')}")
+                    st.markdown(f"**📝 ملاحظات:** {row.get('ملاحظات', '')}")
+                    
+                    # عرض الصور
+                    images_str = row.get('الصور', '')
+                    if images_str and isinstance(images_str, str):
+                        st.markdown("**🖼️ الصور:**")
+                        for img in images_str.split(", "):
+                            img_path = os.path.join(IMAGES_FOLDER, img)
+                            if os.path.exists(img_path):
+                                st.image(img_path, width=150)
+                
+                # أزرار التعديل والحذف للمستخدمين المصرح لهم
+                if can_edit:
+                    col_edit, col_delete = st.columns(2)
+                    with col_edit:
+                        if st.button(f"✏️ تعديل", key=f"edit_{unique_id}_{idx}"):
+                            st.session_state[f"editing_{unique_id}_{idx}"] = True
+                            st.session_state[f"edit_sheet_{unique_id}"] = sheet_name
+                            st.session_state[f"edit_row_{unique_id}"] = idx
+                            st.rerun()
+                    
+                    with col_delete:
+                        if st.button(f"🗑️ حذف", key=f"delete_{unique_id}_{idx}"):
+                            sheets_edit, success, msg = delete_event_from_sheet(sheets_edit, sheet_name, idx)
+                            if success:
+                                if save_to_github(sheets_edit, f"حذف حدث من {sheet_name}"):
+                                    st.success(msg)
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error("فشل الحفظ")
+                            else:
+                                st.error(msg)
+                
+                # نموذج التعديل
+                if can_edit and st.session_state.get(f"editing_{unique_id}_{idx}", False):
+                    st.markdown("---")
+                    st.subheader("✏️ تعديل الحدث")
+                    
+                    with st.form(key=f"edit_form_{unique_id}_{idx}"):
+                        edit_date = st.date_input("التاريخ:", value=pd.to_datetime(row.get('التاريخ', datetime.now())).date() if row.get('التاريخ') else datetime.now().date())
+                        edit_machine = st.text_input("رقم الماكينة:", value=row.get('رقم الماكينة', ''))
+                        edit_event = st.text_area("الحدث/العطل:", value=row.get('الحدث/العطل', ''), height=100)
+                        edit_correction = st.text_area("الإجراء التصحيحي:", value=row.get('الإجراء التصحيحي', ''), height=100)
+                        edit_done_by = st.text_input("تم بواسطة:", value=row.get('تم بواسطة', ''))
+                        edit_tones = st.text_input("الطن:", value=row.get('الطن', ''))
+                        edit_section = st.selectbox("القسم:", APP_CONFIG["SECTIONS"], index=APP_CONFIG["SECTIONS"].index(row.get('القسم', '')) if row.get('القسم', '') in APP_CONFIG["SECTIONS"] else 0)
+                        edit_notes = st.text_area("ملاحظات:", value=row.get('ملاحظات', ''), height=100)
+                        
+                        # إدارة الصور
+                        st.markdown("**🖼️ الصور الحالية:**")
+                        current_images = row.get('الصور', '')
+                        images_to_delete = []
+                        if current_images and isinstance(current_images, str):
+                            for img in current_images.split(", "):
+                                col_img, col_check = st.columns([3, 1])
+                                with col_img:
+                                    img_path = os.path.join(IMAGES_FOLDER, img)
+                                    if os.path.exists(img_path):
+                                        st.image(img_path, width=100)
+                                with col_check:
+                                    if st.checkbox(f"حذف", key=f"del_img_{unique_id}_{idx}_{img}"):
+                                        images_to_delete.append(img)
+                        
+                        st.markdown("**➕ إضافة صور جديدة:**")
+                        new_images = st.file_uploader("اختر الصور:", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], accept_multiple_files=True, key=f"edit_images_{unique_id}_{idx}")
+                        
+                        col_save, col_cancel = st.columns(2)
+                        with col_save:
+                            submitted = st.form_submit_button("💾 حفظ التعديلات", use_container_width=True)
+                        with col_cancel:
+                            cancel = st.form_submit_button("❌ إلغاء", use_container_width=True)
+                        
+                        if submitted:
+                            event_data = {
+                                "التاريخ": edit_date.strftime("%Y-%m-%d"),
+                                "رقم الماكينة": edit_machine,
+                                "الحدث/العطل": edit_event,
+                                "الإجراء التصحيحي": edit_correction,
+                                "تم بواسطة": edit_done_by,
+                                "الطن": edit_tones,
+                                "القسم": edit_section,
+                                "ملاحظات": edit_notes
+                            }
+                            sheets_edit, success, msg = update_event_in_sheet(sheets_edit, sheet_name, idx, event_data, new_images, images_to_delete)
+                            if success:
+                                if save_to_github(sheets_edit, f"تعديل حدث في {sheet_name}"):
+                                    st.success(msg)
+                                    st.session_state[f"editing_{unique_id}_{idx}"] = False
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error("فشل الحفظ")
+                            else:
+                                st.error(msg)
+                        
+                        if cancel:
+                            st.session_state[f"editing_{unique_id}_{idx}"] = False
+                            st.rerun()
+    else:
+        st.info("لا توجد سجلات")
 
-# ==================== دوال إضافة ماكينة فقط ====================
-def add_new_machine_only(sheets_edit):
+def show_add_event(all_sheets, sheets_edit):
+    """إضافة حدث جديد"""
+    st.header("➕ إضافة حدث جديد")
+    
+    if not sheets_edit:
+        st.warning("لا توجد بيانات. يرجى تحديث الملف أولاً")
+        return
+    
+    with st.form(key="add_event_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            sheet_name = st.selectbox("اختر الشيت:", list(sheets_edit.keys()), key="add_event_sheet")
+            event_date = st.date_input("📅 التاريخ:", value=datetime.now())
+            machine_number = st.text_input("🔢 رقم الماكينة:", placeholder="مثال: MC-001, PUMP-01")
+            event_desc = st.text_area("⚙️ الحدث/العطل:", height=100, placeholder="وصف العطل أو الحدث...")
+        
+        with col2:
+            correction_desc = st.text_area("🔧 الإجراء التصحيحي:", height=100, placeholder="الإجراء الذي تم اتخاذه...")
+            done_by = st.text_input("👨‍🔧 تم بواسطة:", value=st.session_state.get("username", ""))
+            tones = st.text_input("⚖️ الطن:", placeholder="الطن (إن وجد)")
+            section = st.selectbox("🏢 القسم:", APP_CONFIG["SECTIONS"])
+            notes = st.text_area("📝 ملاحظات:", height=80, placeholder="ملاحظات إضافية...")
+        
+        images = st.file_uploader("🖼️ رفع الصور:", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], accept_multiple_files=True)
+        
+        if images:
+            total_size = sum(img.size for img in images)
+            if total_size > APP_CONFIG["MAX_IMAGE_SIZE_MB"] * 1024 * 1024:
+                st.error(f"حجم الصور كبير جداً. الحد الأقصى {APP_CONFIG['MAX_IMAGE_SIZE_MB']} ميجابايت")
+        
+        submitted = st.form_submit_button("✅ إضافة الحدث", type="primary", use_container_width=True)
+        
+        if submitted:
+            if not machine_number:
+                st.error("❌ الرجاء إدخال رقم الماكينة")
+            elif not event_desc:
+                st.error("❌ الرجاء إدخال الحدث/العطل")
+            else:
+                event_data = {
+                    "التاريخ": event_date.strftime("%Y-%m-%d"),
+                    "رقم الماكينة": machine_number,
+                    "الحدث/العطل": event_desc,
+                    "الإجراء التصحيحي": correction_desc,
+                    "تم بواسطة": done_by,
+                    "الطن": tones,
+                    "القسم": section,
+                    "ملاحظات": notes
+                }
+                sheets_edit, success, msg = add_event_to_sheet(sheets_edit, sheet_name, event_data, images)
+                if success:
+                    if save_to_github(sheets_edit, f"إضافة حدث جديد في {sheet_name}"):
+                        st.success(msg)
+                        st.balloons()
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.error("❌ فشل حفظ البيانات")
+                else:
+                    st.error(msg)
+
+def show_advanced_search(all_sheets):
+    """تبويب البحث المتقدم"""
+    st.header("🔍 بحث متقدم")
+    
+    if not all_sheets:
+        st.warning("لا توجد بيانات للبحث")
+        return
+    
+    with st.form(key="search_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            search_text = st.text_input("🔎 بحث بالنص:", placeholder="ابحث في الحدث/العطل أو الإجراء التصحيحي...")
+            machine_number = st.text_input("🔢 رقم الماكينة:", placeholder="أدخل رقم الماكينة...")
+        
+        with col2:
+            sections = ["الكل"] + APP_CONFIG["SECTIONS"]
+            section = st.selectbox("🏢 القسم:", sections)
+            
+            use_date_filter = st.checkbox("فلتر بالتاريخ")
+            if use_date_filter:
+                col_date1, col_date2 = st.columns(2)
+                with col_date1:
+                    start_date = st.date_input("من تاريخ:", value=datetime.now() - timedelta(days=30))
+                with col_date2:
+                    end_date = st.date_input("إلى تاريخ:", value=datetime.now())
+            else:
+                start_date = None
+                end_date = None
+        
+        submitted = st.form_submit_button("🔍 بحث", type="primary", use_container_width=True)
+        
+        if submitted:
+            with st.spinner("جاري البحث..."):
+                results = advanced_search(all_sheets, search_text, machine_number, section, start_date, end_date)
+                
+                if not results.empty:
+                    st.success(f"✅ تم العثور على {len(results)} نتيجة")
+                    
+                    # عرض النتائج
+                    for idx, row in results.iterrows():
+                        with st.expander(f"📋 {row.get('التاريخ', '')} - {row.get('رقم الماكينة', '')} - {row.get('الحدث/العطل', '')[:50]}"):
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                st.markdown(f"**📅 التاريخ:** {row.get('التاريخ', '')}")
+                                st.markdown(f"**🔢 رقم الماكينة:** {row.get('رقم الماكينة', '')}")
+                                st.markdown(f"**⚙️ الحدث/العطل:** {row.get('الحدث/العطل', '')}")
+                                st.markdown(f"**🔧 الإجراء التصحيحي:** {row.get('الإجراء التصحيحي', '')}")
+                                st.markdown(f"**🏢 القسم:** {row.get('القسم', '')}")
+                                st.markdown(f"**📝 الشيت:** {row.get('اسم الشيت', '')}")
+                            
+                            with col2:
+                                st.markdown(f"**👨‍🔧 تم بواسطة:** {row.get('تم بواسطة', '')}")
+                                st.markdown(f"**⚖️ الطن:** {row.get('الطن', '')}")
+                                st.markdown(f"**📝 ملاحظات:** {row.get('ملاحظات', '')}")
+                                
+                                # عرض الصور
+                                images_str = row.get('الصور', '')
+                                if images_str and isinstance(images_str, str):
+                                    st.markdown("**🖼️ الصور:**")
+                                    for img in images_str.split(", "):
+                                        img_path = os.path.join(IMAGES_FOLDER, img)
+                                        if os.path.exists(img_path):
+                                            st.image(img_path, width=150)
+                    
+                    # تصدير النتائج
+                    csv = results.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 تحميل نتائج البحث", csv, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", "text/csv")
+                else:
+                    st.warning("❌ لا توجد نتائج مطابقة للبحث")
+
+def show_add_machine(sheets_edit):
+    """إضافة ماكينة جديدة"""
     st.subheader("➕ إضافة ماكينة جديدة")
-    st.info("سيتم إضافة الماكينة الجديدة كشيت منفصل في ملف Excel الموجود على GitHub")
+    st.info("سيتم إضافة الماكينة الجديدة كشيت منفصل في ملف Excel")
     
     col1, col2 = st.columns(2)
     with col1:
-        new_sheet_name = st.text_input("📝 اسم الماكينة الجديدة:", key="new_sheet_name_github",
-                                       placeholder="مثال: ماكينة الخراطة, ماكينة اللحام, الكسارة")
+        new_sheet_name = st.text_input("📝 اسم الماكينة الجديدة:", key="new_machine_name",
+                                       placeholder="مثال: ماكينة الخراطة, ماكينة اللحام")
         if new_sheet_name and new_sheet_name in sheets_edit:
             st.error(f"❌ الماكينة '{new_sheet_name}' موجودة بالفعل!")
         elif new_sheet_name:
             st.success(f"✅ اسم الماكينة '{new_sheet_name}' متاح")
+    
     with col2:
-        use_default = st.checkbox("استخدام الأعمدة الافتراضية", value=True, key="use_default_columns")
+        use_default = st.checkbox("استخدام الأعمدة الافتراضية", value=True, key="use_default")
         if use_default:
             columns_list = APP_CONFIG["DEFAULT_SHEET_COLUMNS"]
             st.info(f"📊 الأعمدة: {', '.join(columns_list)}")
         else:
-            columns_text = st.text_area("✏️ الأعمدة (كل عمود في سطر):", 
-                                        value="\n".join(APP_CONFIG["DEFAULT_SHEET_COLUMNS"]), 
-                                        key="custom_columns", height=150)
+            columns_text = st.text_area("✏️ الأعمدة:", value="\n".join(APP_CONFIG["DEFAULT_SHEET_COLUMNS"]), height=150)
             columns_list = [col.strip() for col in columns_text.split("\n") if col.strip()]
             if not columns_list:
                 columns_list = APP_CONFIG["DEFAULT_SHEET_COLUMNS"]
     
-    st.markdown("---")
-    st.markdown("### 📋 معاينة الماكينة الجديدة")
-    preview_df = pd.DataFrame(columns=columns_list)
-    st.dataframe(preview_df, use_container_width=True)
-    st.caption(f"📊 عدد الأعمدة: {len(columns_list)} | سيتم إنشاء شيت فارغ بهذه الأعمدة للماكينة الجديدة")
-    
-    if st.button("✅ إنشاء وإضافة الماكينة إلى GitHub", key="create_sheet_github_btn", type="primary", use_container_width=True):
+    if st.button("✅ إنشاء وإضافة الماكينة", type="primary", use_container_width=True):
         if not new_sheet_name:
             st.error("❌ الرجاء إدخال اسم الماكينة")
             return sheets_edit
         clean_name = re.sub(r'[\\/*?:"<>|]', '_', new_sheet_name.strip())
         if clean_name != new_sheet_name:
-            st.warning(f"⚠ تم تعديل اسم الماكينة إلى: {clean_name}")
+            st.warning(f"⚠ تم تعديل الاسم إلى: {clean_name}")
             new_sheet_name = clean_name
         if new_sheet_name in sheets_edit:
             st.error(f"❌ الماكينة '{new_sheet_name}' موجودة بالفعل!")
             return sheets_edit
         
         try:
-            with st.spinner("جاري إنشاء الماكينة ورفعها إلى GitHub..."):
+            with st.spinner("جاري الإنشاء..."):
                 new_df = pd.DataFrame(columns=columns_list)
                 sheets_edit[new_sheet_name] = new_df
-                commit_msg = f"إضافة ماكينة جديدة: {new_sheet_name} بواسطة {st.session_state.get('username', 'user')}"
-                if save_to_github(sheets_edit, commit_msg):
-                    st.success(f"✅ تم إنشاء الماكينة '{new_sheet_name}' بنجاح ورفعها إلى GitHub!")
+                if save_to_github(sheets_edit, f"إضافة ماكينة جديدة: {new_sheet_name}"):
+                    st.success(f"✅ تم إنشاء الماكينة '{new_sheet_name}' بنجاح!")
                     st.cache_data.clear()
-                    st.balloons()
                     st.rerun()
                 else:
-                    st.error("❌ فشل رفع الماكينة إلى GitHub")
+                    st.error("❌ فشل الرفع")
                     return sheets_edit
         except Exception as e:
-            st.error(f"❌ حدث خطأ: {str(e)}")
+            st.error(f"❌ خطأ: {str(e)}")
             return sheets_edit
     
     st.markdown("---")
-    st.markdown("### 📋 الماكينات الموجودة حالياً على GitHub:")
+    st.markdown("### 📋 الماكينات الموجودة:")
     if sheets_edit:
         for sheet_name in sheets_edit.keys():
             st.write(f"- 🏭 {sheet_name}")
     else:
         st.info("لا توجد ماكينات بعد")
-    return sheets_edit
-
-def manage_data_view_only(sheets_edit):
-    if sheets_edit is None:
-        st.warning("الملف غير موجود. استخدم زر 'تحديث من GitHub' في الشريط الجانبي أولاً")
-        return sheets_edit
-    
-    # تبويبان فقط: عرض البيانات + إضافة ماكينة
-    tab_names = ["📋 عرض البيانات", "➕ إضافة ماكينة"]
-    tabs_view = st.tabs(tab_names)
-    
-    with tabs_view[0]:
-        st.subheader("جميع الماكينات (عرض فقط)")
-        if sheets_edit:
-            sheet_tabs = st.tabs(list(sheets_edit.keys()))
-            for i, (sheet_name, df) in enumerate(sheets_edit.items()):
-                with sheet_tabs[i]:
-                    # عرض البيانات فقط بدون أي تعديل
-                    display_sheet_data(sheet_name, df, f"view_{sheet_name}")
-        else:
-            st.info("لا توجد ماكينات لعرضها")
-    
-    with tabs_view[1]:
-        sheets_edit = add_new_machine_only(sheets_edit)
-    
     return sheets_edit
 
 # ------------------------------- الواجهة الرئيسية -------------------------------
@@ -475,24 +860,32 @@ user_role = st.session_state.get("user_role", "viewer")
 user_permissions = st.session_state.get("user_permissions", ["view"])
 can_edit = (user_role == "admin" or user_role == "editor" or "edit" in user_permissions)
 
-# تبويب واحد فقط للعرض، وتبويب الإدارة سيظهر فقط للمستخدمين المصرح لهم ويحتوي على إضافة ماكينة فقط
-tabs_list = ["📊 عرض البيانات"]
+# تبويبات التطبيق
+tabs_list = ["📊 عرض البيانات", "🔍 بحث متقدم"]
 if can_edit:
-    tabs_list.append("🛠 إدارة التعديلات (إضافة ماكينة فقط)")
+    tabs_list.extend(["➕ إضافة حدث", "➕ إضافة ماكينة"])
 
 tabs = st.tabs(tabs_list)
 
 with tabs[0]:
-    # عرض البيانات فقط بدون بحث متقدم أو تحليل أعطال
     if all_sheets:
         st.subheader("جميع الماكينات")
         sheet_tabs = st.tabs(list(all_sheets.keys()))
         for i, (sheet_name, df) in enumerate(all_sheets.items()):
             with sheet_tabs[i]:
-                display_sheet_data(sheet_name, df, f"main_view_{sheet_name}")
+                display_sheet_data_with_events(sheet_name, df, f"main_{sheet_name}", sheets_edit, can_edit)
     else:
-        st.warning("لا توجد بيانات لعرضها. يرجى تحديث الملف من GitHub.")
+        st.warning("لا توجد بيانات. يرجى تحديث الملف من GitHub.")
 
-if can_edit and len(tabs) > 1:
-    with tabs[1]:
-        sheets_edit = manage_data_view_only(sheets_edit)
+with tabs[1]:
+    show_advanced_search(all_sheets)
+
+if can_edit:
+    with tabs[2]:
+        show_add_event(all_sheets, sheets_edit)
+    
+    with tabs[3]:
+        if sheets_edit:
+            show_add_machine(sheets_edit)
+        else:
+            st.warning("الملف غير موجود. استخدم زر 'تحديث من GitHub' أولاً")
