@@ -139,17 +139,33 @@ def get_image_url_from_github(image_filename):
         return None
     return f"https://raw.githubusercontent.com/{APP_CONFIG['REPO_NAME']}/{APP_CONFIG['BRANCH']}/{IMAGES_FOLDER}/{image_filename}"
 
-def display_image(image_path_or_url):
+def display_image(image_path_or_url, width=200):
     """عرض الصورة"""
     try:
-        if image_path_or_url.startswith('http'):
-            st.image(image_path_or_url, use_container_width=True)
-        elif os.path.exists(image_path_or_url):
-            st.image(image_path_or_url, use_container_width=True)
-        else:
-            st.info("الصورة غير متوفرة")
+        if image_path_or_url and isinstance(image_path_or_url, str):
+            if image_path_or_url.startswith('http'):
+                st.image(image_path_or_url, width=width)
+            elif os.path.exists(image_path_or_url):
+                st.image(image_path_or_url, width=width)
+            else:
+                st.caption("📷 لا توجد صورة")
     except Exception as e:
-        st.error(f"خطأ في عرض الصورة: {e}")
+        st.caption("📷 خطأ في عرض الصورة")
+
+def display_images_in_row(image_urls, max_images=3):
+    """عرض عدة صور في صف واحد"""
+    if not image_urls:
+        return
+    
+    urls_list = [url.strip() for url in image_urls.split(',') if url.strip()]
+    if not urls_list:
+        return
+    
+    cols = st.columns(min(len(urls_list), max_images))
+    for i, col in enumerate(cols):
+        if i < len(urls_list):
+            with col:
+                display_image(urls_list[i], width=150)
 
 # ------------------------------- دوال تصدير البيانات -------------------------------
 def export_sheet_to_excel(sheets_dict, sheet_name):
@@ -536,9 +552,9 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
     # عرض الصور إذا وجدت في البيانات
     if "الصور" in df.columns:
         for idx, row in df.iterrows():
-            if row.get("الصور"):
-                with st.expander(f"🖼️ صورة السجل {idx+1}"):
-                    display_image(row["الصور"])
+            if row.get("الصور") and row.get("الصور") != "":
+                with st.expander(f"🖼️ صورة السجل {idx+1} - {row.get('التاريخ', '')} - {row.get('اسم قطعه الغيار', '')}"):
+                    display_images_in_row(row["الصور"])
     
     display_df = df.copy()
     for col in display_df.columns:
@@ -567,7 +583,7 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
         )
 
 def search_across_sheets(all_sheets):
-    st.subheader("بحث متقدم في السجلات")
+    st.subheader("🔍 بحث متقدم في السجلات")
     
     if not all_sheets:
         st.warning("لا توجد بيانات للبحث")
@@ -589,10 +605,10 @@ def search_across_sheets(all_sheets):
             equipment_list = sorted(all_eq)
         
         filter_equipment = st.selectbox("فلتر حسب الماكينة:", ["الكل"] + equipment_list, key="search_eq")
-        search_term = st.text_input("كلمة البحث:", placeholder="أدخل نصاً للبحث...", key="search_term")
+        search_term = st.text_input("🔍 كلمة البحث:", placeholder="أدخل نصاً للبحث (اسم قطعة غيار، نوع تشحيم...)", key="search_term")
     
     with col2:
-        st.markdown("#### نطاق التاريخ")
+        st.markdown("#### 📅 نطاق التاريخ")
         use_date_filter = st.checkbox("تفعيل البحث بالتاريخ", key="use_date_filter")
         if use_date_filter:
             col_date1, col_date2 = st.columns(2)
@@ -603,51 +619,125 @@ def search_across_sheets(all_sheets):
         else:
             start_date = None
             end_date = None
-        search_in_notes = st.checkbox("البحث في الملاحظات أيضاً", value=True, key="search_notes")
+        
+        st.markdown("#### 🎯 خيارات البحث")
+        search_in_all_columns = st.checkbox("البحث في جميع الأعمدة", value=True, key="search_all_columns")
+        
+        if not search_in_all_columns:
+            available_cols = ["اسم قطعه الغيار", "نوع التشحيم", "ملاحظات", "المعدة", "المقاس"]
+            search_columns = st.multiselect("اختر الأعمدة للبحث:", available_cols, default=["اسم قطعه الغيار", "نوع التشحيم"])
+        else:
+            search_columns = None
     
-    if st.button("بحث", key="search_btn", type="primary"):
+    if st.button("🔍 بحث", key="search_btn", type="primary"):
+        if not search_term.strip():
+            st.warning("⚠️ الرجاء إدخال كلمة للبحث")
+            return
+        
         results = []
         sheets_to_search = all_sheets.items()
         if selected_sheet != "جميع الأقسام":
             sheets_to_search = [(selected_sheet, all_sheets[selected_sheet])]
         
-        for sheet_name, df in sheets_to_search:
-            df_filtered = df.copy()
-            if filter_equipment != "الكل" and "المعدة" in df_filtered.columns:
-                df_filtered = df_filtered[df_filtered["المعدة"] == filter_equipment]
-            if use_date_filter and start_date and end_date and "التاريخ" in df_filtered.columns:
-                try:
-                    df_filtered["التاريخ"] = pd.to_datetime(df_filtered["التاريخ"], errors='coerce')
-                    mask = (df_filtered["التاريخ"].dt.date >= start_date) & (df_filtered["التاريخ"].dt.date <= end_date)
-                    df_filtered = df_filtered[mask]
-                except:
-                    pass
-            if search_term:
-                search_columns = ["اسم قطعه الغيار", "نوع التشحيم", "ملاحظات"] if "ملاحظات" in df_filtered.columns else ["اسم قطعه الغيار", "نوع التشحيم"]
-                mask = pd.Series([False] * len(df_filtered))
-                for col in search_columns:
-                    if col in df_filtered.columns:
-                        mask = mask | df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
-                df_filtered = df_filtered[mask]
-            if not df_filtered.empty:
-                df_filtered["القسم"] = sheet_name
-                results.append(df_filtered)
+        with st.spinner("جاري البحث..."):
+            for sheet_name, df in sheets_to_search:
+                df_filtered = df.copy()
+                
+                # فلتر حسب الماكينة
+                if filter_equipment != "الكل" and "المعدة" in df_filtered.columns:
+                    df_filtered = df_filtered[df_filtered["المعدة"] == filter_equipment]
+                
+                # فلتر حسب التاريخ
+                if use_date_filter and start_date and end_date and "التاريخ" in df_filtered.columns:
+                    try:
+                        df_filtered["التاريخ"] = pd.to_datetime(df_filtered["التاريخ"], errors='coerce')
+                        mask = (df_filtered["التاريخ"].dt.date >= start_date) & (df_filtered["التاريخ"].dt.date <= end_date)
+                        df_filtered = df_filtered[mask]
+                    except Exception as e:
+                        pass
+                
+                # البحث النصي
+                if not df_filtered.empty and search_term.strip():
+                    if search_columns is None:  # البحث في جميع الأعمدة
+                        mask = pd.Series([False] * len(df_filtered))
+                        for col in df_filtered.columns:
+                            try:
+                                col_mask = df_filtered[col].astype(str).str.contains(search_term, case=False, na=False, regex=False)
+                                mask = mask | col_mask
+                            except Exception:
+                                continue
+                        df_filtered = df_filtered[mask]
+                    else:  # البحث في أعمدة محددة
+                        mask = pd.Series([False] * len(df_filtered))
+                        for col in search_columns:
+                            if col in df_filtered.columns:
+                                try:
+                                    col_mask = df_filtered[col].astype(str).str.contains(search_term, case=False, na=False, regex=False)
+                                    mask = mask | col_mask
+                                except Exception:
+                                    continue
+                        df_filtered = df_filtered[mask]
+                
+                if not df_filtered.empty:
+                    df_filtered["القسم"] = sheet_name
+                    results.append(df_filtered)
         
         if results:
             combined_results = pd.concat(results, ignore_index=True)
-            st.success(f"تم العثور على {len(combined_results)} نتيجة")
-            st.dataframe(combined_results, use_container_width=True, height=500)
+            st.success(f"✅ تم العثور على {len(combined_results)} نتيجة")
             
-            excel_file = export_filtered_results_to_excel(combined_results, "نتائج_البحث")
-            st.download_button(
-                "📥 تحميل نتائج البحث كملف Excel",
-                excel_file,
-                f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key='download-excel'
-            )
+            # عرض النتائج مع الصور
+            st.markdown("### 📋 نتائج البحث")
+            
+            for idx, row in combined_results.iterrows():
+                with st.container():
+                    st.markdown("---")
+                    col_img, col_data = st.columns([1, 3])
+                    
+                    with col_img:
+                        if "الصور" in row and row["الصور"] and row["الصور"] != "":
+                            display_images_in_row(row["الصور"], max_images=2)
+                        else:
+                            st.caption("📷 لا توجد صور")
+                    
+                    with col_data:
+                        st.markdown(f"**📅 التاريخ:** {row.get('التاريخ', '')}")
+                        st.markdown(f"**🏭 القسم:** {row.get('القسم', '')}")
+                        st.markdown(f"**🔧 الماكينة:** {row.get('المعدة', '')}")
+                        st.markdown(f"**🔩 اسم قطعه الغيار:** {row.get('اسم قطعه الغيار', '')}")
+                        st.markdown(f"**📏 المقاس:** {row.get('المقاس', '')}")
+                        st.markdown(f"**🔢 العدد ف معده:** {row.get('العدد ف معده', '')}")
+                        st.markdown(f"**🛢️ نوع التشحيم:** {row.get('نوع التشحيم', '')}")
+                        st.markdown(f"**📦 الكميه:** {row.get('الكميه', '')}")
+                        st.markdown(f"**⏱️ عدد ساعات التشغيل:** {row.get('عدد ساعات التشغيل', '')}")
+                        if row.get('ملاحظات', ''):
+                            st.markdown(f"**📝 ملاحظات:** {row.get('ملاحظات', '')}")
+                    
+                    with st.expander("🔍 عرض جميع البيانات"):
+                        st.json(row.to_dict())
+            
+            # أزرار التصدير
+            st.markdown("---")
+            col_export1, col_export2 = st.columns(2)
+            with col_export1:
+                excel_file = export_filtered_results_to_excel(combined_results, "نتائج_البحث")
+                st.download_button(
+                    "📥 تحميل نتائج البحث كملف Excel",
+                    excel_file,
+                    f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key='download-excel',
+                    use_container_width=True
+                )
+            with col_export2:
+                st.metric("عدد السجلات", len(combined_results))
         else:
-            st.warning("لا توجد نتائج مطابقة للبحث")
+            st.warning("⚠️ لا توجد نتائج مطابقة للبحث")
+            st.info("💡 نصائح للبحث:\n"
+                    "- تأكد من صحة كتابة كلمة البحث\n"
+                    "- جرب البحث بحروف صغيرة/كبيرة\n"
+                    "- جرب البحث بجزء من الكلمة\n"
+                    "- تأكد من اختيار القسم الصحيح")
 
 # ==================== دوال إضافة البيانات (مع إضافة الصور) ====================
 def add_new_data_entry(sheets_edit, sheet_name):
@@ -691,7 +781,9 @@ def add_new_data_entry(sheets_edit, sheet_name):
         if uploaded_images:
             for img in uploaded_images:
                 if img.size > APP_CONFIG["MAX_IMAGE_SIZE_MB"] * 1024 * 1024:
-                    st.warning(f"الصورة {img.name} حجمها أكبر من {APP_CONFIG['MAX_IMAGE_SIZE_MB']}MB")
+                    st.warning(f"⚠️ الصورة {img.name} حجمها أكبر من {APP_CONFIG['MAX_IMAGE_SIZE_MB']}MB")
+                else:
+                    st.success(f"✅ {img.name} - {img.size/1024:.1f}KB")
         
         submitted = st.form_submit_button("✅ إضافة البيانات", type="primary")
         
@@ -702,14 +794,16 @@ def add_new_data_entry(sheets_edit, sheet_name):
             # رفع الصور وحفظ روابطها
             image_urls = []
             if uploaded_images:
-                with st.spinner("جاري رفع الصور..."):
+                with st.spinner("جاري رفع الصور إلى GitHub..."):
                     for i, img in enumerate(uploaded_images):
-                        image_id = f"{record_id}_{i}"
-                        image_url, error = upload_image_to_github(img, image_id)
-                        if image_url:
-                            image_urls.append(image_url)
-                        else:
-                            st.error(f"فشل رفع الصورة {img.name}: {error}")
+                        if img.size <= APP_CONFIG["MAX_IMAGE_SIZE_MB"] * 1024 * 1024:
+                            image_id = f"{record_id}_{i}"
+                            image_url, error = upload_image_to_github(img, image_id)
+                            if image_url:
+                                image_urls.append(image_url)
+                                st.success(f"✅ تم رفع {img.name}")
+                            else:
+                                st.error(f"❌ فشل رفع {img.name}: {error}")
             
             # إنشاء سجل البيانات
             new_row = {
@@ -740,6 +834,7 @@ def add_new_data_entry(sheets_edit, sheet_name):
                     st.success(f"✅ تم إضافة البيانات و {len(image_urls)} صورة بنجاح ورفعها إلى GitHub!")
                 else:
                     st.success("✅ تم إضافة البيانات بنجاح ورفعها إلى GitHub!")
+                st.balloons()
                 st.rerun()
             else:
                 st.error("❌ فشل الحفظ")
@@ -937,7 +1032,7 @@ def manage_data_edit(sheets_edit):
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 
 with st.sidebar:
-    st.header("الجلسة")
+    st.header("⚙️ القائمة")
     if not st.session_state.get("logged_in"):
         if not login_ui():
             st.stop()
@@ -947,15 +1042,18 @@ with st.sidebar:
         rem = remaining_time(state, username)
         if rem:
             mins, secs = divmod(int(rem.total_seconds()), 60)
-            st.success(f"👋 {username} | ⏳ {mins:02d}:{secs:02d}")
+            st.success(f"👋 مرحباً {username} | ⏳ الوقت المتبقي: {mins:02d}:{secs:02d}")
         st.markdown("---")
-        if st.button("🔄 تحديث من GitHub"):
-            if fetch_from_github_requests():
-                st.rerun()
-        if st.button("🗑 مسح الكاش"):
+        if st.button("🔄 تحديث من GitHub", use_container_width=True):
+            with st.spinner("جاري التحميل..."):
+                if fetch_from_github_requests():
+                    st.success("✅ تم التحديث بنجاح!")
+                    st.rerun()
+        if st.button("🗑 مسح الكاش", use_container_width=True):
             st.cache_data.clear()
+            st.success("✅ تم مسح الكاش")
             st.rerun()
-        if st.button("🚪 تسجيل الخروج"):
+        if st.button("🚪 تسجيل الخروج", use_container_width=True):
             logout_action()
 
 all_sheets = load_all_sheets()
