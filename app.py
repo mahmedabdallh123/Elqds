@@ -38,14 +38,14 @@ APP_CONFIG = {
     "APP_ICON": "🏭",
     "REPO_NAME": "mahmedabdallh123/stations",
     "BRANCH": "main",
-    "FILE_PATH": "l9.xlsx",
-    "LOCAL_FILE": "l9.xlsx",
+    "FILE_PATH": "2.xlsx",
+    "LOCAL_FILE": "2.xlsx",
     "MAX_ACTIVE_USERS": 5,
     "SESSION_DURATION_MINUTES": 60,
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
-    "DEFAULT_SHEET_COLUMNS": ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "الطن", "الصور", "ملاحظات"],
+    "DEFAULT_SHEET_COLUMNS": ["التاريخ", "المعدة", "اسم قطعه الغيار", "المقاس", "العدد ف معده", "نوع التشحيم", "الكميه", "عدد ساعات التشغيل"],
 }
 
 USERS_FILE = "users.json"
