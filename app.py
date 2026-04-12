@@ -45,7 +45,7 @@ APP_CONFIG = {
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
-    "DEFAULT_SHEET_COLUMNS": ["مده الاصلاح","التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة"],
+    "DEFAULT_SHEET_COLUMNS": ["مده الاصلاح", "التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة"],
 }
 
 USERS_FILE = "users.json"
@@ -131,6 +131,18 @@ def analyze_failures(df, equipment_name=None):
     else:
         correction_counts = pd.DataFrame()
     
+    # تحليل متوسط مدة الإصلاح إذا كان العمود موجوداً
+    if "مده الاصلاح" in data.columns:
+        data["مده الاصلاح"] = pd.to_numeric(data["مده الاصلاح"], errors='coerce')
+        avg_repair_time = data["مده الاصلاح"].mean()
+        median_repair_time = data["مده الاصلاح"].median()
+        repair_by_equipment = data.groupby("المعدة")["مده الاصلاح"].mean().reset_index()
+        repair_by_equipment.columns = ["المعدة", "متوسط مدة الإصلاح (ساعات)"]
+    else:
+        avg_repair_time = None
+        median_repair_time = None
+        repair_by_equipment = pd.DataFrame()
+    
     return {
         "total_failures": total_failures,
         "unique_equipment": unique_equipment,
@@ -144,6 +156,9 @@ def analyze_failures(df, equipment_name=None):
         "monthly": monthly_failures,
         "weekday": weekday_failures,
         "correction_counts": correction_counts,
+        "avg_repair_time": avg_repair_time,
+        "median_repair_time": median_repair_time,
+        "repair_by_equipment": repair_by_equipment,
         "raw_data": data
     }
 
@@ -183,7 +198,14 @@ def generate_excel_report(analysis, sheet_name, equipment_filter):
         if not analysis["correction_counts"].empty:
             analysis["correction_counts"].to_excel(writer, sheet_name="الإجراءات التصحيحية", index=False)
         
-        raw_export = analysis["raw_data"][["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "الطن", "ملاحظات"]].copy()
+        if not analysis["repair_by_equipment"].empty:
+            analysis["repair_by_equipment"].to_excel(writer, sheet_name="متوسط مدة الإصلاح", index=False)
+        
+        # تضمين الأعمدة المتوفرة فقط في البيانات الخام
+        cols_to_export = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة"]
+        if "مده الاصلاح" in analysis["raw_data"].columns:
+            cols_to_export.insert(0, "مده الاصلاح")
+        raw_export = analysis["raw_data"][cols_to_export].copy()
         raw_export.to_excel(writer, sheet_name="البيانات الخام", index=False)
     
     output.seek(0)
@@ -427,7 +449,7 @@ def login_ui():
             logout_action()
         return True
 
-# ------------------------------- دوال الملفات (المعدلة) -------------------------------
+# ------------------------------- دوال الملفات -------------------------------
 def fetch_from_github_requests():
     try:
         response = requests.get(GITHUB_EXCEL_URL, stream=True, timeout=15)
@@ -477,7 +499,6 @@ def load_sheets_for_edit():
         return None
 
 def save_excel_locally(sheets_dict):
-    """حفظ ملف Excel محلياً فقط"""
     try:
         with pd.ExcelWriter(APP_CONFIG["LOCAL_FILE"], engine="openpyxl") as writer:
             for name, sh in sheets_dict.items():
@@ -491,7 +512,6 @@ def save_excel_locally(sheets_dict):
         return False
 
 def push_to_github():
-    """رفع الملف المحلي إلى GitHub"""
     try:
         token = st.secrets.get("github", {}).get("token", None)
         if not token:
@@ -537,7 +557,6 @@ def push_to_github():
         return False
 
 def save_and_push_to_github(sheets_dict, operation_name):
-    """حفظ محلياً ثم رفع إلى GitHub"""
     st.info(f"💾 جاري حفظ {operation_name}...")
     
     if save_excel_locally(sheets_dict):
@@ -634,7 +653,8 @@ def search_across_sheets(all_sheets):
         else:
             start_date = None
             end_date = None
-        search_in_notes = st.checkbox("البحث في الملاحظات أيضاً", value=True, key="search_notes")
+        # لا حاجة لخيار البحث في الملاحظات لعدم وجود العمود
+        search_in_notes = False
     
     if st.button("بحث", key="search_btn", type="primary"):
         results = []
@@ -655,8 +675,9 @@ def search_across_sheets(all_sheets):
                     pass
             if search_term:
                 search_columns = ["الحدث/العطل", "الإجراء التصحيحي"]
-                if search_in_notes:
-                    search_columns.append("ملاحظات")
+                # يمكن إضافة "مده الاصلاح" كرقم - لكن الأفضل البحث كنص
+                if "مده الاصلاح" in df_filtered.columns:
+                    search_columns.append("مده الاصلاح")
                 mask = pd.Series([False] * len(df_filtered))
                 for col in search_columns:
                     if col in df_filtered.columns:
@@ -721,6 +742,15 @@ def failures_analysis_tab(all_sheets):
             with col_d:
                 st.metric("إلى تاريخ", analysis["date_range"]["to"])
             
+            # عرض مقاييس مدة الإصلاح إذا وجدت
+            if analysis["avg_repair_time"] is not None:
+                st.subheader("⏱️ إحصائيات مدة الإصلاح")
+                col_r1, col_r2 = st.columns(2)
+                with col_r1:
+                    st.metric("متوسط مدة الإصلاح (ساعات)", f"{analysis['avg_repair_time']:.1f}")
+                with col_r2:
+                    st.metric("متوسط مدة الإصلاح (وسيط)", f"{analysis['median_repair_time']:.1f}")
+            
             st.subheader("📊 الرسوم البيانية")
             
             if PLOTLY_AVAILABLE:
@@ -737,8 +767,8 @@ def failures_analysis_tab(all_sheets):
             
             st.subheader("📋 الجداول التفصيلية")
             
-            tab1, tab2, tab3, tab4, tab5 = st.tabs([
-                "معدل تكرار الأعطال", "أكثر الأعطال تكراراً", "MTBF", "التحليل الشهري", "الإجراءات التصحيحية"
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+                "معدل تكرار الأعطال", "أكثر الأعطال تكراراً", "MTBF", "التحليل الشهري", "الإجراءات التصحيحية", "متوسط مدة الإصلاح"
             ])
             
             with tab1:
@@ -772,6 +802,13 @@ def failures_analysis_tab(all_sheets):
                     st.dataframe(analysis["correction_counts"], use_container_width=True)
                 else:
                     st.info("لا توجد بيانات")
+            
+            with tab6:
+                if not analysis["repair_by_equipment"].empty:
+                    st.dataframe(analysis["repair_by_equipment"], use_container_width=True)
+                    st.caption("متوسط مدة الإصلاح بالساعات")
+                else:
+                    st.info("لا توجد بيانات عن مدة الإصلاح")
             
             st.markdown("---")
             st.subheader("📥 تصدير التقرير")
@@ -854,6 +891,17 @@ def create_failure_charts_matplotlib(analysis):
             ax.text(val + 0.5, bar.get_y() + bar.get_height()/2, str(val), va='center')
         charts.append(fig)
     
+    # رسم متوسط مدة الإصلاح
+    if not analysis["repair_by_equipment"].empty:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        colors = plt.cm.Oranges(np.linspace(0.4, 0.9, len(analysis["repair_by_equipment"])))
+        bars = ax.barh(analysis["repair_by_equipment"]["المعدة"], analysis["repair_by_equipment"]["متوسط مدة الإصلاح (ساعات)"], color=colors)
+        ax.set_xlabel("متوسط مدة الإصلاح (ساعات)")
+        ax.set_title("متوسط مدة الإصلاح حسب الماكينة", fontsize=14)
+        for bar, val in zip(bars, analysis["repair_by_equipment"]["متوسط مدة الإصلاح (ساعات)"]):
+            ax.text(val + 0.5, bar.get_y() + bar.get_height()/2, f'{val:.1f}', va='center')
+        charts.append(fig)
+    
     return charts
 
 def create_failure_charts_plotly(analysis):
@@ -933,6 +981,19 @@ def create_failure_charts_plotly(analysis):
             orientation='h',
             color="عدد المرات",
             color_continuous_scale="Purples"
+        )
+        fig.update_traces(textposition='outside')
+        charts.append(fig)
+    
+    if not analysis["repair_by_equipment"].empty:
+        fig = px.bar(
+            analysis["repair_by_equipment"],
+            x="المعدة",
+            y="متوسط مدة الإصلاح (ساعات)",
+            title="🛠️ متوسط مدة الإصلاح حسب الماكينة (ساعات)",
+            text="متوسط مدة الإصلاح (ساعات)",
+            color="متوسط مدة الإصلاح (ساعات)",
+            color_continuous_scale="Oranges"
         )
         fig.update_traces(textposition='outside')
         charts.append(fig)
@@ -1042,7 +1103,7 @@ def add_new_machine(sheets_edit, sheet_name):
     return sheets_edit
 
 def add_new_event(sheets_edit, sheet_name):
-    """إضافة حدث جديد"""
+    """إضافة حدث جديد بالأعمدة المطلوبة"""
     st.markdown(f"### 📝 إضافة حدث عطل جديد في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
     equipment_list = get_equipment_list_from_sheet(df)
@@ -1056,26 +1117,24 @@ def add_new_event(sheets_edit, sheet_name):
         with col1:
             selected_equipment = st.selectbox("🔧 اختر الماكينة:", equipment_list)
             event_date = st.date_input("📅 التاريخ:", value=datetime.now())
+            repair_duration = st.number_input("⏱️ مدة الإصلاح (ساعات):", min_value=0.0, step=0.5, format="%.1f")
             event_desc = st.text_area("📝 الحدث/العطل:", height=100)
         with col2:
             correction_desc = st.text_area("🔧 الإجراء التصحيحي:", height=100)
             servised_by = st.text_input("👨‍🔧 تم بواسطة:")
-            tones = st.text_input("⚖️ الطن:")
-        notes = st.text_area("📝 ملاحظات:")
         
         submitted = st.form_submit_button("✅ إضافة الحدث", type="primary")
         
         if submitted:
             new_row = {
+                "مده الاصلاح": repair_duration if repair_duration > 0 else "",
                 "التاريخ": event_date.strftime("%Y-%m-%d"),
                 "المعدة": selected_equipment,
                 "الحدث/العطل": event_desc,
                 "الإجراء التصحيحي": correction_desc,
-                "تم بواسطة": servised_by,
-                "الطن": tones,
-                "الصور": "",
-                "ملاحظات": notes
+                "تم بواسطة": servised_by
             }
+            # إضافة أي أعمدة إضافية موجودة في الـ DataFrame ولكنها ليست في new_row
             for col in df.columns:
                 if col not in new_row:
                     new_row[col] = ""
