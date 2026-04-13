@@ -892,6 +892,7 @@ def manage_machines(sheets_edit, sheet_name):
                 else:
                     st.error(msg)
 
+# ------------------------------- دالة إضافة حدث (المعدلة) -------------------------------
 def add_new_event(sheets_edit, sheet_name):
     st.markdown(f"### 📝 إضافة حدث عطل جديد في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
@@ -902,20 +903,20 @@ def add_new_event(sheets_edit, sheet_name):
         return sheets_edit
 
     # ---------- اختيار الماكينة (خارج النموذج) ----------
+    # تخزين الماكينة المختارة في session_state
     if "selected_equipment_temp" not in st.session_state:
         st.session_state.selected_equipment_temp = equipment_list[0] if equipment_list else ""
-    
-    def on_equipment_change():
-        st.session_state.selected_equipment_temp = st.session_state.equipment_select
-        st.rerun()
     
     selected_equipment = st.selectbox(
         "🔧 اختر الماكينة:",
         equipment_list,
         index=equipment_list.index(st.session_state.selected_equipment_temp) if st.session_state.selected_equipment_temp in equipment_list else 0,
-        key="equipment_select",
-        on_change=on_equipment_change
+        key="equipment_select"
     )
+    # تحديث session_state عند تغيير الاختيار (سيؤدي إلى إعادة تشغيل التطبيق تلقائياً)
+    if selected_equipment != st.session_state.selected_equipment_temp:
+        st.session_state.selected_equipment_temp = selected_equipment
+        st.rerun()
     
     # جلب قطع الغيار الخاصة بالماكينة المختارة
     spare_parts_list = get_spare_parts_for_equipment(selected_equipment)
@@ -996,12 +997,13 @@ def add_new_event(sheets_edit, sheet_name):
                 st.success("✅ تم إضافة الحدث بنجاح ورفعه إلى GitHub!")
                 if warning_msg:
                     st.warning(warning_msg)
-                st.session_state.selected_equipment_temp = selected_equipment
+                # لا حاجة لإعادة تعيين session_state هنا لأننا سنعيد التشغيل
                 st.rerun()
             else:
                 st.error("❌ فشل الحفظ")
     return sheets_edit
 
+# ------------------------------- دوال إدارة قطع الغيار -------------------------------
 def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
     st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة. القطع التي تحددها كـ 'ضرورية' سيتم مراقبتها وإنذارك عند نقصان الرصيد.")
