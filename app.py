@@ -11,7 +11,7 @@ import io
 
 # ------------------------------- الإعدادات الثابتة -------------------------------
 APP_CONFIG = {
-    "APP_TITLE": "coat - CMMS",
+    "APP_TITLE": "نظام إدارة الصيانة - CMMS",
     "APP_ICON": "🏭",
     "REPO_NAME": "mahmedabdallh123/Elqds",
     "BRANCH": "main",
@@ -896,22 +896,43 @@ def add_new_event(sheets_edit, sheet_name):
     st.markdown(f"### 📝 إضافة حدث عطل جديد في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
     equipment_list = get_equipment_list_from_sheet(df)
+    
     if not equipment_list:
         st.warning("⚠ لا توجد ماكينات مسجلة في هذا القسم. يرجى إضافة ماكينة أولاً من تبويب 'إدارة الماكينات'")
         return sheets_edit
+
+    # ---------- اختيار الماكينة (خارج النموذج) ----------
+    if "selected_equipment_temp" not in st.session_state:
+        st.session_state.selected_equipment_temp = equipment_list[0] if equipment_list else ""
+    
+    def on_equipment_change():
+        st.session_state.selected_equipment_temp = st.session_state.equipment_select
+        st.rerun()
+    
+    selected_equipment = st.selectbox(
+        "🔧 اختر الماكينة:",
+        equipment_list,
+        index=equipment_list.index(st.session_state.selected_equipment_temp) if st.session_state.selected_equipment_temp in equipment_list else 0,
+        key="equipment_select",
+        on_change=on_equipment_change
+    )
+    
+    # جلب قطع الغيار الخاصة بالماكينة المختارة
+    spare_parts_list = get_spare_parts_for_equipment(selected_equipment)
+    
+    # ---------- النموذج لبقية البيانات ----------
     with st.form(key="add_event_form"):
         col1, col2 = st.columns(2)
         with col1:
-            selected_equipment = st.selectbox("🔧 اختر الماكينة:", equipment_list)
             event_date = st.date_input("📅 التاريخ:", value=datetime.now())
             repair_duration = st.number_input("⏱️ مدة الإصلاح (ساعات):", min_value=0.0, step=0.5, format="%.1f")
             event_desc = st.text_area("📝 الحدث/العطل:", height=100)
         with col2:
             correction_desc = st.text_area("🔧 الإجراء التصحيحي:", height=100)
             servised_by = st.text_input("👨‍🔧 تم بواسطة:")
+            
             st.markdown("---")
             st.markdown("**🔩 قطع الغيار المستخدمة**")
-            spare_parts_list = get_spare_parts_for_equipment(selected_equipment)
             if spare_parts_list:
                 part_names = [f"{name} (الرصيد: {qty})" for name, qty in spare_parts_list]
                 selected_part_display = st.selectbox("اختر قطعة:", [""] + part_names, key="spare_part_select")
@@ -931,7 +952,9 @@ def add_new_event(sheets_edit, sheet_name):
                 st.info("لا توجد قطع غيار مسجلة لهذه الماكينة. يمكنك إضافتها من تبويب 'قطع الغيار'.")
                 part_name = ""
                 consume_qty = 0
+        
         submitted = st.form_submit_button("✅ إضافة الحدث", type="primary")
+        
         if submitted:
             spare_part_used = ""
             warning_msg = ""
@@ -947,6 +970,7 @@ def add_new_event(sheets_edit, sheet_name):
                 else:
                     st.error(msg)
                     return sheets_edit
+            
             new_row = {
                 "مده الاصلاح": repair_duration if repair_duration > 0 else "",
                 "التاريخ": event_date.strftime("%Y-%m-%d"),
@@ -962,14 +986,17 @@ def add_new_event(sheets_edit, sheet_name):
             new_row_df = pd.DataFrame([new_row])
             df_new = pd.concat([df, new_row_df], ignore_index=True)
             sheets_edit[sheet_name] = df_new
+            
             if "temp_spare_parts_df" in st.session_state:
                 sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = st.session_state.temp_spare_parts_df
                 del st.session_state.temp_spare_parts_df
+            
             if save_and_push_to_github(sheets_edit, f"إضافة حدث عطل مع استخدام قطعة {part_name}"):
                 st.cache_data.clear()
                 st.success("✅ تم إضافة الحدث بنجاح ورفعه إلى GitHub!")
                 if warning_msg:
                     st.warning(warning_msg)
+                st.session_state.selected_equipment_temp = selected_equipment
                 st.rerun()
             else:
                 st.error("❌ فشل الحفظ")
