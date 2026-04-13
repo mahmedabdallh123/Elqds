@@ -11,7 +11,7 @@ import io
 
 # ------------------------------- الإعدادات الثابتة -------------------------------
 APP_CONFIG = {
-    "APP_TITLE": "نظام إدارة الصيانة - CMMS",
+    "APP_TITLE": "coat - CMMS",
     "APP_ICON": "🏭",
     "REPO_NAME": "mahmedabdallh123/Elqds",
     "BRANCH": "main",
