@@ -22,7 +22,7 @@ APP_CONFIG = {
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
-    "DEFAULT_SHEET_COLUMNS": ["مده الاصلاح", "التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة"],
+    "DEFAULT_SHEET_COLUMNS": ["مده الاصلاح", "التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة"],
     "SPARE_PARTS_SHEET": "قطع_الغيار",
     "SPARE_PARTS_COLUMNS": ["اسم القطعة", "المقاس", "الرصيد الموجود", "مدة التوريد", "ضرورية", "اسم الماكينة"],
     "MAINTENANCE_SHEET": "صيانة_وقائية",
@@ -65,7 +65,7 @@ GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/
 GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/Elqds/refs/heads/main/users.json"
 GITHUB_REPO_USERS = "mahmedabdallh123/Elqds"
 
-# ------------------------------- دوال قطع الغيار (نفس السابق) -------------------------------
+# ------------------------------- دوال قطع الغيار -------------------------------
 def load_spare_parts():
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
         return pd.DataFrame(columns=APP_CONFIG["SPARE_PARTS_COLUMNS"])
@@ -116,7 +116,6 @@ def get_critical_spare_parts():
 
 # ------------------------------- دوال الصيانة الوقائية -------------------------------
 def load_maintenance_tasks():
-    """تحميل جدول الصيانة الوقائية"""
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
         return pd.DataFrame(columns=APP_CONFIG["MAINTENANCE_COLUMNS"])
     try:
@@ -126,7 +125,6 @@ def load_maintenance_tasks():
             if col not in df.columns:
                 df[col] = ""
         df = df.fillna("")
-        # تحويل التواريخ
         if "آخر_تنفيذ" in df.columns:
             df["آخر_تنفيذ"] = pd.to_datetime(df["آخر_تنفيذ"], errors='coerce')
         if "التاريخ_التالي" in df.columns:
@@ -144,11 +142,9 @@ def get_tasks_for_equipment(equipment_name):
     return df[df["المعدة"] == equipment_name]
 
 def add_maintenance_task(sheets_edit, equipment, task_type, task_name, period_days, notes="", default_spare=""):
-    """إضافة بند صيانة جديد"""
     df = sheets_edit.get(APP_CONFIG["MAINTENANCE_SHEET"])
     if df is None:
         df = pd.DataFrame(columns=APP_CONFIG["MAINTENANCE_COLUMNS"])
-    # حساب التاريخ التالي: اليوم + الفترة
     today = datetime.now().date()
     next_date = today + timedelta(days=period_days)
     new_row = pd.DataFrame([{
@@ -166,57 +162,44 @@ def add_maintenance_task(sheets_edit, equipment, task_type, task_name, period_da
     return sheets_edit
 
 def execute_maintenance(sheets_edit, task_id, equipment_name, task_name, used_spare_part="", used_quantity=1):
-    """تنفيذ صيانة: تحديث آخر تنفيذ، التاريخ التالي، وخصم قطعة الغيار"""
     df = sheets_edit.get(APP_CONFIG["MAINTENANCE_SHEET"])
     if df is None:
         return False, "لا توجد مهام صيانة"
-    # البحث عن المهمة
     mask = (df["المعدة"] == equipment_name) & (df["اسم_البند"] == task_name)
     if not mask.any():
         return False, "المهمة غير موجودة"
     idx = df[mask].index[0]
     period = df.loc[idx, "الفترة_بالأيام"]
     today = datetime.now().date()
-    # تحديث آخر تنفيذ
     df.loc[idx, "آخر_تنفيذ"] = today
-    # حساب التاريخ التالي
     next_date = today + timedelta(days=period)
     df.loc[idx, "التاريخ_التالي"] = next_date
-    
-    # معالجة قطعة الغيار إذا وجدت
     warning_msg = ""
     if used_spare_part and used_quantity > 0:
         success, msg, new_qty = consume_spare_part(used_spare_part, used_quantity)
         if not success:
             return False, f"فشل خصم قطعة الغيار: {msg}"
-        # تخزين سجل الاستهلاك في ملاحظات المهمة (اختياري)
         old_notes = df.loc[idx, "ملاحظات"]
         new_note = f"{datetime.now().strftime('%Y-%m-%d')}: استخدمت {used_spare_part} كمية {used_quantity} - {msg}"
         df.loc[idx, "ملاحظات"] = old_notes + "\n" + new_note if old_notes else new_note
-        # التحقق من القطع الحرجة
         critical_parts = get_critical_spare_parts()
         for cp in critical_parts:
             if cp["اسم القطعة"] == used_spare_part:
                 warning_msg = f"⚠️ **تحذير:** القطعة '{used_spare_part}' ضرورية وأصبح رصيدها {new_qty} (أقل من 1). يرجى إعادة التوريد."
                 break
-    
     sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = df
     return True, f"تم تنفيذ الصيانة '{task_name}' بنجاح. التاريخ التالي: {next_date.strftime('%Y-%m-%d')}" + (f" {warning_msg}" if warning_msg else "")
 
 def get_upcoming_maintenance(days_ahead=3):
-    """إرجاع المهام المستحقة خلال عدد الأيام القادمة والمتأخرة"""
     df = load_maintenance_tasks()
     if df.empty:
         return pd.DataFrame(), pd.DataFrame()
     today = datetime.now().date()
-    # المتأخرة: التاريخ التالي < اليوم
     overdue = df[df["التاريخ_التالي"] < pd.Timestamp(today)]
-    # القادمة: التاريخ التالي بين اليوم واليوم+days_ahead
-    upcoming = df[(df["التاريخ_التالي"] >= pd.Timestamp(today)) & 
-                  (df["التاريخ_التالي"] <= pd.Timestamp(today + timedelta(days=days_ahead)))]
+    upcoming = df[(df["التاريخ_التالي"] >= pd.Timestamp(today)) & (df["التاريخ_التالي"] <= pd.Timestamp(today + timedelta(days=days_ahead)))]
     return overdue, upcoming
 
-# ------------------------------- دوال تحليل الأعطال (نفس السابق) -------------------------------
+# ------------------------------- دوال تحليل الأعطال -------------------------------
 def analyze_failures(df, equipment_name=None):
     if df is None or df.empty:
         return None
@@ -244,6 +227,13 @@ def analyze_failures(df, equipment_name=None):
         issue_counts.columns = ["الحدث/العطل", "عدد المرات"]
     else:
         issue_counts = pd.DataFrame()
+    
+    # تحليل نوع العطل إذا وجد
+    if "نوع العطل" in data.columns:
+        fault_types = data["نوع العطل"].dropna().astype(str).value_counts().reset_index()
+        fault_types.columns = ["نوع العطل", "عدد المرات"]
+    else:
+        fault_types = pd.DataFrame()
     
     mtbf_results = []
     for equipment in data["المعدة"].unique():
@@ -296,6 +286,7 @@ def analyze_failures(df, equipment_name=None):
         "date_range": {"from": data["التاريخ"].min().strftime("%Y-%m-%d"), "to": data["التاريخ"].max().strftime("%Y-%m-%d")},
         "failure_rate": failure_rate,
         "issue_counts": issue_counts,
+        "fault_types": fault_types,
         "mtbf": mtbf_df,
         "monthly": monthly_failures,
         "weekday": weekday_failures,
@@ -319,6 +310,8 @@ def generate_excel_report(analysis, sheet_name, equipment_filter):
             analysis["failure_rate"].to_excel(writer, sheet_name="معدل تكرار الأعطال", index=False)
         if not analysis["issue_counts"].empty:
             analysis["issue_counts"].to_excel(writer, sheet_name="أكثر الأعطال تكراراً", index=False)
+        if not analysis["fault_types"].empty:
+            analysis["fault_types"].to_excel(writer, sheet_name="أنواع الأعطال", index=False)
         if not analysis["mtbf"].empty:
             analysis["mtbf"].to_excel(writer, sheet_name="متوسط الوقت بين الأعطال (MTBF)", index=False)
         if not analysis["monthly"].empty:
@@ -330,7 +323,7 @@ def generate_excel_report(analysis, sheet_name, equipment_filter):
             analysis["correction_counts"].to_excel(writer, sheet_name="الإجراءات التصحيحية", index=False)
         if not analysis["repair_by_equipment"].empty:
             analysis["repair_by_equipment"].to_excel(writer, sheet_name="متوسط مدة الإصلاح", index=False)
-        cols_to_export = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة"]
+        cols_to_export = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة"]
         if "مده الاصلاح" in analysis["raw_data"].columns:
             cols_to_export.insert(0, "مده الاصلاح")
         raw_export = analysis["raw_data"][cols_to_export].copy()
@@ -349,6 +342,10 @@ def create_failure_charts_plotly(analysis):
         charts.append(fig)
     if not analysis["failure_rate"].empty:
         fig = px.pie(analysis["failure_rate"].head(8), values="عدد الأعطال", names="المعدة", title="نسب الأعطال حسب الماكينة", hole=0.3)
+        charts.append(fig)
+    if not analysis["fault_types"].empty:
+        fig = px.bar(analysis["fault_types"], x="نوع العطل", y="عدد المرات", title="توزيع أنواع الأعطال", text="عدد المرات", color="عدد المرات", color_continuous_scale="Teal")
+        fig.update_traces(textposition='outside')
         charts.append(fig)
     if not analysis["monthly"].empty:
         fig = px.line(analysis["monthly"], x="الشهر", y="عدد الأعطال", color="المعدة", title="تطور الأعطال شهرياً", markers=True)
@@ -409,23 +406,27 @@ def failures_analysis_tab(all_sheets):
             else:
                 st.warning("مكتبات الرسم غير متوفرة")
             st.subheader("📋 الجداول التفصيلية")
-            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["معدل تكرار الأعطال", "أكثر الأعطال تكراراً", "MTBF", "التحليل الشهري", "الإجراءات التصحيحية", "متوسط مدة الإصلاح"])
-            with tab1:
+            tabs_list = ["معدل تكرار الأعطال", "أكثر الأعطال تكراراً", "أنواع الأعطال", "MTBF", "التحليل الشهري", "الإجراءات التصحيحية", "متوسط مدة الإصلاح"]
+            tabs_analysis = st.tabs(tabs_list)
+            with tabs_analysis[0]:
                 if not analysis["failure_rate"].empty: st.dataframe(analysis["failure_rate"])
                 else: st.info("لا توجد بيانات")
-            with tab2:
+            with tabs_analysis[1]:
                 if not analysis["issue_counts"].empty: st.dataframe(analysis["issue_counts"])
                 else: st.info("لا توجد بيانات")
-            with tab3:
+            with tabs_analysis[2]:
+                if not analysis["fault_types"].empty: st.dataframe(analysis["fault_types"])
+                else: st.info("لا توجد بيانات عن أنواع الأعطال")
+            with tabs_analysis[3]:
                 if not analysis["mtbf"].empty: st.dataframe(analysis["mtbf"])
                 else: st.info("لا توجد بيانات كافية")
-            with tab4:
+            with tabs_analysis[4]:
                 if not analysis["monthly"].empty: st.dataframe(analysis["monthly"].pivot(index="الشهر", columns="المعدة", values="عدد الأعطال").fillna(0))
                 else: st.info("لا توجد بيانات")
-            with tab5:
+            with tabs_analysis[5]:
                 if not analysis["correction_counts"].empty: st.dataframe(analysis["correction_counts"])
                 else: st.info("لا توجد بيانات")
-            with tab6:
+            with tabs_analysis[6]:
                 if not analysis["repair_by_equipment"].empty: st.dataframe(analysis["repair_by_equipment"])
                 else: st.info("لا توجد بيانات")
             st.markdown("---")
@@ -433,7 +434,7 @@ def failures_analysis_tab(all_sheets):
             excel_report = generate_excel_report(analysis, selected_sheet, selected_equipment)
             st.download_button("📊 تحميل تقرير التحليل كملف Excel", excel_report, f"failure_analysis_{selected_sheet}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_analysis_report")
 
-# ------------------------------- دوال المستخدمين والجلسات (نفس السابق) -------------------------------
+# ------------------------------- دوال المستخدمين والجلسات -------------------------------
 def download_users_from_github():
     try:
         response = requests.get(GITHUB_USERS_URL, timeout=10)
@@ -586,7 +587,7 @@ def login_ui():
             logout_action()
         return True
 
-# ------------------------------- دوال الملفات (نفس السابق) -------------------------------
+# ------------------------------- دوال الملفات -------------------------------
 def fetch_from_github_requests():
     try:
         response = requests.get(GITHUB_EXCEL_URL, stream=True, timeout=15)
@@ -696,7 +697,7 @@ def save_and_push_to_github(sheets_dict, operation_name):
         st.error("❌ فشل الحفظ المحلي")
         return False
 
-# ------------------------------- دوال التصدير والعرض (نفس السابق) -------------------------------
+# ------------------------------- دوال التصدير والعرض -------------------------------
 def export_sheet_to_excel(sheets_dict, sheet_name):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -791,7 +792,7 @@ def search_across_sheets(all_sheets):
                 except:
                     pass
             if search_term:
-                search_columns = ["الحدث/العطل", "الإجراء التصحيحي", "قطع غيار مستخدمة"]
+                search_columns = ["الحدث/العطل", "الإجراء التصحيحي", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة"]
                 if "مده الاصلاح" in df_filtered.columns:
                     search_columns.append("مده الاصلاح")
                 mask = pd.Series([False] * len(df_filtered))
@@ -811,7 +812,7 @@ def search_across_sheets(all_sheets):
         else:
             st.warning("لا توجد نتائج مطابقة للبحث")
 
-# ------------------------------- دوال إدارة المعدات والأقسام (نفس السابق) -------------------------------
+# ------------------------------- دوال إدارة المعدات والأقسام -------------------------------
 def load_equipment_config():
     if not os.path.exists(EQUIPMENT_CONFIG_FILE):
         default_config = {}
@@ -996,6 +997,7 @@ def manage_machines(sheets_edit, sheet_name):
                 else:
                     st.error(msg)
 
+# ------------------------------- دالة إضافة حدث (المعدلة) -------------------------------
 def add_new_event(sheets_edit, sheet_name):
     st.markdown(f"### 📝 إضافة حدث عطل جديد في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
@@ -1027,9 +1029,15 @@ def add_new_event(sheets_edit, sheet_name):
             event_date = st.date_input("📅 التاريخ:", value=datetime.now())
             repair_duration = st.number_input("⏱️ مدة الإصلاح (ساعات):", min_value=0.0, step=0.5, format="%.1f")
             event_desc = st.text_area("📝 الحدث/العطل:", height=100)
+            # نوع العطل
+            fault_type = st.selectbox("🏷️ نوع العطل:", ["", "ميكانيكي", "كهربائي", "إلكتروني", "هيدروليكي", "هوائي", "هيكلي", "آخر"])
         with col2:
             correction_desc = st.text_area("🔧 الإجراء التصحيحي:", height=100)
             servised_by = st.text_input("👨‍🔧 تم بواسطة:")
+            # قدرة الفني
+            technician_rating = st.select_slider("⭐ قدرة الفني (حل/تفكير/مبادرة/قرار):", options=[1, 2, 3, 4, 5], value=3)
+            # الالتزام بالسلامة
+            safety_compliance = st.selectbox("🛡️ الالتزام بتعليمات السلامة:", ["", "ملتزم بالكامل", "ملتزم جزئياً", "غير ملتزم", "غير مطبق"])
             st.markdown("---")
             st.markdown("**🔩 قطع الغيار المستخدمة**")
             if spare_parts_list:
@@ -1077,7 +1085,10 @@ def add_new_event(sheets_edit, sheet_name):
                 "الحدث/العطل": event_desc,
                 "الإجراء التصحيحي": correction_desc,
                 "تم بواسطة": servised_by,
-                "قطع غيار مستخدمة": spare_part_used
+                "قطع غيار مستخدمة": spare_part_used,
+                "نوع العطل": fault_type if fault_type else "",
+                "قدرة الفني (حل/تفكير/مبادرة/قرار)": technician_rating,
+                "الالتزام بتعليمات السلامة": safety_compliance if safety_compliance else ""
             }
             for col in df.columns:
                 if col not in new_row:
@@ -1100,6 +1111,7 @@ def add_new_event(sheets_edit, sheet_name):
                 st.error("❌ فشل الحفظ")
     return sheets_edit
 
+# ------------------------------- دوال إدارة قطع الغيار -------------------------------
 def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
     st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة. القطع التي تحددها كـ 'ضرورية' سيتم مراقبتها وإنذارك عند نقصان الرصيد.")
@@ -1186,7 +1198,6 @@ def preventive_maintenance_tab(sheets_edit):
     st.header("🛠 الصيانة الوقائية")
     st.info("إدارة بنود الصيانة الدورية للمعدات (يومية، أسبوعية، شهرية، سنوية). قم بتنفيذ الصيانة عند إتمامها لتحديث التاريخ التالي.")
     
-    # جلب جميع المعدات من جميع الأقسام (باستثناء شيتات النظام)
     all_equipment = set()
     for sheet_name, df_sheet in sheets_edit.items():
         if sheet_name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
@@ -1197,20 +1208,15 @@ def preventive_maintenance_tab(sheets_edit):
         st.warning("⚠️ لا توجد ماكينات مسجلة بعد. أضف ماكينات أولاً.")
         return sheets_edit
     
-    # اختيار المعدة
     selected_equipment = st.selectbox("اختر المعدة:", equipment_list, key="pm_equipment")
-    
-    # عرض بنود الصيانة لهذه المعدة
     tasks_df = get_tasks_for_equipment(selected_equipment)
     
     st.subheader(f"📋 بنود الصيانة لـ {selected_equipment}")
     if tasks_df.empty:
         st.info("لا توجد بنود صيانة مسجلة لهذه المعدة. يمكنك إضافة بند جديد أدناه.")
     else:
-        # إضافة عمود الأيام المتبقية والحالة
         today = datetime.now().date()
         tasks_display = tasks_df.copy()
-        # حساب الأيام المتبقية
         def days_remaining(row):
             if pd.isna(row["التاريخ_التالي"]):
                 return "غير محدد"
@@ -1220,19 +1226,15 @@ def preventive_maintenance_tab(sheets_edit):
         tasks_display["الحالة"] = tasks_display["الأيام_المتبقية"].apply(
             lambda x: "🔴 متأخرة" if (isinstance(x, int) and x < 0) else ("🟡 قادمة" if (isinstance(x, int) and x <= 3) else "🟢 جيدة")
         )
-        # إعادة ترتيب الأعمدة للعرض
         cols_to_show = ["نوع_الصيانة", "اسم_البند", "الفترة_بالأيام", "آخر_تنفيذ", "التاريخ_التالي", "الأيام_المتبقية", "الحالة", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية"]
         st.dataframe(tasks_display[cols_to_show], use_container_width=True)
         
-        # نموذج تنفيذ صيانة
         st.markdown("---")
         st.subheader("✅ تنفيذ صيانة")
         task_options = tasks_df["اسم_البند"].tolist()
         selected_task = st.selectbox("اختر البند المنفذ:", task_options, key="execute_task_select")
         if selected_task:
-            # جلب قطع الغيار الافتراضية للبند (إن وجدت)
             default_spare = tasks_df[tasks_df["اسم_البند"] == selected_task]["قطع_غيار_مستخدمة_افتراضية"].values[0]
-            # إمكانية اختيار قطعة غيار (من نفس المعدة)
             spare_parts_list = get_spare_parts_for_equipment(selected_equipment)
             st.markdown("**🔩 استهلاك قطع غيار (اختياري)**")
             if spare_parts_list:
@@ -1262,7 +1264,6 @@ def preventive_maintenance_tab(sheets_edit):
                 if use_part:
                     success, msg = execute_maintenance(sheets_edit, None, selected_equipment, selected_task, part_name if part_name else "", consume_qty if part_name else 0)
                     if success:
-                        # حفظ التغييرات
                         if "temp_spare_parts_df" in st.session_state:
                             sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = st.session_state.temp_spare_parts_df
                             del st.session_state.temp_spare_parts_df
@@ -1276,7 +1277,6 @@ def preventive_maintenance_tab(sheets_edit):
                 else:
                     st.error("لا يمكن التنفيذ بسبب نقص الرصيد")
     
-    # إضافة بند صيانة جديد
     st.markdown("---")
     st.subheader("➕ إضافة بند صيانة جديد")
     with st.form(key="add_maintenance_form"):
@@ -1284,14 +1284,13 @@ def preventive_maintenance_tab(sheets_edit):
         with col1:
             task_type = st.selectbox("نوع الصيانة:", ["يومية", "أسبوعية", "شهرية", "سنوية"])
             task_name = st.text_input("اسم البند (مثال: فحص الزيت, تنظيف الفلاتر):")
-            # تحويل نوع الصيانة إلى أيام
             if task_type == "يومية":
                 period_days = 1
             elif task_type == "أسبوعية":
                 period_days = 7
             elif task_type == "شهرية":
                 period_days = 30
-            else:  # سنوية
+            else:
                 period_days = 365
             st.caption(f"الفترة: {period_days} يوم")
         with col2:
@@ -1308,14 +1307,12 @@ def preventive_maintenance_tab(sheets_edit):
                     st.rerun()
                 else:
                     st.error("❌ فشل الحفظ")
-    
     return sheets_edit
 
 def manage_data_edit(sheets_edit):
     if sheets_edit is None:
         st.warning("الملف غير موجود. استخدم زر 'تحديث من GitHub' في الشريط الجانبي أولاً")
         return sheets_edit
-    # التأكد من وجود شيتات النظام
     if APP_CONFIG["SPARE_PARTS_SHEET"] not in sheets_edit:
         sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = load_spare_parts()
     if APP_CONFIG["MAINTENANCE_SHEET"] not in sheets_edit:
