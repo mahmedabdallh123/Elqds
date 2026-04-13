@@ -541,14 +541,21 @@ def failures_analysis_tab(all_sheets):
                     st.markdown("#### أداء الفنيين حسب نوع العطل")
                     if analysis["technician_by_fault"] is not None and not analysis["technician_by_fault"].empty:
                         display_df = analysis["technician_by_fault"].copy()
-                        def color_cells(val):
-                            if isinstance(val, str) and "🟢" in val:
-                                return 'background-color: #90EE90'
-                            elif isinstance(val, str) and "🔴" in val:
-                                return 'background-color: #FFCCCC'
-                            return ''
-                        styled = display_df.style.applymap(color_cells, subset=['الأداء'])
-                        st.dataframe(styled, use_container_width=True)
+                        # التأكد من وجود عمود الأداء
+                        if "الأداء" in display_df.columns:
+                            def color_cells(val):
+                                if isinstance(val, str) and "🟢" in val:
+                                    return 'background-color: #90EE90'
+                                elif isinstance(val, str) and "🔴" in val:
+                                    return 'background-color: #FFCCCC'
+                                return ''
+                            # استخدام map بدلاً من applymap (لإصدارات Pandas الجديدة)
+                            styled = display_df.style.map(color_cells, subset=['الأداء'])
+                            st.dataframe(styled, use_container_width=True)
+                        else:
+                            st.dataframe(display_df, use_container_width=True)
+                    else:
+                        st.info("لا توجد بيانات كافية عن أداء الفنيين حسب نوع العطل")
                     
                     st.markdown("#### نقاط القوة والضعف")
                     strengths_weak = analysis["technician_strengths_weaknesses"]
@@ -558,11 +565,11 @@ def failures_analysis_tab(all_sheets):
                                 strong = strengths_weak.get("strengths", {}).get(tech, [])
                                 weak = strengths_weak.get("weaknesses", {}).get(tech, [])
                                 if strong:
-                                    st.success(f"✅ **قوي في:** {', '.join(strong) if strong else 'لا توجد نقاط قوة محددة'}")
+                                    st.success(f"✅ **قوي في:** {', '.join(strong)}")
                                 else:
                                     st.info("لا توجد نقاط قوة مميزة (أداؤه متوسط في جميع الأنواع)")
                                 if weak:
-                                    st.error(f"❌ **ضعيف في:** {', '.join(weak) if weak else 'لا توجد نقاط ضعف واضحة'}")
+                                    st.error(f"❌ **ضعيف في:** {', '.join(weak)}")
                                 else:
                                     st.info("لا توجد نقاط ضعف واضحة (أداؤه جيد في جميع الأنواع)")
                     else:
@@ -574,7 +581,6 @@ def failures_analysis_tab(all_sheets):
             st.subheader("📥 تصدير التقرير")
             excel_report = generate_excel_report(analysis, selected_sheet, selected_equipment)
             st.download_button("📊 تحميل تقرير التحليل كملف Excel", excel_report, f"failure_analysis_{selected_sheet}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_analysis_report")
-            # ------------------------------- دوال المستخدمين والجلسات -------------------------------
 def download_users_from_github():
     try:
         response = requests.get(GITHUB_USERS_URL, timeout=10)
