@@ -32,7 +32,7 @@ APP_CONFIG = {
 # ------------------------------- إعداد الصفحة -------------------------------
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 
-# ------------------------------- استيرادات إضافية -------------------------------
+# ------------------------------- استيرادات إضافية مع معالجة الأخطاء -------------------------------
 try:
     import plotly.express as px
     import plotly.graph_objects as go
@@ -199,7 +199,79 @@ def get_upcoming_maintenance(days_ahead=3):
     upcoming = df[(df["التاريخ_التالي"] >= pd.Timestamp(today)) & (df["التاريخ_التالي"] <= pd.Timestamp(today + timedelta(days=days_ahead)))]
     return overdue, upcoming
 
-# ------------------------------- دوال تحليل الأعطال -------------------------------
+# ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
+def analyze_time_between_failures(df):
+    """تحليل المدة الزمنية بين الأعطال لكل معدة"""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    data = df.copy()
+    if "التاريخ" not in data.columns or "المعدة" not in data.columns:
+        return pd.DataFrame()
+    data["التاريخ"] = pd.to_datetime(data["التاريخ"], errors='coerce')
+    data = data.dropna(subset=["التاريخ"]).sort_values(["المعدة", "التاريخ"])
+    results = []
+    for equipment in data["المعدة"].unique():
+        eq_data = data[data["المعدة"] == equipment]
+        if len(eq_data) < 2:
+            continue
+        time_diffs = eq_data["التاريخ"].diff().dropna()
+        days_diffs = time_diffs.dt.total_seconds() / (24 * 3600)
+        results.append({
+            "المعدة": equipment,
+            "عدد الأعطال": len(eq_data),
+            "متوسط الفجوة (أيام)": round(days_diffs.mean(), 1),
+            "أقل فجوة (أيام)": round(days_diffs.min(), 1),
+            "أكبر فجوة (أيام)": round(days_diffs.max(), 1),
+            "انحراف معياري": round(days_diffs.std(), 1) if len(days_diffs) > 1 else 0
+        })
+    return pd.DataFrame(results)
+
+def analyze_technician_performance(df):
+    """تحليل أداء الفنيين: مدة الإصلاح، القدرة، الالتزام بالسلامة، وتحليل حسب نوع العطل"""
+    if df is None or df.empty:
+        return None, None, None
+    data = df.copy()
+    required_cols = ["تم بواسطة", "مده الاصلاح", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "نوع العطل"]
+    for col in required_cols:
+        if col not in data.columns:
+            return None, None, None
+    data["مده الاصلاح"] = pd.to_numeric(data["مده الاصلاح"], errors='coerce').fillna(0)
+    data["قدرة الفني"] = pd.to_numeric(data["قدرة الفني (حل/تفكير/مبادرة/قرار)"], errors='coerce').fillna(0)
+    data["نوع العطل"] = data["نوع العطل"].fillna("غير محدد").astype(str)
+    data["الالتزام"] = data["الالتزام بتعليمات السلامة"].fillna("غير مطبق").astype(str)
+    
+    tech_summary = data.groupby("تم بواسطة").agg({
+        "مده الاصلاح": ["mean", "count", "std"],
+        "قدرة الفني": "mean",
+        "الالتزام": lambda x: x.value_counts().to_dict() if not x.empty else {}
+    }).round(2)
+    tech_summary.columns = ["متوسط_مدة_الاصلاح", "عدد_الأعطال", "انحراف_مدة_الاصلاح", "متوسط_القدرة", "توزيع_الالتزام"]
+    tech_summary = tech_summary.reset_index()
+    tech_summary["متوسط_مدة_الاصلاح"] = tech_summary["متوسط_مدة_الاصلاح"].round(1)
+    
+    tech_by_fault = data.groupby(["تم بواسطة", "نوع العطل"]).agg({
+        "قدرة الفني": "mean",
+        "مده الاصلاح": "mean"
+    }).round(2).reset_index()
+    tech_by_fault.columns = ["تم بواسطة", "نوع العطل", "متوسط_القدرة_لهذا_النوع", "متوسط_مدة_اصلاح_لهذا_النوع"]
+    
+    fault_avg = data.groupby("نوع العطل")["قدرة الفني"].mean().reset_index()
+    fault_avg.columns = ["نوع العطل", "متوسط_القدرة_العام"]
+    tech_by_fault = tech_by_fault.merge(fault_avg, on="نوع العطل", how="left")
+    tech_by_fault["مقارنة_بالمتوسط"] = tech_by_fault["متوسط_القدرة_لهذا_النوع"] - tech_by_fault["متوسط_القدرة_العام"]
+    tech_by_fault["الأداء"] = tech_by_fault["مقارنة_بالمتوسط"].apply(
+        lambda x: "🟢 قوي" if x > 0.3 else ("🟡 متوسط" if abs(x) <= 0.3 else "🔴 ضعيف")
+    )
+    
+    strengths = {}
+    weaknesses = {}
+    for tech in tech_summary["تم بواسطة"].unique():
+        tech_data = tech_by_fault[tech_by_fault["تم بواسطة"] == tech]
+        strengths[tech] = tech_data[tech_data["الأداء"] == "🟢 قوي"]["نوع العطل"].tolist()
+        weaknesses[tech] = tech_data[tech_data["الأداء"] == "🔴 ضعيف"]["نوع العطل"].tolist()
+    
+    return tech_summary, tech_by_fault, {"strengths": strengths, "weaknesses": weaknesses}
+
 def analyze_failures(df, equipment_name=None):
     if df is None or df.empty:
         return None
@@ -228,7 +300,6 @@ def analyze_failures(df, equipment_name=None):
     else:
         issue_counts = pd.DataFrame()
     
-    # تحليل نوع العطل إذا وجد
     if "نوع العطل" in data.columns:
         fault_types = data["نوع العطل"].dropna().astype(str).value_counts().reset_index()
         fault_types.columns = ["نوع العطل", "عدد المرات"]
@@ -250,6 +321,9 @@ def analyze_failures(df, equipment_name=None):
                 "آخر عطل": eq_data["التاريخ"].max().strftime("%Y-%m-%d")
             })
     mtbf_df = pd.DataFrame(mtbf_results) if mtbf_results else pd.DataFrame()
+    
+    time_between_df = analyze_time_between_failures(data)
+    tech_summary, tech_by_fault, tech_strengths_weaknesses = analyze_technician_performance(data)
     
     data["الشهر"] = data["التاريخ"].dt.to_period("M").astype(str)
     monthly_failures = data.groupby(["الشهر", "المعدة"]).size().reset_index(name="عدد الأعطال")
@@ -288,12 +362,16 @@ def analyze_failures(df, equipment_name=None):
         "issue_counts": issue_counts,
         "fault_types": fault_types,
         "mtbf": mtbf_df,
+        "time_between_failures": time_between_df,
         "monthly": monthly_failures,
         "weekday": weekday_failures,
         "correction_counts": correction_counts,
         "avg_repair_time": avg_repair_time,
         "median_repair_time": median_repair_time,
         "repair_by_equipment": repair_by_equipment,
+        "technician_summary": tech_summary,
+        "technician_by_fault": tech_by_fault,
+        "technician_strengths_weaknesses": tech_strengths_weaknesses,
         "raw_data": data
     }
 
@@ -314,6 +392,8 @@ def generate_excel_report(analysis, sheet_name, equipment_filter):
             analysis["fault_types"].to_excel(writer, sheet_name="أنواع الأعطال", index=False)
         if not analysis["mtbf"].empty:
             analysis["mtbf"].to_excel(writer, sheet_name="متوسط الوقت بين الأعطال (MTBF)", index=False)
+        if not analysis["time_between_failures"].empty:
+            analysis["time_between_failures"].to_excel(writer, sheet_name="الفجوات الزمنية بين الأعطال", index=False)
         if not analysis["monthly"].empty:
             pivot_monthly = analysis["monthly"].pivot(index="الشهر", columns="المعدة", values="عدد الأعطال").fillna(0)
             pivot_monthly.to_excel(writer, sheet_name="التحليل الشهري")
@@ -323,6 +403,10 @@ def generate_excel_report(analysis, sheet_name, equipment_filter):
             analysis["correction_counts"].to_excel(writer, sheet_name="الإجراءات التصحيحية", index=False)
         if not analysis["repair_by_equipment"].empty:
             analysis["repair_by_equipment"].to_excel(writer, sheet_name="متوسط مدة الإصلاح", index=False)
+        if analysis["technician_summary"] is not None and not analysis["technician_summary"].empty:
+            analysis["technician_summary"].to_excel(writer, sheet_name="ملخص أداء الفنيين", index=False)
+        if analysis["technician_by_fault"] is not None and not analysis["technician_by_fault"].empty:
+            analysis["technician_by_fault"].to_excel(writer, sheet_name="أداء الفنيين حسب نوع العطل", index=False)
         cols_to_export = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة"]
         if "مده الاصلاح" in analysis["raw_data"].columns:
             cols_to_export.insert(0, "مده الاصلاح")
@@ -356,6 +440,10 @@ def create_failure_charts_plotly(analysis):
         charts.append(fig)
     if not analysis["mtbf"].empty:
         fig = px.bar(analysis["mtbf"], x="المعدة", y="متوسط MTBF (أيام)", title="متوسط الوقت بين الأعطال (MTBF) - أيام", text="متوسط MTBF (أيام)", color="متوسط MTBF (أيام)", color_continuous_scale="Greens")
+        fig.update_traces(textposition='outside')
+        charts.append(fig)
+    if not analysis["time_between_failures"].empty:
+        fig = px.bar(analysis["time_between_failures"], x="المعدة", y="متوسط الفجوة (أيام)", title="متوسط الفجوة الزمنية بين الأعطال (أيام)", text="متوسط الفجوة (أيام)", color="متوسط الفجوة (أيام)", color_continuous_scale="Purples")
         fig.update_traces(textposition='outside')
         charts.append(fig)
     if not analysis["issue_counts"].empty:
@@ -405,8 +493,9 @@ def failures_analysis_tab(all_sheets):
                 for chart in charts: st.plotly_chart(chart, use_container_width=True)
             else:
                 st.warning("مكتبات الرسم غير متوفرة")
+            
             st.subheader("📋 الجداول التفصيلية")
-            tabs_list = ["معدل تكرار الأعطال", "أكثر الأعطال تكراراً", "أنواع الأعطال", "MTBF", "التحليل الشهري", "الإجراءات التصحيحية", "متوسط مدة الإصلاح"]
+            tabs_list = ["معدل تكرار الأعطال", "أكثر الأعطال تكراراً", "أنواع الأعطال", "MTBF", "الفجوات الزمنية", "التحليل الشهري", "الإجراءات التصحيحية", "متوسط مدة الإصلاح", "تحليل أداء الفنيين"]
             tabs_analysis = st.tabs(tabs_list)
             with tabs_analysis[0]:
                 if not analysis["failure_rate"].empty: st.dataframe(analysis["failure_rate"])
@@ -419,22 +508,73 @@ def failures_analysis_tab(all_sheets):
                 else: st.info("لا توجد بيانات عن أنواع الأعطال")
             with tabs_analysis[3]:
                 if not analysis["mtbf"].empty: st.dataframe(analysis["mtbf"])
-                else: st.info("لا توجد بيانات كافية")
+                else: st.info("لا توجد بيانات كافية لحساب MTBF")
             with tabs_analysis[4]:
+                if not analysis["time_between_failures"].empty: st.dataframe(analysis["time_between_failures"])
+                else: st.info("لا توجد بيانات كافية لتحليل الفجوات الزمنية")
+            with tabs_analysis[5]:
                 if not analysis["monthly"].empty: st.dataframe(analysis["monthly"].pivot(index="الشهر", columns="المعدة", values="عدد الأعطال").fillna(0))
                 else: st.info("لا توجد بيانات")
-            with tabs_analysis[5]:
+            with tabs_analysis[6]:
                 if not analysis["correction_counts"].empty: st.dataframe(analysis["correction_counts"])
                 else: st.info("لا توجد بيانات")
-            with tabs_analysis[6]:
+            with tabs_analysis[7]:
                 if not analysis["repair_by_equipment"].empty: st.dataframe(analysis["repair_by_equipment"])
                 else: st.info("لا توجد بيانات")
+            with tabs_analysis[8]:
+                st.subheader("👨‍🔧 تحليل أداء الفنيين")
+                if analysis["technician_summary"] is not None and not analysis["technician_summary"].empty:
+                    st.markdown("#### ملخص أداء الفنيين")
+                    tech_cols = st.columns(min(3, len(analysis["technician_summary"])))
+                    for i, row in analysis["technician_summary"].iterrows():
+                        with tech_cols[i % len(tech_cols)]:
+                            with st.container(border=True):
+                                st.markdown(f"**👤 {row['تم بواسطة']}**")
+                                st.metric("عدد الأعطال", int(row['عدد_الأعطال']))
+                                st.metric("متوسط مدة الإصلاح (ساعات)", f"{row['متوسط_مدة_الاصلاح']:.1f}")
+                                st.metric("متوسط القدرة (1-5)", f"{row['متوسط_القدرة']:.2f}")
+                                compliance = row['توزيع_الالتزام']
+                                if isinstance(compliance, dict):
+                                    compliant_pct = compliance.get("ملتزم بالكامل", 0) / row['عدد_الأعطال'] * 100 if row['عدد_الأعطال'] > 0 else 0
+                                    st.progress(compliant_pct/100, text=f"الالتزام الكامل: {compliant_pct:.0f}%")
+                    
+                    st.markdown("#### أداء الفنيين حسب نوع العطل")
+                    if analysis["technician_by_fault"] is not None and not analysis["technician_by_fault"].empty:
+                        display_df = analysis["technician_by_fault"].copy()
+                        def color_cells(val):
+                            if isinstance(val, str) and "🟢" in val:
+                                return 'background-color: #90EE90'
+                            elif isinstance(val, str) and "🔴" in val:
+                                return 'background-color: #FFCCCC'
+                            return ''
+                        styled = display_df.style.applymap(color_cells, subset=['الأداء'])
+                        st.dataframe(styled, use_container_width=True)
+                    
+                    st.markdown("#### نقاط القوة والضعف")
+                    strengths_weak = analysis["technician_strengths_weaknesses"]
+                    if strengths_weak:
+                        for tech in analysis["technician_summary"]["تم بواسطة"]:
+                            with st.expander(f"📌 {tech}"):
+                                strong = strengths_weak.get("strengths", {}).get(tech, [])
+                                weak = strengths_weak.get("weaknesses", {}).get(tech, [])
+                                if strong:
+                                    st.success(f"✅ **قوي في:** {', '.join(strong) if strong else 'لا توجد نقاط قوة محددة'}")
+                                else:
+                                    st.info("لا توجد نقاط قوة مميزة (أداؤه متوسط في جميع الأنواع)")
+                                if weak:
+                                    st.error(f"❌ **ضعيف في:** {', '.join(weak) if weak else 'لا توجد نقاط ضعف واضحة'}")
+                                else:
+                                    st.info("لا توجد نقاط ضعف واضحة (أداؤه جيد في جميع الأنواع)")
+                    else:
+                        st.info("لا توجد بيانات كافية لتحليل نقاط القوة والضعف")
+                else:
+                    st.info("لا توجد بيانات كافية لتحليل أداء الفنيين (تأكد من وجود أعطال مسجلة مع تحديد 'تم بواسطة' و'قدرة الفني' و'نوع العطل')")
+            
             st.markdown("---")
             st.subheader("📥 تصدير التقرير")
             excel_report = generate_excel_report(analysis, selected_sheet, selected_equipment)
             st.download_button("📊 تحميل تقرير التحليل كملف Excel", excel_report, f"failure_analysis_{selected_sheet}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_analysis_report")
-
-# ------------------------------- دوال المستخدمين والجلسات -------------------------------
+            # ------------------------------- دوال المستخدمين والجلسات -------------------------------
 def download_users_from_github():
     try:
         response = requests.get(GITHUB_USERS_URL, timeout=10)
@@ -811,8 +951,7 @@ def search_across_sheets(all_sheets):
             st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
         else:
             st.warning("لا توجد نتائج مطابقة للبحث")
-
-# ------------------------------- دوال إدارة المعدات والأقسام -------------------------------
+            # ------------------------------- دوال إدارة المعدات والأقسام -------------------------------
 def load_equipment_config():
     if not os.path.exists(EQUIPMENT_CONFIG_FILE):
         default_config = {}
@@ -997,7 +1136,6 @@ def manage_machines(sheets_edit, sheet_name):
                 else:
                     st.error(msg)
 
-# ------------------------------- دالة إضافة حدث (المعدلة) -------------------------------
 def add_new_event(sheets_edit, sheet_name):
     st.markdown(f"### 📝 إضافة حدث عطل جديد في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
@@ -1007,7 +1145,6 @@ def add_new_event(sheets_edit, sheet_name):
         st.warning("⚠ لا توجد ماكينات مسجلة في هذا القسم. يرجى إضافة ماكينة أولاً من تبويب 'إدارة الماكينات'")
         return sheets_edit
 
-    # ---------- اختيار الماكينة (خارج النموذج) ----------
     if "selected_equipment_temp" not in st.session_state:
         st.session_state.selected_equipment_temp = equipment_list[0] if equipment_list else ""
     
@@ -1029,14 +1166,11 @@ def add_new_event(sheets_edit, sheet_name):
             event_date = st.date_input("📅 التاريخ:", value=datetime.now())
             repair_duration = st.number_input("⏱️ مدة الإصلاح (ساعات):", min_value=0.0, step=0.5, format="%.1f")
             event_desc = st.text_area("📝 الحدث/العطل:", height=100)
-            # نوع العطل
             fault_type = st.selectbox("🏷️ نوع العطل:", ["", "ميكانيكي", "كهربائي", "إلكتروني", "هيدروليكي", "هوائي", "هيكلي", "آخر"])
         with col2:
             correction_desc = st.text_area("🔧 الإجراء التصحيحي:", height=100)
             servised_by = st.text_input("👨‍🔧 تم بواسطة:")
-            # قدرة الفني
             technician_rating = st.select_slider("⭐ قدرة الفني (حل/تفكير/مبادرة/قرار):", options=[1, 2, 3, 4, 5], value=3)
-            # الالتزام بالسلامة
             safety_compliance = st.selectbox("🛡️ الالتزام بتعليمات السلامة:", ["", "ملتزم بالكامل", "ملتزم جزئياً", "غير ملتزم", "غير مطبق"])
             st.markdown("---")
             st.markdown("**🔩 قطع الغيار المستخدمة**")
@@ -1110,8 +1244,7 @@ def add_new_event(sheets_edit, sheet_name):
             else:
                 st.error("❌ فشل الحفظ")
     return sheets_edit
-
-# ------------------------------- دوال إدارة قطع الغيار -------------------------------
+    # ------------------------------- دوال إدارة قطع الغيار -------------------------------
 def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
     st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة. القطع التي تحددها كـ 'ضرورية' سيتم مراقبتها وإنذارك عند نقصان الرصيد.")
