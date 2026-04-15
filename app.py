@@ -1376,6 +1376,10 @@ def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
     st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة. القطع التي تحددها كـ 'ضرورية' سيتم مراقبتها وإنذارك عند نقصان الرصيد.")
     spare_df = load_spare_parts()
+    
+    # خيار العرض
+    view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="spare_view_mode")
+    
     st.subheader("📋 قائمة قطع الغيار الحالية")
     if not spare_df.empty:
         equipment_filter = st.selectbox("فلتر حسب الماكينة:", ["جميع الماكينات"] + sorted(spare_df["اسم الماكينة"].unique()), key="spare_eq_filter")
@@ -1383,9 +1387,38 @@ def manage_spare_parts_tab(sheets_edit):
             filtered_df = spare_df[spare_df["اسم الماكينة"] == equipment_filter]
         else:
             filtered_df = spare_df
-        st.dataframe(filtered_df, use_container_width=True, height=400)
+        
+        if view_mode == "جدول":
+            display_cols = [c for c in filtered_df.columns if c != "رابط_الصورة"]
+            st.dataframe(filtered_df[display_cols], use_container_width=True, height=400)
+        else:
+            cols_per_row = 3
+            for i in range(0, len(filtered_df), cols_per_row):
+                row_cols = st.columns(cols_per_row)
+                for j, col in enumerate(row_cols):
+                    idx = i + j
+                    if idx < len(filtered_df):
+                        row = filtered_df.iloc[idx]
+                        with col:
+                            with st.container(border=True):
+                                img_url = row.get("رابط_الصورة", "")
+                                if img_url and isinstance(img_url, str) and img_url.strip() != "":
+                                    try:
+                                        st.image(img_url, use_container_width=True)
+                                    except:
+                                        st.write("🖼️ (تعذر عرض الصورة)")
+                                else:
+                                    st.write("📦 لا توجد صورة")
+                                st.markdown(f"**🔩 {row['اسم القطعة']}**")
+                                st.markdown(f"**ماكينة:** {row['اسم الماكينة']}")
+                                st.markdown(f"**المقاس:** {row['المقاس']}")
+                                st.markdown(f"**الرصيد:** {row['الرصيد الموجود']}")
+                                st.markdown(f"**ضرورية:** {row['ضرورية']}")
+                                if row.get('مدة التوريد'):
+                                    st.markdown(f"**مدة التوريد:** {row['مدة التوريد']}")
     else:
         st.info("لا توجد قطع غيار مسجلة بعد")
+    
     st.subheader("➕ إضافة قطعة غيار جديدة")
     with st.form(key="add_spare_part_form"):
         col1, col2 = st.columns(2)
@@ -1414,7 +1447,6 @@ def manage_spare_parts_tab(sheets_edit):
                 if not existing.empty:
                     st.error(f"❌ القطعة '{part_name}' موجودة بالفعل للماكينة '{selected_equipment}'")
                 else:
-                    # رفع صورة القطعة إن وجدت
                     image_url = None
                     if part_image is not None:
                         part_id = str(uuid.uuid4())[:8]
@@ -1439,6 +1471,7 @@ def manage_spare_parts_tab(sheets_edit):
                         st.rerun()
                     else:
                         st.error("❌ فشل الحفظ")
+    
     st.subheader("✏️ تعديل أو حذف قطعة")
     if not spare_df.empty:
         part_options = spare_df.apply(lambda row: f"{row['اسم القطعة']} ({row['اسم الماكينة']})", axis=1).tolist()
@@ -1486,6 +1519,8 @@ def preventive_maintenance_tab(sheets_edit):
     if tasks_df.empty:
         st.info("لا توجد بنود صيانة مسجلة لهذه المعدة. يمكنك إضافة بند جديد أدناه.")
     else:
+        view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="maintenance_view_mode")
+        
         today = datetime.now().date()
         tasks_display = tasks_df.copy()
         def days_remaining(row):
@@ -1497,8 +1532,38 @@ def preventive_maintenance_tab(sheets_edit):
         tasks_display["الحالة"] = tasks_display["الأيام_المتبقية"].apply(
             lambda x: "🔴 متأخرة" if (isinstance(x, int) and x < 0) else ("🟡 قادمة" if (isinstance(x, int) and x <= 3) else "🟢 جيدة")
         )
-        cols_to_show = ["نوع_الصيانة", "اسم_البند", "الفترة_بالأيام", "آخر_تنفيذ", "التاريخ_التالي", "الأيام_المتبقية", "الحالة", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية", "رابط_الصورة"]
-        st.dataframe(tasks_display[cols_to_show], use_container_width=True)
+        
+        if view_mode == "جدول":
+            cols_to_show = ["نوع_الصيانة", "اسم_البند", "الفترة_بالأيام", "آخر_تنفيذ", "التاريخ_التالي", "الأيام_المتبقية", "الحالة", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية"]
+            if "رابط_الصورة" in tasks_display.columns:
+                cols_to_show = [c for c in cols_to_show if c != "رابط_الصورة"]
+            st.dataframe(tasks_display[cols_to_show], use_container_width=True)
+        else:
+            cols_per_row = 2
+            for i in range(0, len(tasks_display), cols_per_row):
+                row_cols = st.columns(cols_per_row)
+                for j, col in enumerate(row_cols):
+                    idx = i + j
+                    if idx < len(tasks_display):
+                        row = tasks_display.iloc[idx]
+                        with col:
+                            with st.container(border=True):
+                                img_url = row.get("رابط_الصورة", "")
+                                if img_url and isinstance(img_url, str) and img_url.strip() != "":
+                                    try:
+                                        st.image(img_url, use_container_width=True)
+                                    except:
+                                        st.write("🖼️ (تعذر عرض الصورة)")
+                                else:
+                                    st.write("🔧 لا توجد صورة")
+                                st.markdown(f"**{row['اسم_البند']}**")
+                                st.markdown(f"**نوع الصيانة:** {row['نوع_الصيانة']}")
+                                st.markdown(f"**الفترة:** {row['الفترة_بالأيام']} يوم")
+                                st.markdown(f"**آخر تنفيذ:** {row['آخر_تنفيذ'].strftime('%Y-%m-%d') if pd.notna(row['آخر_تنفيذ']) else 'لم تنفذ بعد'}")
+                                st.markdown(f"**التاريخ التالي:** {row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else 'غير محدد'}")
+                                st.markdown(f"**الحالة:** {row['الحالة']}")
+                                if row.get('ملاحظات'):
+                                    st.caption(f"ملاحظات: {row['ملاحظات'][:100]}")
         
         st.markdown("---")
         st.subheader("✅ تنفيذ صيانة")
@@ -1531,12 +1596,10 @@ def preventive_maintenance_tab(sheets_edit):
                 consume_qty = 0
                 use_part = True
             
-            # رفع صورة أثناء التنفيذ (اختياري)
             execution_image = st.file_uploader("🖼️ رفع صورة للصيانة المنفذة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], key="maintenance_execution_image")
             
             if st.button("✅ تم تنفيذ الصيانة", type="primary"):
                 if use_part:
-                    # رفع الصورة إن وجدت
                     image_url = None
                     if execution_image is not None:
                         maint_id = str(uuid.uuid4())[:8]
@@ -1548,7 +1611,6 @@ def preventive_maintenance_tab(sheets_edit):
                     
                     success, msg = execute_maintenance(sheets_edit, None, selected_equipment, selected_task, part_name if part_name else "", consume_qty if part_name else 0)
                     if success:
-                        # إضافة رابط الصورة إلى ملاحظات المهمة (اختياري)
                         if image_url:
                             df_main = sheets_edit.get(APP_CONFIG["MAINTENANCE_SHEET"])
                             if df_main is not None:
