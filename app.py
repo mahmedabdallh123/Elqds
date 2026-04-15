@@ -464,10 +464,14 @@ def generate_excel_report(analysis, sheet_name, equipment_filter):
             analysis["technician_summary"].to_excel(writer, sheet_name="ملخص أداء الفنيين", index=False)
         if analysis["technician_by_fault"] is not None and not analysis["technician_by_fault"].empty:
             analysis["technician_by_fault"].to_excel(writer, sheet_name="أداء الفنيين حسب نوع العطل", index=False)
-        cols_to_export = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "رابط الصورة"]
+        
+        # تحديد الأعمدة الموجودة فقط في raw_data
+        desired_cols = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "رابط الصورة"]
         if "مده الاصلاح" in analysis["raw_data"].columns:
-            cols_to_export.insert(0, "مده الاصلاح")
-        raw_export = analysis["raw_data"][cols_to_export].copy()
+            desired_cols.insert(0, "مده الاصلاح")
+        # تصفية الأعمدة الموجودة فقط
+        existing_cols = [col for col in desired_cols if col in analysis["raw_data"].columns]
+        raw_export = analysis["raw_data"][existing_cols].copy()
         raw_export.to_excel(writer, sheet_name="البيانات الخام", index=False)
     output.seek(0)
     return output
