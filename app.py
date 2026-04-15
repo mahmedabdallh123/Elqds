@@ -1382,40 +1382,52 @@ def manage_spare_parts_tab(sheets_edit):
     
     st.subheader("📋 قائمة قطع الغيار الحالية")
     if not spare_df.empty:
-        equipment_filter = st.selectbox("فلتر حسب الماكينة:", ["جميع الماكينات"] + sorted(spare_df["اسم الماكينة"].unique()), key="spare_eq_filter")
-        if equipment_filter != "جميع الماكينات":
-            filtered_df = spare_df[spare_df["اسم الماكينة"] == equipment_filter]
-        else:
-            filtered_df = spare_df
+        # فلتر حسب الماكينة
+        col_filter1, col_filter2 = st.columns(2)
+        with col_filter1:
+            equipment_filter = st.selectbox("فلتر حسب الماكينة:", ["جميع الماكينات"] + sorted(spare_df["اسم الماكينة"].unique()), key="spare_eq_filter")
+        with col_filter2:
+            # فلتر حسب اسم القطعة (بحث نصي)
+            part_name_filter = st.text_input("فلتر حسب اسم القطعة:", placeholder="اكتب جزءاً من اسم القطعة...", key="spare_name_filter")
         
-        if view_mode == "جدول":
-            display_cols = [c for c in filtered_df.columns if c != "رابط_الصورة"]
-            st.dataframe(filtered_df[display_cols], use_container_width=True, height=400)
+        # تطبيق الفلاتر
+        filtered_df = spare_df.copy()
+        if equipment_filter != "جميع الماكينات":
+            filtered_df = filtered_df[filtered_df["اسم الماكينة"] == equipment_filter]
+        if part_name_filter:
+            filtered_df = filtered_df[filtered_df["اسم القطعة"].str.contains(part_name_filter, case=False, na=False)]
+        
+        if filtered_df.empty:
+            st.info("لا توجد قطع غيار تطابق معايير الفلتر")
         else:
-            cols_per_row = 3
-            for i in range(0, len(filtered_df), cols_per_row):
-                row_cols = st.columns(cols_per_row)
-                for j, col in enumerate(row_cols):
-                    idx = i + j
-                    if idx < len(filtered_df):
-                        row = filtered_df.iloc[idx]
-                        with col:
-                            with st.container(border=True):
-                                img_url = row.get("رابط_الصورة", "")
-                                if img_url and isinstance(img_url, str) and img_url.strip() != "":
-                                    try:
-                                        st.image(img_url, use_container_width=True)
-                                    except:
-                                        st.write("🖼️ (تعذر عرض الصورة)")
-                                else:
-                                    st.write("📦 لا توجد صورة")
-                                st.markdown(f"**🔩 {row['اسم القطعة']}**")
-                                st.markdown(f"**ماكينة:** {row['اسم الماكينة']}")
-                                st.markdown(f"**المقاس:** {row['المقاس']}")
-                                st.markdown(f"**الرصيد:** {row['الرصيد الموجود']}")
-                                st.markdown(f"**ضرورية:** {row['ضرورية']}")
-                                if row.get('مدة التوريد'):
-                                    st.markdown(f"**مدة التوريد:** {row['مدة التوريد']}")
+            if view_mode == "جدول":
+                display_cols = [c for c in filtered_df.columns if c != "رابط_الصورة"]
+                st.dataframe(filtered_df[display_cols], use_container_width=True, height=400)
+            else:
+                cols_per_row = 3
+                for i in range(0, len(filtered_df), cols_per_row):
+                    row_cols = st.columns(cols_per_row)
+                    for j, col in enumerate(row_cols):
+                        idx = i + j
+                        if idx < len(filtered_df):
+                            row = filtered_df.iloc[idx]
+                            with col:
+                                with st.container(border=True):
+                                    img_url = row.get("رابط_الصورة", "")
+                                    if img_url and isinstance(img_url, str) and img_url.strip() != "":
+                                        try:
+                                            st.image(img_url, use_container_width=True)
+                                        except:
+                                            st.write("🖼️ (تعذر عرض الصورة)")
+                                    else:
+                                        st.write("📦 لا توجد صورة")
+                                    st.markdown(f"**🔩 {row['اسم القطعة']}**")
+                                    st.markdown(f"**ماكينة:** {row['اسم الماكينة']}")
+                                    st.markdown(f"**المقاس:** {row['المقاس']}")
+                                    st.markdown(f"**الرصيد:** {row['الرصيد الموجود']}")
+                                    st.markdown(f"**ضرورية:** {row['ضرورية']}")
+                                    if row.get('مدة التوريد'):
+                                        st.markdown(f"**مدة التوريد:** {row['مدة التوريد']}")
     else:
         st.info("لا توجد قطع غيار مسجلة بعد")
     
