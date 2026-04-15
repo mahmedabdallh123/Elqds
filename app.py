@@ -976,6 +976,7 @@ def search_across_sheets(all_sheets):
     if not all_sheets:
         st.warning("لا توجد بيانات للبحث")
         return
+    
     col1, col2 = st.columns(2)
     with col1:
         sheet_options = ["جميع الأقسام"] + list(all_sheets.keys())
@@ -1002,6 +1003,10 @@ def search_across_sheets(all_sheets):
         else:
             start_date = None
             end_date = None
+    
+    # خيار طريقة العرض
+    view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="search_view_mode")
+    
     if st.button("بحث", key="search_btn", type="primary"):
         results = []
         sheets_to_search = all_sheets.items()
@@ -1030,41 +1035,43 @@ def search_across_sheets(all_sheets):
             if not df_filtered.empty:
                 df_filtered["القسم"] = sheet_name
                 results.append(df_filtered)
+        
         if results:
             combined_results = pd.concat(results, ignore_index=True)
             st.success(f"تم العثور على {len(combined_results)} نتيجة")
             
-            # عرض النتائج على شكل أعمدة مع إمكانية رؤية الصور
-            # نختار عرض كل نتيجة كبطاقة مع الصورة إذا وجدت
-            for idx, row in combined_results.iterrows():
-                with st.container(border=True):
-                    col_left, col_right = st.columns([1, 3])
-                    # عرض الصورة إن وجدت
-                    img_url = row.get("رابط الصورة", "")
-                    if img_url and isinstance(img_url, str) and img_url.strip() != "":
-                        with col_left:
-                            try:
-                                st.image(img_url, use_container_width=True)
-                            except:
-                                st.write("🖼️")
-                    else:
-                        with col_left:
-                            st.write("📄")
-                    with col_right:
-                        st.markdown(f"**القسم:** {row.get('القسم', '')}")
-                        st.markdown(f"**التاريخ:** {row.get('التاريخ', '')}")
-                        st.markdown(f"**المعدة:** {row.get('المعدة', '')}")
-                        st.markdown(f"**العطل:** {row.get('الحدث/العطل', '')[:100]}")
-                        st.markdown(f"**الإجراء:** {row.get('الإجراء التصحيحي', '')[:100]}")
-                        if img_url:
-                            st.caption(f"[رابط الصورة]({img_url})")
-                    # إضافة فاصل بسيط
-            # إمكانية تحميل النتائج كـ Excel
+            if view_mode == "جدول":
+                # العرض الجدولي: إخفاء عمود الصورة إن وجد لتجنب النص الطويل
+                display_cols = [c for c in combined_results.columns if c != "رابط الصورة"]
+                st.dataframe(combined_results[display_cols], use_container_width=True, height=500)
+            else:
+                # العرض بالبطاقات مع الصور
+                for idx, row in combined_results.iterrows():
+                    with st.container(border=True):
+                        col_img, col_info = st.columns([1, 3])
+                        img_url = row.get("رابط الصورة", "")
+                        with col_img:
+                            if img_url and isinstance(img_url, str) and img_url.strip() != "":
+                                try:
+                                    st.image(img_url, use_container_width=True)
+                                except:
+                                    st.write("🖼️ (تعذر عرض الصورة)")
+                            else:
+                                st.write("📄 لا توجد صورة")
+                        with col_info:
+                            st.markdown(f"**📁 القسم:** {row.get('القسم', '')}")
+                            st.markdown(f"**📅 التاريخ:** {row.get('التاريخ', '')}")
+                            st.markdown(f"**⚙️ المعدة:** {row.get('المعدة', '')}")
+                            st.markdown(f"**⚠️ العطل:** {row.get('الحدث/العطل', '')[:150]}")
+                            st.markdown(f"**🔧 الإجراء:** {row.get('الإجراء التصحيحي', '')[:150]}")
+                            if img_url:
+                                st.caption(f"[🔗 رابط الصورة]({img_url})")
+            
+            # زر تحميل Excel (موجود في كلتا الحالتين)
             excel_file = export_filtered_results_to_excel(combined_results, "نتائج_البحث")
             st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
         else:
             st.warning("لا توجد نتائج مطابقة للبحث")
-
 # ------------------------------- دوال إدارة المعدات والأقسام -------------------------------
 def load_equipment_config():
     if not os.path.exists(EQUIPMENT_CONFIG_FILE):
