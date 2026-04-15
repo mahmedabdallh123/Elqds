@@ -1,3 +1,4 @@
+#1
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,6 +9,9 @@ import shutil
 import re
 from datetime import datetime, timedelta
 import io
+import uuid
+from PIL import Image
+from github import Github, GithubException
 
 # ------------------------------- الإعدادات الثابتة -------------------------------
 APP_CONFIG = {
@@ -22,11 +26,11 @@ APP_CONFIG = {
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp", "webp"],
     "MAX_IMAGE_SIZE_MB": 10,
-    "DEFAULT_SHEET_COLUMNS": ["مده الاصلاح", "التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة"],
+    "DEFAULT_SHEET_COLUMNS": ["مده الاصلاح", "التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "رابط الصورة"],
     "SPARE_PARTS_SHEET": "قطع_الغيار",
-    "SPARE_PARTS_COLUMNS": ["اسم القطعة", "المقاس", "الرصيد الموجود", "مدة التوريد", "ضرورية", "اسم الماكينة"],
+    "SPARE_PARTS_COLUMNS": ["اسم القطعة", "المقاس", "الرصيد الموجود", "مدة التوريد", "ضرورية", "اسم الماكينة", "رابط_الصورة"],
     "MAINTENANCE_SHEET": "صيانة_وقائية",
-    "MAINTENANCE_COLUMNS": ["المعدة", "نوع_الصيانة", "اسم_البند", "الفترة_بالأيام", "آخر_تنفيذ", "التاريخ_التالي", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية"]
+    "MAINTENANCE_COLUMNS": ["المعدة", "نوع_الصيانة", "اسم_البند", "الفترة_بالأيام", "آخر_تنفيذ", "التاريخ_التالي", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية", "رابط_الصورة"]
 }
 
 # ------------------------------- إعداد الصفحة -------------------------------
@@ -47,12 +51,6 @@ except ImportError:
     except ImportError:
         MATPLOTLIB_AVAILABLE = False
 
-try:
-    from github import Github, GithubException
-    GITHUB_AVAILABLE = True
-except Exception:
-    GITHUB_AVAILABLE = False
-
 # ------------------------------- ثوابت إضافية -------------------------------
 USERS_FILE = "users.json"
 STATE_FILE = "state.json"
@@ -64,6 +62,64 @@ EQUIPMENT_CONFIG_FILE = "equipment_config.json"
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
 GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/Elqds/refs/heads/main/users.json"
 GITHUB_REPO_USERS = "mahmedabdallh123/Elqds"
+GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
+GITHUB_AVAILABLE = GITHUB_TOKEN is not None
+
+# ------------------------------- دوال رفع الصور -------------------------------
+def upload_image_to_github(image_file, entity_type, entity_id, custom_filename=None):
+    """رفع صورة إلى GitHub وحفظ رابطها."""
+    if not GITHUB_AVAILABLE:
+        st.error("❌ GitHub token غير متوفر، لا يمكن رفع الصور")
+        return None
+    
+    try:
+        img = Image.open(image_file)
+        if img.mode in ('RGBA', 'LA', 'P'):
+            img = img.convert('RGB')
+        
+        buffer = io.BytesIO()
+        img.save(buffer, format='JPEG', quality=85, optimize=True)
+        buffer.seek(0)
+        
+        if custom_filename:
+            filename = custom_filename
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{entity_type}_{entity_id}_{timestamp}.jpg"
+        
+        repo_path = f"{IMAGES_FOLDER}/{entity_type}/{filename}"
+        
+        g = Github(GITHUB_TOKEN)
+        repo = g.get_repo(APP_CONFIG["REPO_NAME"])
+        
+        try:
+            repo.get_contents(f"{IMAGES_FOLDER}/{entity_type}/", ref=APP_CONFIG["BRANCH"])
+        except GithubException:
+            repo.create_file(f"{IMAGES_FOLDER}/{entity_type}/.gitkeep", 
+                            f"Create folder for {entity_type} images", 
+                            "", branch=APP_CONFIG["BRANCH"])
+        
+        content = buffer.getvalue()
+        result = repo.create_file(
+            path=repo_path,
+            message=f"Add image for {entity_type} {entity_id}",
+            content=content,
+            branch=APP_CONFIG["BRANCH"]
+        )
+        return f"https://raw.githubusercontent.com/{APP_CONFIG['REPO_NAME']}/{APP_CONFIG['BRANCH']}/{repo_path}"
+    except Exception as e:
+        st.error(f"❌ خطأ في معالجة الصورة: {e}")
+        return None
+
+def get_image_component(image_url, caption=""):
+    """عرض الصورة من الرابط مع معالجة الأخطاء."""
+    if not image_url or not isinstance(image_url, str):
+        return None
+    try:
+        return st.image(image_url, caption=caption, use_container_width=True)
+    except:
+        st.warning(f"⚠️ تعذر عرض الصورة: {image_url}")
+        return None
 
 # ------------------------------- دوال قطع الغيار -------------------------------
 def load_spare_parts():
@@ -141,7 +197,7 @@ def get_tasks_for_equipment(equipment_name):
         return df
     return df[df["المعدة"] == equipment_name]
 
-def add_maintenance_task(sheets_edit, equipment, task_type, task_name, period_days, notes="", default_spare=""):
+def add_maintenance_task(sheets_edit, equipment, task_type, task_name, period_days, notes="", default_spare="", image_url=None):
     df = sheets_edit.get(APP_CONFIG["MAINTENANCE_SHEET"])
     if df is None:
         df = pd.DataFrame(columns=APP_CONFIG["MAINTENANCE_COLUMNS"])
@@ -155,7 +211,8 @@ def add_maintenance_task(sheets_edit, equipment, task_type, task_name, period_da
         "آخر_تنفيذ": pd.NaT,
         "التاريخ_التالي": next_date,
         "ملاحظات": notes,
-        "قطع_غيار_مستخدمة_افتراضية": default_spare
+        "قطع_غيار_مستخدمة_افتراضية": default_spare,
+        "رابط_الصورة": image_url or ""
     }])
     new_df = pd.concat([df, new_row], ignore_index=True)
     sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = new_df
@@ -407,7 +464,7 @@ def generate_excel_report(analysis, sheet_name, equipment_filter):
             analysis["technician_summary"].to_excel(writer, sheet_name="ملخص أداء الفنيين", index=False)
         if analysis["technician_by_fault"] is not None and not analysis["technician_by_fault"].empty:
             analysis["technician_by_fault"].to_excel(writer, sheet_name="أداء الفنيين حسب نوع العطل", index=False)
-        cols_to_export = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة"]
+        cols_to_export = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "رابط الصورة"]
         if "مده الاصلاح" in analysis["raw_data"].columns:
             cols_to_export.insert(0, "مده الاصلاح")
         raw_export = analysis["raw_data"][cols_to_export].copy()
@@ -541,14 +598,19 @@ def failures_analysis_tab(all_sheets):
                     st.markdown("#### أداء الفنيين حسب نوع العطل")
                     if analysis["technician_by_fault"] is not None and not analysis["technician_by_fault"].empty:
                         display_df = analysis["technician_by_fault"].copy()
-                        def color_cells(val):
-                            if isinstance(val, str) and "🟢" in val:
-                                return 'background-color: #90EE90'
-                            elif isinstance(val, str) and "🔴" in val:
-                                return 'background-color: #FFCCCC'
-                            return ''
-                        styled = display_df.style.applymap(color_cells, subset=['الأداء'])
-                        st.dataframe(styled, use_container_width=True)
+                        if "الأداء" in display_df.columns:
+                            def color_cells(val):
+                                if isinstance(val, str) and "🟢" in val:
+                                    return 'background-color: #90EE90'
+                                elif isinstance(val, str) and "🔴" in val:
+                                    return 'background-color: #FFCCCC'
+                                return ''
+                            styled = display_df.style.map(color_cells, subset=['الأداء'])
+                            st.dataframe(styled, use_container_width=True)
+                        else:
+                            st.dataframe(display_df, use_container_width=True)
+                    else:
+                        st.info("لا توجد بيانات كافية عن أداء الفنيين حسب نوع العطل")
                     
                     st.markdown("#### نقاط القوة والضعف")
                     strengths_weak = analysis["technician_strengths_weaknesses"]
@@ -558,11 +620,11 @@ def failures_analysis_tab(all_sheets):
                                 strong = strengths_weak.get("strengths", {}).get(tech, [])
                                 weak = strengths_weak.get("weaknesses", {}).get(tech, [])
                                 if strong:
-                                    st.success(f"✅ **قوي في:** {', '.join(strong) if strong else 'لا توجد نقاط قوة محددة'}")
+                                    st.success(f"✅ **قوي في:** {', '.join(strong)}")
                                 else:
                                     st.info("لا توجد نقاط قوة مميزة (أداؤه متوسط في جميع الأنواع)")
                                 if weak:
-                                    st.error(f"❌ **ضعيف في:** {', '.join(weak) if weak else 'لا توجد نقاط ضعف واضحة'}")
+                                    st.error(f"❌ **ضعيف في:** {', '.join(weak)}")
                                 else:
                                     st.info("لا توجد نقاط ضعف واضحة (أداؤه جيد في جميع الأنواع)")
                     else:
@@ -876,6 +938,18 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
         if display_df[col].dtype == 'object':
             display_df[col] = display_df[col].astype(str).apply(lambda x: x[:100] + "..." if len(x) > 100 else x)
     st.dataframe(display_df, use_container_width=True, height=400)
+    
+    # عرض الصور المرفقة (إذا وجدت)
+    if "رابط الصورة" in df.columns and not df["رابط الصورة"].isnull().all():
+        st.markdown("#### 🖼️ الصور المرفقة")
+        for idx, row in df.iterrows():
+            if row["رابط الصورة"] and str(row["رابط الصورة"]) != "":
+                with st.expander(f"🖼️ صورة للحدث رقم {idx+1}"):
+                    try:
+                        st.image(row["رابط الصورة"], use_container_width=True)
+                    except:
+                        st.warning("⚠️ تعذر عرض الصورة")
+    
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         excel_file = export_sheet_to_excel({sheet_name: df}, sheet_name)
@@ -932,7 +1006,7 @@ def search_across_sheets(all_sheets):
                 except:
                     pass
             if search_term:
-                search_columns = ["الحدث/العطل", "الإجراء التصحيحي", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة"]
+                search_columns = ["الحدث/العطل", "الإجراء التصحيحي", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "رابط الصورة"]
                 if "مده الاصلاح" in df_filtered.columns:
                     search_columns.append("مده الاصلاح")
                 mask = pd.Series([False] * len(df_filtered))
@@ -951,7 +1025,8 @@ def search_across_sheets(all_sheets):
             st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
         else:
             st.warning("لا توجد نتائج مطابقة للبحث")
-            # ------------------------------- دوال إدارة المعدات والأقسام -------------------------------
+
+# ------------------------------- دوال إدارة المعدات والأقسام -------------------------------
 def load_equipment_config():
     if not os.path.exists(EQUIPMENT_CONFIG_FILE):
         default_config = {}
@@ -1167,6 +1242,7 @@ def add_new_event(sheets_edit, sheet_name):
             repair_duration = st.number_input("⏱️ مدة الإصلاح (ساعات):", min_value=0.0, step=0.5, format="%.1f")
             event_desc = st.text_area("📝 الحدث/العطل:", height=100)
             fault_type = st.selectbox("🏷️ نوع العطل:", ["", "ميكانيكي", "كهربائي", "إلكتروني", "هيدروليكي", "هوائي", "هيكلي", "آخر"])
+            uploaded_image = st.file_uploader("🖼️ رفع صورة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
         with col2:
             correction_desc = st.text_area("🔧 الإجراء التصحيحي:", height=100)
             servised_by = st.text_input("👨‍🔧 تم بواسطة:")
@@ -1212,6 +1288,16 @@ def add_new_event(sheets_edit, sheet_name):
                     st.error(msg)
                     return sheets_edit
             
+            # معالجة الصورة
+            image_url = None
+            if uploaded_image is not None:
+                event_id = str(uuid.uuid4())[:8]
+                image_url = upload_image_to_github(uploaded_image, "event", event_id)
+                if image_url:
+                    st.success("✅ تم رفع الصورة بنجاح!")
+                else:
+                    st.warning("⚠️ فشل رفع الصورة، سيتم حفظ الحدث بدون صورة")
+            
             new_row = {
                 "مده الاصلاح": repair_duration if repair_duration > 0 else "",
                 "التاريخ": event_date.strftime("%Y-%m-%d"),
@@ -1222,7 +1308,8 @@ def add_new_event(sheets_edit, sheet_name):
                 "قطع غيار مستخدمة": spare_part_used,
                 "نوع العطل": fault_type if fault_type else "",
                 "قدرة الفني (حل/تفكير/مبادرة/قرار)": technician_rating,
-                "الالتزام بتعليمات السلامة": safety_compliance if safety_compliance else ""
+                "الالتزام بتعليمات السلامة": safety_compliance if safety_compliance else "",
+                "رابط الصورة": image_url or ""
             }
             for col in df.columns:
                 if col not in new_row:
@@ -1244,6 +1331,7 @@ def add_new_event(sheets_edit, sheet_name):
             else:
                 st.error("❌ فشل الحفظ")
     return sheets_edit
+
     # ------------------------------- دوال إدارة قطع الغيار -------------------------------
 def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
@@ -1273,6 +1361,7 @@ def manage_spare_parts_tab(sheets_edit):
             selected_equipment = st.selectbox("🔧 الماكينة:", equipment_list if equipment_list else [""])
             part_name = st.text_input("🔩 اسم القطعة:")
             part_size = st.text_input("📏 المقاس:")
+            part_image = st.file_uploader("🖼️ صورة القطعة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], key="spare_part_image")
         with col2:
             initial_qty = st.number_input("📦 الرصيد الموجود:", min_value=0, step=1, value=0)
             lead_time = st.text_input("⏱️ مدة التوريد (أيام أو نص):")
@@ -1286,13 +1375,23 @@ def manage_spare_parts_tab(sheets_edit):
                 if not existing.empty:
                     st.error(f"❌ القطعة '{part_name}' موجودة بالفعل للماكينة '{selected_equipment}'")
                 else:
+                    # رفع صورة القطعة إن وجدت
+                    image_url = None
+                    if part_image is not None:
+                        part_id = str(uuid.uuid4())[:8]
+                        image_url = upload_image_to_github(part_image, "spare_part", part_id)
+                        if image_url:
+                            st.success("✅ تم رفع صورة القطعة بنجاح!")
+                        else:
+                            st.warning("⚠️ فشل رفع الصورة")
                     new_row = pd.DataFrame([{
                         "اسم القطعة": part_name,
                         "المقاس": part_size,
                         "الرصيد الموجود": initial_qty,
                         "مدة التوريد": lead_time,
                         "ضرورية": "نعم" if is_critical else "لا",
-                        "اسم الماكينة": selected_equipment
+                        "اسم الماكينة": selected_equipment,
+                        "رابط_الصورة": image_url or ""
                     }])
                     new_spare_df = pd.concat([spare_df, new_row], ignore_index=True)
                     sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = new_spare_df
@@ -1359,7 +1458,7 @@ def preventive_maintenance_tab(sheets_edit):
         tasks_display["الحالة"] = tasks_display["الأيام_المتبقية"].apply(
             lambda x: "🔴 متأخرة" if (isinstance(x, int) and x < 0) else ("🟡 قادمة" if (isinstance(x, int) and x <= 3) else "🟢 جيدة")
         )
-        cols_to_show = ["نوع_الصيانة", "اسم_البند", "الفترة_بالأيام", "آخر_تنفيذ", "التاريخ_التالي", "الأيام_المتبقية", "الحالة", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية"]
+        cols_to_show = ["نوع_الصيانة", "اسم_البند", "الفترة_بالأيام", "آخر_تنفيذ", "التاريخ_التالي", "الأيام_المتبقية", "الحالة", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية", "رابط_الصورة"]
         st.dataframe(tasks_display[cols_to_show], use_container_width=True)
         
         st.markdown("---")
@@ -1367,7 +1466,7 @@ def preventive_maintenance_tab(sheets_edit):
         task_options = tasks_df["اسم_البند"].tolist()
         selected_task = st.selectbox("اختر البند المنفذ:", task_options, key="execute_task_select")
         if selected_task:
-            default_spare = tasks_df[tasks_df["اسم_البند"] == selected_task]["قطع_غيار_مستخدمة_افتراضية"].values[0]
+            default_spare = tasks_df[tasks_df["اسم_البند"] == selected_task]["قطع_غيار_مستخدمة_افتراضية"].values[0] if len(tasks_df[tasks_df["اسم_البند"] == selected_task]) > 0 else ""
             spare_parts_list = get_spare_parts_for_equipment(selected_equipment)
             st.markdown("**🔩 استهلاك قطع غيار (اختياري)**")
             if spare_parts_list:
@@ -1393,10 +1492,35 @@ def preventive_maintenance_tab(sheets_edit):
                 consume_qty = 0
                 use_part = True
             
+            # رفع صورة أثناء التنفيذ (اختياري)
+            execution_image = st.file_uploader("🖼️ رفع صورة للصيانة المنفذة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], key="maintenance_execution_image")
+            
             if st.button("✅ تم تنفيذ الصيانة", type="primary"):
                 if use_part:
+                    # رفع الصورة إن وجدت
+                    image_url = None
+                    if execution_image is not None:
+                        maint_id = str(uuid.uuid4())[:8]
+                        image_url = upload_image_to_github(execution_image, "maintenance_execution", maint_id)
+                        if image_url:
+                            st.success("✅ تم رفع صورة التنفيذ بنجاح!")
+                        else:
+                            st.warning("⚠️ فشل رفع الصورة")
+                    
                     success, msg = execute_maintenance(sheets_edit, None, selected_equipment, selected_task, part_name if part_name else "", consume_qty if part_name else 0)
                     if success:
+                        # إضافة رابط الصورة إلى ملاحظات المهمة (اختياري)
+                        if image_url:
+                            df_main = sheets_edit.get(APP_CONFIG["MAINTENANCE_SHEET"])
+                            if df_main is not None:
+                                mask = (df_main["المعدة"] == selected_equipment) & (df_main["اسم_البند"] == selected_task)
+                                if mask.any():
+                                    idx = df_main[mask].index[0]
+                                    old_notes = df_main.loc[idx, "ملاحظات"]
+                                    new_note = f"{datetime.now().strftime('%Y-%m-%d')}: تم التنفيذ - صورة: {image_url}"
+                                    df_main.loc[idx, "ملاحظات"] = old_notes + "\n" + new_note if old_notes else new_note
+                                    sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = df_main
+                        
                         if "temp_spare_parts_df" in st.session_state:
                             sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = st.session_state.temp_spare_parts_df
                             del st.session_state.temp_spare_parts_df
@@ -1426,6 +1550,7 @@ def preventive_maintenance_tab(sheets_edit):
             else:
                 period_days = 365
             st.caption(f"الفترة: {period_days} يوم")
+            task_image = st.file_uploader("🖼️ صورة توضيحية للصيانة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], key="maintenance_task_image")
         with col2:
             notes = st.text_area("ملاحظات:")
             default_spare = st.text_input("قطعة غيار افتراضية (اختياري):", placeholder="اسم القطعة التي تستخدم عادة في هذه الصيانة")
@@ -1434,7 +1559,15 @@ def preventive_maintenance_tab(sheets_edit):
             if not task_name:
                 st.error("❌ الرجاء إدخال اسم البند")
             else:
-                sheets_edit = add_maintenance_task(sheets_edit, selected_equipment, task_type, task_name, period_days, notes, default_spare)
+                image_url = None
+                if task_image is not None:
+                    task_id = str(uuid.uuid4())[:8]
+                    image_url = upload_image_to_github(task_image, "maintenance_task", task_id)
+                    if image_url:
+                        st.success("✅ تم رفع الصورة التوضيحية بنجاح!")
+                    else:
+                        st.warning("⚠️ فشل رفع الصورة")
+                sheets_edit = add_maintenance_task(sheets_edit, selected_equipment, task_type, task_name, period_days, notes, default_spare, image_url)
                 if save_and_push_to_github(sheets_edit, f"إضافة بند صيانة '{task_name}' لـ {selected_equipment}"):
                     st.success("✅ تم إضافة بند الصيانة بنجاح")
                     st.rerun()
@@ -1558,3 +1691,4 @@ with tabs[1]:
 if can_edit and len(tabs) > 2:
     with tabs[2]:
         sheets_edit = manage_data_edit(sheets_edit)
+        
