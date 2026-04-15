@@ -1383,19 +1383,23 @@ def manage_spare_parts_tab(sheets_edit):
     st.subheader("📋 قائمة قطع الغيار الحالية")
     if not spare_df.empty:
         # فلتر حسب الماكينة
-        col_filter1, col_filter2 = st.columns(2)
-        with col_filter1:
-            equipment_filter = st.selectbox("فلتر حسب الماكينة:", ["جميع الماكينات"] + sorted(spare_df["اسم الماكينة"].unique()), key="spare_eq_filter")
-        with col_filter2:
-            # فلتر حسب اسم القطعة (بحث نصي)
-            part_name_filter = st.text_input("فلتر حسب اسم القطعة:", placeholder="اكتب جزءاً من اسم القطعة...", key="spare_name_filter")
+        equipment_filter = st.selectbox("فلتر حسب الماكينة:", ["جميع الماكينات"] + sorted(spare_df["اسم الماكينة"].unique()), key="spare_eq_filter")
         
-        # تطبيق الفلاتر
-        filtered_df = spare_df.copy()
+        # تطبيق فلتر الماكينة أولاً للحصول على القطع المناسبة
+        filtered_by_equipment = spare_df.copy()
         if equipment_filter != "جميع الماكينات":
-            filtered_df = filtered_df[filtered_df["اسم الماكينة"] == equipment_filter]
-        if part_name_filter:
-            filtered_df = filtered_df[filtered_df["اسم القطعة"].str.contains(part_name_filter, case=False, na=False)]
+            filtered_by_equipment = filtered_by_equipment[filtered_by_equipment["اسم الماكينة"] == equipment_filter]
+        
+        # الحصول على قائمة بأسماء القطع المتاحة بعد فلتر الماكينة
+        part_names_list = ["جميع القطع"] + sorted(filtered_by_equipment["اسم القطعة"].unique())
+        
+        # فلتر حسب اسم القطعة (قائمة منسدلة)
+        part_name_filter = st.selectbox("فلتر حسب اسم القطعة:", part_names_list, key="spare_name_filter_select")
+        
+        # تطبيق فلتر اسم القطعة
+        filtered_df = filtered_by_equipment.copy()
+        if part_name_filter != "جميع القطع":
+            filtered_df = filtered_df[filtered_df["اسم القطعة"] == part_name_filter]
         
         if filtered_df.empty:
             st.info("لا توجد قطع غيار تطابق معايير الفلتر")
