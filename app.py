@@ -937,22 +937,32 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
         if selected_filter != "جميع الماكينات":
             df = df[df["المعدة"] == selected_filter]
             st.info(f"عرض لماكينة: {selected_filter} - السجلات: {len(df)}")
+    
+    # عمل نسخة للعرض مع تحويل رابط الصورة إلى عنصر HTML لعرض الصورة (لن يظهر في dataframe، سنعرضها بشكل منفصل)
     display_df = df.copy()
     for col in display_df.columns:
         if display_df[col].dtype == 'object':
             display_df[col] = display_df[col].astype(str).apply(lambda x: x[:100] + "..." if len(x) > 100 else x)
+    
+    # إزالة عمود رابط الصورة من الجدول لتجنب النص الطويل، وسنعرض الصور بشكل منفصل
+    if "رابط الصورة" in display_df.columns:
+        display_df = display_df.drop(columns=["رابط الصورة"])
+    
     st.dataframe(display_df, use_container_width=True, height=400)
     
-    # عرض الصور المرفقة (إذا وجدت)
+    # عرض الصور المرتبطة بالصفوف
     if "رابط الصورة" in df.columns and not df["رابط الصورة"].isnull().all():
         st.markdown("#### 🖼️ الصور المرفقة")
         for idx, row in df.iterrows():
-            if row["رابط الصورة"] and str(row["رابط الصورة"]) != "":
-                with st.expander(f"🖼️ صورة للحدث رقم {idx+1}"):
+            img_url = row["رابط الصورة"]
+            if img_url and isinstance(img_url, str) and img_url.strip() != "":
+                with st.expander(f"📸 صورة للصف رقم {idx+1}"):
                     try:
-                        st.image(row["رابط الصورة"], use_container_width=True)
-                    except:
-                        st.warning("⚠️ تعذر عرض الصورة")
+                        st.image(img_url, use_container_width=True)
+                        # إضافة رابط تحميل مباشر
+                        st.caption(f"[رابط الصورة]({img_url})")
+                    except Exception as e:
+                        st.warning(f"⚠️ تعذر عرض الصورة: {e}")
     
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
@@ -961,7 +971,6 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
     with col_btn2:
         all_sheets_excel = export_all_sheets_to_excel({sheet_name: df})
         st.download_button("📥 تحميل جميع البيانات كملف Excel", all_sheets_excel, f"all_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"export_all_{unique_id}")
-
 def search_across_sheets(all_sheets):
     st.subheader("بحث متقدم في السجلات")
     if not all_sheets:
@@ -1024,7 +1033,33 @@ def search_across_sheets(all_sheets):
         if results:
             combined_results = pd.concat(results, ignore_index=True)
             st.success(f"تم العثور على {len(combined_results)} نتيجة")
-            st.dataframe(combined_results, use_container_width=True, height=500)
+            
+            # عرض النتائج على شكل أعمدة مع إمكانية رؤية الصور
+            # نختار عرض كل نتيجة كبطاقة مع الصورة إذا وجدت
+            for idx, row in combined_results.iterrows():
+                with st.container(border=True):
+                    col_left, col_right = st.columns([1, 3])
+                    # عرض الصورة إن وجدت
+                    img_url = row.get("رابط الصورة", "")
+                    if img_url and isinstance(img_url, str) and img_url.strip() != "":
+                        with col_left:
+                            try:
+                                st.image(img_url, use_container_width=True)
+                            except:
+                                st.write("🖼️")
+                    else:
+                        with col_left:
+                            st.write("📄")
+                    with col_right:
+                        st.markdown(f"**القسم:** {row.get('القسم', '')}")
+                        st.markdown(f"**التاريخ:** {row.get('التاريخ', '')}")
+                        st.markdown(f"**المعدة:** {row.get('المعدة', '')}")
+                        st.markdown(f"**العطل:** {row.get('الحدث/العطل', '')[:100]}")
+                        st.markdown(f"**الإجراء:** {row.get('الإجراء التصحيحي', '')[:100]}")
+                        if img_url:
+                            st.caption(f"[رابط الصورة]({img_url})")
+                    # إضافة فاصل بسيط
+            # إمكانية تحميل النتائج كـ Excel
             excel_file = export_filtered_results_to_excel(combined_results, "نتائج_البحث")
             st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
         else:
