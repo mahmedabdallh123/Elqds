@@ -197,17 +197,20 @@ def get_tasks_for_equipment(equipment_name):
         return df
     return df[df["المعدة"] == equipment_name]
 
-def add_maintenance_task(sheets_edit, equipment, task_type, task_name, period_days, notes="", default_spare="", image_url=None):
+def add_maintenance_task(sheets_edit, equipment, task_name, period_hours, notes="", default_spare="", image_url=None):
+    """إضافة بند صيانة جديد مع فترة بالساعات"""
     df = sheets_edit.get(APP_CONFIG["MAINTENANCE_SHEET"])
     if df is None:
         df = pd.DataFrame(columns=APP_CONFIG["MAINTENANCE_COLUMNS"])
     today = datetime.now().date()
+    # تحويل الساعات إلى أيام (عشري) لحساب التاريخ التالي
+    period_days = period_hours / 24.0
     next_date = today + timedelta(days=period_days)
     new_row = pd.DataFrame([{
         "المعدة": equipment,
-        "نوع_الصيانة": task_type,
+        "نوع_الصيانة": f"{period_hours} ساعة",  # نص وصفي
         "اسم_البند": task_name,
-        "الفترة_بالأيام": period_days,
+        "الفترة_بالأيام": period_days,  # قيمة عشرية
         "آخر_تنفيذ": pd.NaT,
         "التاريخ_التالي": next_date,
         "ملاحظات": notes,
@@ -1520,7 +1523,7 @@ def manage_spare_parts_tab(sheets_edit):
                         st.rerun()
     return sheets_edit
 def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
-    """تنفيذ صيانة مع تحديد تاريخ التنفيذ يدوياً واسم المنفذ"""
+    """تنفيذ صيانة مع تحديد تاريخ التنفيذ واسم المنفذ (الفترة بالساعات محولة لأيام)"""
     df = sheets_edit.get(APP_CONFIG["MAINTENANCE_SHEET"])
     if df is None:
         return False, "لا توجد مهام صيانة"
@@ -1528,16 +1531,12 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
     if not mask.any():
         return False, "المهمة غير موجودة"
     idx = df[mask].index[0]
-    period = df.loc[idx, "الفترة_بالأيام"]
-    
-    # تحديث آخر تنفيذ بالتاريخ المحدد
+    period_days = df.loc[idx, "الفترة_بالأيام"]  # قيمة عشرية
     df.loc[idx, "آخر_تنفيذ"] = pd.to_datetime(execution_date)
-    # حساب التاريخ التالي = تاريخ التنفيذ + الفترة
-    next_date = execution_date + timedelta(days=period)
+    next_date = execution_date + timedelta(days=period_days)
     df.loc[idx, "التاريخ_التالي"] = next_date
     
     warning_msg = ""
-    # تسجيل اسم المنفذ والتفاصيل في الملاحظات
     old_notes = df.loc[idx, "ملاحظات"]
     new_entry = f"{execution_date.strftime('%Y-%m-%d')} | تم بواسطة: {performed_by}"
     if used_spare_part and used_quantity > 0:
@@ -1550,48 +1549,11 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
             if cp["اسم القطعة"] == used_spare_part:
                 warning_msg = f"⚠️ **تحذير:** القطعة '{used_spare_part}' ضرورية وأصبح رصيدها {new_qty} (أقل من 1). يرجى إعادة التوريد."
                 break
-    
     if image_url:
         new_entry += f" | صورة: {image_url}"
-    
     df.loc[idx, "ملاحظات"] = (old_notes + "\n" + new_entry) if old_notes else new_entry
-    
     sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = df
     return True, f"تم تنفيذ الصيانة '{task_name}' بتاريخ {execution_date.strftime('%Y-%m-%d')} بواسطة {performed_by}. التاريخ التالي: {next_date.strftime('%Y-%m-%d')}" + (f" {warning_msg}" if warning_msg else "")
-def add_maintenance_as_event(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
-    """إضافة سجل في جدول الأعطال لتسجيل تنفيذ الصيانة مع اسم المنفذ"""
-    target_sheet = None
-    target_df = None
-    for sheet_name, df in sheets_edit.items():
-        if sheet_name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
-            if equipment_name in get_equipment_list_from_sheet(df):
-                target_sheet = sheet_name
-                target_df = df
-                break
-    
-    if target_sheet is None:
-        return False, f"لم يتم العثور على قسم يحتوي على المعدة '{equipment_name}'"
-    
-    spare_part_used = f"{used_spare_part} (كمية {used_quantity})" if used_spare_part else ""
-    new_row = {
-        "مده الاصلاح": 0,
-        "التاريخ": execution_date.strftime("%Y-%m-%d"),
-        "المعدة": equipment_name,
-        "الحدث/العطل": f"صيانة وقائية: {task_name}",
-        "الإجراء التصحيحي": f"تم تنفيذ الصيانة الدورية '{task_name}' بواسطة {performed_by}",
-        "تم بواسطة": performed_by,
-        "قطع غيار مستخدمة": spare_part_used,
-        "نوع العطل": "صيانة وقائية",
-        "قدرة الفني (حل/تفكير/مبادرة/قرار)": 5,
-        "الالتزام بتعليمات السلامة": "ملتزم بالكامل",
-        "رابط الصورة": image_url or ""
-    }
-    for col in target_df.columns:
-        if col not in new_row:
-            new_row[col] = ""
-    new_row_df = pd.DataFrame([new_row])
-    sheets_edit[target_sheet] = pd.concat([target_df, new_row_df], ignore_index=True)
-    return True, f"تم تسجيل الصيانة كحدث في قسم '{target_sheet}' بواسطة {performed_by}"
 def preventive_maintenance_tab(sheets_edit):
     st.header("🛠 الصيانة الوقائية")
     st.info("إدارة بنود الصيانة الدورية. يمكنك تنفيذ الصيانة يدوياً مع تحديد تاريخ واسم المنفذ، وسيتم تحديث التاريخ التالي تلقائياً. يمكنك أيضاً تسجيل الصيانة كحدث عطل لربطها بسجل الأعطال.")
@@ -1755,22 +1717,14 @@ def preventive_maintenance_tab(sheets_edit):
                     else:
                         st.error(msg)
     
-    st.markdown("---")
+            st.markdown("---")
     st.subheader("➕ إضافة بند صيانة جديد")
     with st.form(key="add_maintenance_form"):
         col1, col2 = st.columns(2)
         with col1:
-            task_type = st.selectbox("نوع الصيانة:", ["يومية", "أسبوعية", "شهرية", "سنوية"])
             task_name = st.text_input("اسم البند (مثال: فحص الزيت, تنظيف الفلاتر):")
-            if task_type == "يومية":
-                period_days = 1
-            elif task_type == "أسبوعية":
-                period_days = 7
-            elif task_type == "شهرية":
-                period_days = 30
-            else:
-                period_days = 365
-            st.caption(f"الفترة: {period_days} يوم")
+            period_hours = st.number_input("⏱️ عدد الساعات بين الصيانة:", min_value=1, step=1, value=24, help="مثال: 24 = يوم، 168 = أسبوع، 720 = شهر تقريباً، 8760 = سنة")
+            st.caption(f"✅ الفترة: {period_hours} ساعة = {period_hours/24:.2f} يوم")
             task_image = st.file_uploader("🖼️ صورة توضيحية للصيانة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], key="maintenance_task_image")
         with col2:
             notes = st.text_area("ملاحظات:")
@@ -1788,7 +1742,7 @@ def preventive_maintenance_tab(sheets_edit):
                         st.success("✅ تم رفع الصورة التوضيحية بنجاح!")
                     else:
                         st.warning("⚠️ فشل رفع الصورة")
-                sheets_edit = add_maintenance_task(sheets_edit, selected_equipment, task_type, task_name, period_days, notes, default_spare, image_url)
+                sheets_edit = add_maintenance_task(sheets_edit, selected_equipment, task_name, period_hours, notes, default_spare, image_url)
                 if save_and_push_to_github(sheets_edit, f"إضافة بند صيانة '{task_name}' لـ {selected_equipment}"):
                     st.success("✅ تم إضافة بند الصيانة بنجاح")
                     st.rerun()
