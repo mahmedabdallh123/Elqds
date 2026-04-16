@@ -1553,7 +1553,43 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
         new_entry += f" | صورة: {image_url}"
     df.loc[idx, "ملاحظات"] = (old_notes + "\n" + new_entry) if old_notes else new_entry
     sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = df
-    return True, f"تم تنفيذ الصيانة '{task_name}' بتاريخ {execution_date.strftime('%Y-%m-%d')} بواسطة {performed_by}. التاريخ التالي: {next_date.strftime('%Y-%m-%d')}" + (f" {warning_msg}" if warning_msg else "")
+   return True, f"تم تنفيذ الصيانة '{task_name}' بتاريخ {execution_date.strftime('%Y-%m-%d')} بواسطة {performed_by}. التاريخ التالي: {next_date.strftime('%Y-%m-%d')}" + (f" {warning_msg}" if warning_msg else "")
+
+def add_maintenance_as_event(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
+    """إضافة سجل في جدول الأعطال لتسجيل تنفيذ الصيانة مع اسم المنفذ"""
+    target_sheet = None
+    target_df = None
+    for sheet_name, df in sheets_edit.items():
+        if sheet_name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
+            if equipment_name in get_equipment_list_from_sheet(df):
+                target_sheet = sheet_name
+                target_df = df
+                break
+    
+    if target_sheet is None:
+        return False, f"لم يتم العثور على قسم يحتوي على المعدة '{equipment_name}'"
+    
+    spare_part_used = f"{used_spare_part} (كمية {used_quantity})" if used_spare_part else ""
+    new_row = {
+        "مده الاصلاح": 0,
+        "التاريخ": execution_date.strftime("%Y-%m-%d"),
+        "المعدة": equipment_name,
+        "الحدث/العطل": f"صيانة وقائية: {task_name}",
+        "الإجراء التصحيحي": f"تم تنفيذ الصيانة الدورية '{task_name}' بواسطة {performed_by}",
+        "تم بواسطة": performed_by,
+        "قطع غيار مستخدمة": spare_part_used,
+        "نوع العطل": "صيانة وقائية",
+        "قدرة الفني (حل/تفكير/مبادرة/قرار)": 5,
+        "الالتزام بتعليمات السلامة": "ملتزم بالكامل",
+        "رابط الصورة": image_url or ""
+    }
+    for col in target_df.columns:
+        if col not in new_row:
+            new_row[col] = ""
+    new_row_df = pd.DataFrame([new_row])
+    sheets_edit[target_sheet] = pd.concat([target_df, new_row_df], ignore_index=True)
+    return True, f"تم تسجيل الصيانة كحدث في قسم '{target_sheet}' بواسطة {performed_by}"
+
 def preventive_maintenance_tab(sheets_edit):
     st.header("🛠 الصيانة الوقائية")
     st.info("إدارة بنود الصيانة الدورية. يمكنك تنفيذ الصيانة يدوياً مع تحديد تاريخ واسم المنفذ، وسيتم تحديث التاريخ التالي تلقائياً. يمكنك أيضاً تسجيل الصيانة كحدث عطل لربطها بسجل الأعطال.")
