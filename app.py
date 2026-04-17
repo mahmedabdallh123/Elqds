@@ -1823,6 +1823,7 @@ def manage_data_edit(sheets_edit):
 
 
 # ------------------------------- الواجهة الرئيسية -------------------------------
+# ------------------------------- الواجهة الرئيسية -------------------------------
 with st.sidebar:
     st.header("الجلسة")
     if not st.session_state.get("logged_in"):
@@ -1836,36 +1837,15 @@ with st.sidebar:
             mins, secs = divmod(int(rem.total_seconds()), 60)
             st.success(f"👋 {username} | ⏳ {mins:02d}:{secs:02d}")
         st.markdown("---")
-        if st.button("🔄 تحديث من "):
+        if st.button("🔄 تحديث من GitHub"):
             if fetch_from_github_requests():
                 st.rerun()
-        if st.button("تنظيف"):
+        if st.button("🗑 مسح الكاش"):
             st.cache_data.clear()
             st.rerun()
         if st.button("🚪 تسجيل الخروج"):
             logout_action()
-        st.markdown("---")
-        st.subheader("⚠️ قطع غيار حرجة")
-        critical = get_critical_spare_parts()
-        if critical:
-            for part in critical:
-                st.error(f"🔴 {part['اسم القطعة']} (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {part['حد_الإنذار']}")
-        else:
-            st.success("✅ لا توجد قطع غيار حرجة")
-        st.markdown("---")
-        st.subheader("🔧 صيانة مستحقة")
-        overdue, upcoming = get_upcoming_maintenance(3)
-        if not overdue.empty:
-            st.warning("🟡 صيانة متأخرة:")
-            for _, row in overdue.iterrows():
-                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (تاريخ مستحق: {row['التاريخ_التالي'].strftime('%Y-%m-%d')})")
-        if not upcoming.empty:
-            st.info("🟢 صيانة قادمة خلال 3 أيام:")
-            for _, row in upcoming.iterrows():
-                days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
-                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
-        if overdue.empty and upcoming.empty:
-            st.success("✅ لا توجد صيانات مستحقة حالياً")
+        # تم إزالة أقسام قطع الغيار الحرجة والصيانة المستحقة من هنا
 
 all_sheets = load_all_sheets()
 sheets_edit = load_sheets_for_edit()
@@ -1876,7 +1856,8 @@ user_role = st.session_state.get("user_role", "viewer")
 user_permissions = st.session_state.get("user_permissions", ["view"])
 can_edit = (user_role == "admin" or user_role == "editor" or "edit" in user_permissions)
 
-tabs_list = ["🔍 بحث متقدم", "📊 تحليل الأعطال"]
+# تبويبات جديدة: بحث متقدم، تحليل الأعطال، إشعارات، وتعديل وإدارة البيانات (إذا كان مستخدمًا معدلاً)
+tabs_list = ["🔍 بحث متقدم", "📊 تحليل الأعطال", "🔔 الإشعارات"]
 if can_edit:
     tabs_list.append("🛠 تعديل وإدارة البيانات")
 
@@ -1888,8 +1869,36 @@ with tabs[0]:
 with tabs[1]:
     failures_analysis_tab(all_sheets)
 
-if can_edit and len(tabs) > 2:
-    with tabs[2]:
+with tabs[2]:
+    st.header("🔔 الإشعارات")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("⚠️ قطع غيار حرجة")
+        critical = get_critical_spare_parts()
+        if critical:
+            for part in critical:
+                st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {part['حد_الإنذار']}")
+        else:
+            st.success("✅ لا توجد قطع غيار حرجة")
+    with col2:
+        st.subheader("🔧 صيانة مستحقة")
+        overdue, upcoming = get_upcoming_maintenance(3)
+        if not overdue.empty:
+            st.warning("🟡 صيانة متأخرة:")
+            for _, row in overdue.iterrows():
+                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (تاريخ مستحق: {row['التاريخ_التالي'].strftime('%Y-%m-%d')})")
+        else:
+            st.info("✅ لا توجد صيانات متأخرة")
+        if not upcoming.empty:
+            st.info("🟢 صيانة قادمة خلال 3 أيام:")
+            for _, row in upcoming.iterrows():
+                days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
+                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
+        else:
+            st.info("✅ لا توجد صيانات قادمة")
+
+if can_edit and len(tabs) > 3:  # لأن هناك 4 تبويبات إذا كان المستخدم يعدل
+    with tabs[3]:
         sheets_edit = manage_data_edit(sheets_edit)
 
     # ------------------------------- دوال إدارة قطع الغيار -------------------------------
