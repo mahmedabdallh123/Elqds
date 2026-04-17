@@ -1841,7 +1841,7 @@ with st.sidebar:
         critical = get_critical_spare_parts()
         if critical:
             for part in critical:
-    st.error(f"🔴 {part['اسم القطعة']} (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {part['حد_الإنذار']}")
+                st.error(f"🔴 {part['اسم القطعة']} (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {part['حد_الإنذار']}")
         else:
             st.success("✅ لا توجد قطع غيار حرجة")
         st.markdown("---")
