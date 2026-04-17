@@ -1477,6 +1477,7 @@ def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
     st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة.")
 
+    # اختيار القسم أولاً
     sections = get_available_sections(sheets_edit)
     if not sections:
         st.warning("⚠️ لا توجد أقسام بها ماكينات. أضف قسم وماكينات أولاً.")
@@ -1495,20 +1496,20 @@ def manage_spare_parts_tab(sheets_edit):
     view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="spare_view_mode")
 
     st.subheader("📋 قائمة قطع الغيار")
+    # فلترة حسب الماكينة المختارة
     filtered_df = spare_df[spare_df["اسم الماكينة"] == selected_equipment].copy()
 
     if filtered_df.empty:
         st.info(f"لا توجد قطع غيار مسجلة للماكينة '{selected_equipment}'.")
     else:
+        # فلتر إضافي حسب اسم القطعة
         part_name_filter = st.text_input("فلتر حسب اسم القطعة:", placeholder="اكتب جزءاً من الاسم...", key="spare_name_filter")
         if part_name_filter:
             filtered_df = filtered_df[filtered_df["اسم القطعة"].str.contains(part_name_filter, case=False, na=False)]
 
         if view_mode == "جدول":
-            display_cols = [c for c in filtered_df.columns if c not in ["رابط_الصورة", "حد_الإنذار"]]
-            # إضافة عمود الحالة
-            filtered_df["الحالة"] = filtered_df.apply(lambda row: "🔴 حرجة" if row["الرصيد الموجود"] < row["حد_الإنذار"] else "🟢 جيد", axis=1)
-            st.dataframe(filtered_df[display_cols + ["الحالة"]], use_container_width=True, height=400)
+            display_cols = [c for c in filtered_df.columns if c != "رابط_الصورة"]
+            st.dataframe(filtered_df[display_cols], use_container_width=True, height=400)
         else:
             cols_per_row = 3
             for i in range(0, len(filtered_df), cols_per_row):
@@ -1531,11 +1532,9 @@ def manage_spare_parts_tab(sheets_edit):
                                 st.markdown(f"**المقاس:** {row['المقاس']}")
                                 st.markdown(f"**الرصيد:** {row['الرصيد الموجود']}")
                                 st.markdown(f"**حد الإنذار:** {row['حد_الإنذار']}")
-                                if row["الرصيد الموجود"] < row["حد_الإنذار"]:
-                                    st.error("⚠️ حرجة (رصيد أقل من الحد)")
-                                if row.get('مدة التوريد'):
-                                    st.markdown(f"**مدة التوريد:** {row['مدة التوريد']}")
+                                st.markdown(f"**مدة التوريد:** {row['مدة التوريد']}")
 
+    # إضافة قطعة غيار جديدة
     st.subheader("➕ إضافة قطعة غيار جديدة")
     with st.form(key="add_spare_part_form"):
         col1, col2 = st.columns(2)
@@ -1546,7 +1545,7 @@ def manage_spare_parts_tab(sheets_edit):
         with col2:
             initial_qty = st.number_input("📦 الرصيد الموجود:", min_value=0, step=1, value=0)
             lead_time = st.text_input("⏱️ مدة التوريد (أيام أو نص):")
-            warning_threshold = st.number_input("⚠️ الحد الأدنى للإنذار (عند الرصيد أقل من هذا الرقم يظهر تحذير):", min_value=0, step=1, value=1, help="مثال: 2 يعني إذا أصبح الرصيد 1 أو 0 يظهر تحذير")
+            warning_threshold = st.number_input("⚠️ الحد الأدنى للإنذار (يصبح حرجاً إذا قل الرصيد عن هذا الرقم):", min_value=0, step=1, value=1, help="مثال: 2 يعني أن القطعة تصبح حرجة عندما يصبح الرصيد أقل من 2")
         submitted = st.form_submit_button("✅ إضافة قطعة")
 
         if submitted:
@@ -1571,20 +1570,20 @@ def manage_spare_parts_tab(sheets_edit):
                         "الرصيد الموجود": initial_qty,
                         "مدة التوريد": lead_time,
                         "حد_الإنذار": warning_threshold,
-                        "ضرورية": "نعم" if warning_threshold > 0 else "لا",  # للتوافق مع القديم
+                        "ضرورية": "نعم" if warning_threshold > 0 else "لا",  # للتوافق القديم
                         "اسم الماكينة": selected_equipment,
                         "رابط_الصورة": image_url or ""
                     }])
                     new_spare_df = pd.concat([spare_df, new_row], ignore_index=True)
                     sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = new_spare_df
-                         if save_and_push_to_github(sheets_edit, f"إضافة قطعة غيار: {part_name} للماكينة {selected_equipment}"):
-                        # أضف هذا السطر
+                    if save_and_push_to_github(sheets_edit, f"إضافة قطعة غيار: {part_name} للماكينة {selected_equipment}"):
                         log_activity("add_spare_part", f"تم إضافة قطعة غيار '{part_name}' للماكينة {selected_equipment} (الرصيد: {initial_qty}, حد الإنذار: {warning_threshold})")
                         st.success("✅ تمت إضافة قطعة الغيار")
                         st.rerun()
                     else:
                         st.error("❌ فشل الحفظ")
 
+    # تعديل أو حذف قطعة
     st.subheader("✏️ تعديل أو حذف قطعة")
     if not filtered_df.empty:
         part_options = filtered_df["اسم القطعة"].tolist()
@@ -1595,12 +1594,12 @@ def manage_spare_parts_tab(sheets_edit):
             current_threshold = part_row["حد_الإنذار"]
             new_qty = st.number_input("تعديل الرصيد:", value=int(current_qty), step=1, key="edit_qty")
             new_threshold = st.number_input("تعديل حد الإنذار:", value=int(current_threshold), step=1, key="edit_threshold")
-            if st.button("💾 تحديث البيانات"):
+            if st.button("💾 تحديث الرصيد والحد"):
                 spare_df.loc[(spare_df["اسم القطعة"] == selected_part) & (spare_df["اسم الماكينة"] == selected_equipment), "الرصيد الموجود"] = new_qty
                 spare_df.loc[(spare_df["اسم القطعة"] == selected_part) & (spare_df["اسم الماكينة"] == selected_equipment), "حد_الإنذار"] = new_threshold
                 sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = spare_df
                 if save_and_push_to_github(sheets_edit, f"تحديث قطعة: {selected_part}"):
-                    st.success("تم تحديث البيانات")
+                    st.success("تم تحديث القطعة")
                     st.rerun()
             if st.button("🗑️ حذف القطعة", key="delete_part"):
                 spare_df = spare_df.drop(index=part_row.name)
