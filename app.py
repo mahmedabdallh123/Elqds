@@ -1853,6 +1853,8 @@ def manage_data_edit(sheets_edit):
     if sheets_edit is None:
         st.warning("الملف غير موجود. استخدم زر 'تحديث من GitHub' في الشريط الجانبي أولاً")
         return sheets_edit
+    
+    # التأكد من وجود شيتات النظام
     if APP_CONFIG["SPARE_PARTS_SHEET"] not in sheets_edit:
         sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = load_spare_parts()
     if APP_CONFIG["MAINTENANCE_SHEET"] not in sheets_edit:
@@ -1860,6 +1862,7 @@ def manage_data_edit(sheets_edit):
     
     tab_names = ["📋 عرض الأقسام", "📝 إضافة حدث عطل", "🔧 إدارة الماكينات", "➕ إضافة قسم جديد", "📦 قطع الغيار", "🛠 الصيانة الوقائية"]
     tabs_edit = st.tabs(tab_names)
+    
     with tabs_edit[0]:
         st.subheader("جميع الأقسام")
         if sheets_edit:
@@ -1880,22 +1883,41 @@ def manage_data_edit(sheets_edit):
                                     st.rerun()
             else:
                 st.info("لا توجد أقسام بعد")
+    
     with tabs_edit[1]:
         if sheets_edit:
-            sheet_name = st.selectbox("اختر القسم:", [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]], key="add_event_sheet")
-            sheets_edit = add_new_event(sheets_edit, sheet_name)
+            dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
+            if dept_names:
+                sheet_name = st.selectbox("اختر القسم:", dept_names, key="add_event_sheet")
+                sheets_edit = add_new_event(sheets_edit, sheet_name)
+            else:
+                st.warning("لا توجد أقسام لإضافة حدث عطل")
+    
     with tabs_edit[2]:
         if sheets_edit:
-            sheet_name = st.selectbox("اختر القسم:", [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]], key="manage_machines_sheet")
-            manage_machines(sheets_edit, sheet_name)
+            dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
+            if dept_names:
+                sheet_name = st.selectbox("اختر القسم:", dept_names, key="manage_machines_sheet")
+                manage_machines(sheets_edit, sheet_name)
+            else:
+                st.warning("لا توجد أقسام لإدارة الماكينات")
+    
     with tabs_edit[3]:
         sheets_edit = add_new_department(sheets_edit)
+    
     with tabs_edit[4]:
-        sheets_edit = manage_spare_parts_tab(sheets_edit)
+        try:
+            sheets_edit = manage_spare_parts_tab(sheets_edit)
+        except Exception as e:
+            st.error(f"خطأ في تبويب قطع الغيار: {e}")
+    
     with tabs_edit[5]:
-        sheets_edit = preventive_maintenance_tab(sheets_edit)
+        try:
+            sheets_edit = preventive_maintenance_tab(sheets_edit)
+        except Exception as e:
+            st.error(f"خطأ في تبويب الصيانة الوقائية: {e}")
+    
     return sheets_edit
-
 
 # ------------------------------- الواجهة الرئيسية -------------------------------
 # ------------------------------- الواجهة الرئيسية -------------------------------
