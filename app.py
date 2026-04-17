@@ -1829,10 +1829,10 @@ with st.sidebar:
             mins, secs = divmod(int(rem.total_seconds()), 60)
             st.success(f"👋 {username} | ⏳ {mins:02d}:{secs:02d}")
         st.markdown("---")
-        if st.button("🔄 تحديث من GitHub"):
+        if st.button("🔄 تحديث من "):
             if fetch_from_github_requests():
                 st.rerun()
-        if st.button("🗑 مسح الكاش"):
+        if st.button("تنظيف"):
             st.cache_data.clear()
             st.rerun()
         if st.button("🚪 تسجيل الخروج"):
