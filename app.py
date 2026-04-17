@@ -197,21 +197,25 @@ def get_tasks_for_equipment(equipment_name):
         return df
     return df[df["المعدة"] == equipment_name]
 
-def add_maintenance_task(sheets_edit, equipment, task_name, period_hours, notes="", default_spare="", image_url=None):
-    """إضافة بند صيانة جديد مع فترة بالساعات"""
+def add_maintenance_task(sheets_edit, equipment, task_name, period_hours, start_date=None, notes="", default_spare="", image_url=None):
+    """إضافة بند صيانة جديد مع فترة بالساعات وتاريخ بدء محدد"""
     df = sheets_edit.get(APP_CONFIG["MAINTENANCE_SHEET"])
     if df is None:
         df = pd.DataFrame(columns=APP_CONFIG["MAINTENANCE_COLUMNS"])
-    today = datetime.now().date()
-    # تحويل الساعات إلى أيام (عشري) لحساب التاريخ التالي
+    
+    # إذا لم يتم تحديد تاريخ البدء، استخدم تاريخ اليوم
+    if start_date is None:
+        start_date = datetime.now().date()
+    
     period_days = period_hours / 24.0
-    next_date = today + timedelta(days=period_days)
+    next_date = start_date + timedelta(days=period_days)
+    
     new_row = pd.DataFrame([{
         "المعدة": equipment,
-        "نوع_الصيانة": f"{period_hours} ساعة",  # نص وصفي
+        "نوع_الصيانة": f"{period_hours} ساعة",
         "اسم_البند": task_name,
-        "الفترة_بالأيام": period_days,  # قيمة عشرية
-        "آخر_تنفيذ": pd.NaT,
+        "الفترة_بالأيام": period_days,
+        "آخر_تنفيذ": pd.NaT,  # لا يوجد تنفيذ سابق
         "التاريخ_التالي": next_date,
         "ملاحظات": notes,
         "قطع_غيار_مستخدمة_افتراضية": default_spare,
@@ -1732,7 +1736,7 @@ def preventive_maintenance_tab(sheets_edit):
                     else:
                         st.error(msg)
     
-    st.markdown("---")
+        st.markdown("---")
     st.subheader("➕ إضافة بند صيانة جديد")
     with st.form(key="add_maintenance_form"):
         col1, col2 = st.columns(2)
@@ -1740,6 +1744,14 @@ def preventive_maintenance_tab(sheets_edit):
             task_name = st.text_input("اسم البند (مثال: فحص الزيت, تنظيف الفلاتر):")
             period_hours = st.number_input("⏱️ عدد الساعات بين الصيانة:", min_value=1, step=1, value=24, help="مثال: 24 = يوم، 168 = أسبوع، 720 = شهر تقريباً، 8760 = سنة")
             st.caption(f"✅ الفترة: {period_hours} ساعة = {period_hours/24:.2f} يوم")
+            
+            # إضافة تاريخ البدء
+            use_custom_start = st.checkbox("📅 تحديد تاريخ بدء الصيانة (يبدأ العد منه)", value=False, help="إذا لم تحدد، سيبدأ العد من اليوم")
+            if use_custom_start:
+                start_date = st.date_input("تاريخ البدء:", value=datetime.now().date(), key="maintenance_start_date")
+            else:
+                start_date = None
+            
             task_image = st.file_uploader("🖼️ صورة توضيحية للصيانة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], key="maintenance_task_image")
         with col2:
             notes = st.text_area("ملاحظات:")
@@ -1757,7 +1769,7 @@ def preventive_maintenance_tab(sheets_edit):
                         st.success("✅ تم رفع الصورة التوضيحية بنجاح!")
                     else:
                         st.warning("⚠️ فشل رفع الصورة")
-                sheets_edit = add_maintenance_task(sheets_edit, selected_equipment, task_name, period_hours, notes, default_spare, image_url)
+                sheets_edit = add_maintenance_task(sheets_edit, selected_equipment, task_name, period_hours, start_date, notes, default_spare, image_url)
                 if save_and_push_to_github(sheets_edit, f"إضافة بند صيانة '{task_name}' لـ {selected_equipment}"):
                     st.success("✅ تم إضافة بند الصيانة بنجاح")
                     st.rerun()
