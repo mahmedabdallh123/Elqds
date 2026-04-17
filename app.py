@@ -1847,75 +1847,103 @@ def preventive_maintenance_tab(sheets_edit):
 
 # ------------------------------- دالة إدارة البيانات الرئيسية -------------------------------
 def manage_data_edit(sheets_edit):
+    st.write("🟢 بدء تحميل تبويب تعديل البيانات...")  # رسالة تأكيد
     if sheets_edit is None:
         st.warning("الملف غير موجود. استخدم زر 'تحديث من GitHub' في الشريط الجانبي أولاً")
         return sheets_edit
     
     # التأكد من وجود شيتات النظام
-    if APP_CONFIG["SPARE_PARTS_SHEET"] not in sheets_edit:
-        sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = load_spare_parts()
-    if APP_CONFIG["MAINTENANCE_SHEET"] not in sheets_edit:
-        sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = load_maintenance_tasks()
+    try:
+        if APP_CONFIG["SPARE_PARTS_SHEET"] not in sheets_edit:
+            sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = load_spare_parts()
+        if APP_CONFIG["MAINTENANCE_SHEET"] not in sheets_edit:
+            sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = load_maintenance_tasks()
+    except Exception as e:
+        st.error(f"❌ خطأ في تحميل شيتات النظام: {e}")
+        return sheets_edit
     
     tab_names = ["📋 عرض الأقسام", "📝 إضافة حدث عطل", "🔧 إدارة الماكينات", "➕ إضافة قسم جديد", "📦 قطع الغيار", "🛠 الصيانة الوقائية"]
     tabs_edit = st.tabs(tab_names)
     
+    # تبويب عرض الأقسام
     with tabs_edit[0]:
         st.subheader("جميع الأقسام")
-        if sheets_edit:
-            dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
-            if dept_names:
-                dept_tabs = st.tabs(dept_names)
-                for i, dept_name in enumerate(dept_names):
-                    with dept_tabs[i]:
-                        df = sheets_edit[dept_name]
-                        display_sheet_data(dept_name, df, f"view_{dept_name}", sheets_edit)
-                        with st.expander("✏️ تعديل مباشر للبيانات", expanded=False):
-                            edited_df = st.data_editor(df.astype(str), num_rows="dynamic", use_container_width=True, key=f"editor_{dept_name}")
-                            if st.button(f"💾 حفظ", key=f"save_{dept_name}"):
-                                sheets_edit[dept_name] = edited_df.astype(object)
-                                if save_and_push_to_github(sheets_edit, f"تعديل بيانات في قسم {dept_name}"):
-                                    st.cache_data.clear()
-                                    st.success("تم الحفظ والرفع إلى GitHub!")
-                                    st.rerun()
+        try:
+            if sheets_edit:
+                dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
+                if dept_names:
+                    dept_tabs = st.tabs(dept_names)
+                    for i, dept_name in enumerate(dept_names):
+                        with dept_tabs[i]:
+                            df = sheets_edit[dept_name]
+                            display_sheet_data(dept_name, df, f"view_{dept_name}", sheets_edit)
+                            with st.expander("✏️ تعديل مباشر للبيانات", expanded=False):
+                                edited_df = st.data_editor(df.astype(str), num_rows="dynamic", use_container_width=True, key=f"editor_{dept_name}")
+                                if st.button(f"💾 حفظ", key=f"save_{dept_name}"):
+                                    sheets_edit[dept_name] = edited_df.astype(object)
+                                    if save_and_push_to_github(sheets_edit, f"تعديل بيانات في قسم {dept_name}"):
+                                        st.cache_data.clear()
+                                        st.success("تم الحفظ والرفع إلى GitHub!")
+                                        st.rerun()
+                else:
+                    st.info("لا توجد أقسام بعد")
             else:
-                st.info("لا توجد أقسام بعد")
+                st.info("لا توجد بيانات")
+        except Exception as e:
+            st.error(f"❌ خطأ في عرض الأقسام: {e}")
     
+    # تبويب إضافة حدث عطل
     with tabs_edit[1]:
-        if sheets_edit:
-            dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
-            if dept_names:
-                sheet_name = st.selectbox("اختر القسم:", dept_names, key="add_event_sheet")
-                sheets_edit = add_new_event(sheets_edit, sheet_name)
-            else:
-                st.warning("لا توجد أقسام لإضافة حدث عطل")
+        try:
+            if sheets_edit:
+                dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
+                if dept_names:
+                    sheet_name = st.selectbox("اختر القسم:", dept_names, key="add_event_sheet")
+                    sheets_edit = add_new_event(sheets_edit, sheet_name)
+                else:
+                    st.warning("لا توجد أقسام لإضافة حدث عطل")
+        except Exception as e:
+            st.error(f"❌ خطأ في إضافة حدث عطل: {e}")
     
+    # تبويب إدارة الماكينات
     with tabs_edit[2]:
-        if sheets_edit:
-            dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
-            if dept_names:
-                sheet_name = st.selectbox("اختر القسم:", dept_names, key="manage_machines_sheet")
-                manage_machines(sheets_edit, sheet_name)
-            else:
-                st.warning("لا توجد أقسام لإدارة الماكينات")
+        try:
+            if sheets_edit:
+                dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
+                if dept_names:
+                    sheet_name = st.selectbox("اختر القسم:", dept_names, key="manage_machines_sheet")
+                    manage_machines(sheets_edit, sheet_name)
+                else:
+                    st.warning("لا توجد أقسام لإدارة الماكينات")
+        except Exception as e:
+            st.error(f"❌ خطأ في إدارة الماكينات: {e}")
     
+    # تبويب إضافة قسم جديد
     with tabs_edit[3]:
-        sheets_edit = add_new_department(sheets_edit)
+        try:
+            sheets_edit = add_new_department(sheets_edit)
+        except Exception as e:
+            st.error(f"❌ خطأ في إضافة قسم جديد: {e}")
     
+    # تبويب قطع الغيار
     with tabs_edit[4]:
         try:
             sheets_edit = manage_spare_parts_tab(sheets_edit)
         except Exception as e:
-            st.error(f"خطأ في تبويب قطع الغيار: {e}")
+            st.error(f"❌ خطأ في تبويب قطع الغيار: {e}")
+            import traceback
+            st.code(traceback.format_exc())
     
+    # تبويب الصيانة الوقائية
     with tabs_edit[5]:
         try:
             sheets_edit = preventive_maintenance_tab(sheets_edit)
         except Exception as e:
-            st.error(f"خطأ في تبويب الصيانة الوقائية: {e}")
+            st.error(f"❌ خطأ في تبويب الصيانة الوقائية: {e}")
+            import traceback
+            st.code(traceback.format_exc())
     
     return sheets_edit
-
 # ------------------------------- الواجهة الرئيسية -------------------------------
 # ------------------------------- الواجهة الرئيسية -------------------------------
 with st.sidebar:
