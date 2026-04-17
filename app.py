@@ -1107,7 +1107,17 @@ def get_equipment_list_from_sheet(df):
     equipment = df["المعدة"].dropna().unique()
     equipment = [str(e).strip() for e in equipment if str(e).strip() != ""]
     return sorted(equipment)
-
+def get_available_sections(sheets_edit):
+    """إرجاع قائمة الأقسام (الشيتات) التي تحتوي على ماكينات، مع استبعاد شيتات النظام"""
+    sections = []
+    for sheet_name, df in sheets_edit.items():
+        # استبعاد شيتات النظام
+        if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
+            continue
+        # التأكد من وجود عمود 'المعدة' وبه بيانات
+        if "المعدة" in df.columns and not df["المعدة"].dropna().empty:
+            sections.append(sheet_name)
+    return sections
 def add_equipment_to_sheet_data(sheets_edit, sheet_name, new_equipment):
     if sheet_name not in sheets_edit:
         return False, "القسم غير موجود"
@@ -1442,18 +1452,22 @@ def manage_spare_parts_tab(sheets_edit):
     else:
         st.info("لا توجد قطع غيار مسجلة بعد")
     
-    st.subheader("➕ إضافة قطعة غيار جديدة")
+       st.subheader("➕ إضافة قطعة غيار جديدة")
     with st.form(key="add_spare_part_form"):
         col1, col2 = st.columns(2)
         with col1:
-            all_equipment = set()
-            for sheet_name, df_sheet in sheets_edit.items():
-                if sheet_name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
-                    all_equipment.update(get_equipment_list_from_sheet(df_sheet))
-            equipment_list = sorted(all_equipment)
-            if not equipment_list:
-                st.warning("⚠️ لا توجد ماكينات مسجلة بعد. أضف ماكينات أولاً.")
-            selected_equipment = st.selectbox("🔧 الماكينة:", equipment_list if equipment_list else [""])
+            # اختيار القسم أولاً
+            sections = get_available_sections(sheets_edit)
+            if not sections:
+                st.warning("⚠️ لا توجد أقسام بها ماكينات. أضف أقساماً وماكينات أولاً.")
+            selected_section = st.selectbox("🏭 اختيار القسم:", sections if sections else [""], key="spare_section")
+            # جلب ماكينات القسم المختار
+            if selected_section and selected_section in sheets_edit:
+                df_section = sheets_edit[selected_section]
+                equipment_list = get_equipment_list_from_sheet(df_section)
+            else:
+                equipment_list = []
+            selected_equipment = st.selectbox("🔧 الماكينة:", equipment_list if equipment_list else [""], key="spare_equipment")
             part_name = st.text_input("🔩 اسم القطعة:")
             part_size = st.text_input("📏 المقاس:")
             part_image = st.file_uploader("🖼️ صورة القطعة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], key="spare_part_image")
@@ -1463,8 +1477,8 @@ def manage_spare_parts_tab(sheets_edit):
             is_critical = st.checkbox("⚠️ قطعة ضرورية (إذا أصبح الرصيد أقل من 1 سيظهر إنذار)")
         submitted = st.form_submit_button("✅ إضافة قطعة")
         if submitted:
-            if not selected_equipment or not part_name:
-                st.error("❌ الرجاء إدخال الماكينة واسم القطعة")
+            if not selected_section or not selected_equipment or not part_name:
+                st.error("❌ الرجاء اختيار القسم والماكينة وإدخال اسم القطعة")
             else:
                 existing = spare_df[(spare_df["اسم القطعة"] == part_name) & (spare_df["اسم الماكينة"] == selected_equipment)]
                 if not existing.empty:
@@ -1489,7 +1503,7 @@ def manage_spare_parts_tab(sheets_edit):
                     }])
                     new_spare_df = pd.concat([spare_df, new_row], ignore_index=True)
                     sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = new_spare_df
-                    if save_and_push_to_github(sheets_edit, f"إضافة قطعة غيار: {part_name} للماكينة {selected_equipment}"):
+                    if save_and_push_to_github(sheets_edit, f"إضافة قطعة غيار: {part_name} للماكينة {selected_equipment} (قسم {selected_section})"):
                         st.success("✅ تمت إضافة قطعة الغيار")
                         st.rerun()
                     else:
@@ -1737,29 +1751,39 @@ def preventive_maintenance_tab(sheets_edit):
                         st.error(msg)
     
         st.markdown("---")
+        st.markdown("---")
     st.subheader("➕ إضافة بند صيانة جديد")
     with st.form(key="add_maintenance_form"):
         col1, col2 = st.columns(2)
         with col1:
+            # اختيار القسم أولاً
+            sections = get_available_sections(sheets_edit)
+            if not sections:
+                st.warning("⚠️ لا توجد أقسام بها ماكينات. أضف أقساماً وماكينات أولاً.")
+            selected_section = st.selectbox("🏭 اختيار القسم:", sections if sections else [""], key="maintenance_section")
+            # جلب ماكينات القسم المختار
+            if selected_section and selected_section in sheets_edit:
+                df_section = sheets_edit[selected_section]
+                equipment_list = get_equipment_list_from_sheet(df_section)
+            else:
+                equipment_list = []
+            selected_equipment = st.selectbox("🔧 الماكينة:", equipment_list if equipment_list else [""], key="maintenance_equipment")
             task_name = st.text_input("اسم البند (مثال: فحص الزيت, تنظيف الفلاتر):")
             period_hours = st.number_input("⏱️ عدد الساعات بين الصيانة:", min_value=1, step=1, value=24, help="مثال: 24 = يوم، 168 = أسبوع، 720 = شهر تقريباً، 8760 = سنة")
             st.caption(f"✅ الفترة: {period_hours} ساعة = {period_hours/24:.2f} يوم")
-            
-            # إضافة تاريخ البدء
-            use_custom_start = st.checkbox("📅 تحديد تاريخ بدء الصيانة (يبدأ العد منه)", value=False, help="إذا لم تحدد، سيبدأ العد من اليوم")
+            use_custom_start = st.checkbox("📅 تحديد تاريخ بدء الصيانة (يبدأ العد منه)", value=False)
             if use_custom_start:
                 start_date = st.date_input("تاريخ البدء:", value=datetime.now().date(), key="maintenance_start_date")
             else:
                 start_date = None
-            
             task_image = st.file_uploader("🖼️ صورة توضيحية للصيانة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], key="maintenance_task_image")
         with col2:
             notes = st.text_area("ملاحظات:")
             default_spare = st.text_input("قطعة غيار افتراضية (اختياري):", placeholder="اسم القطعة التي تستخدم عادة في هذه الصيانة")
         submitted = st.form_submit_button("➕ إضافة بند صيانة")
         if submitted:
-            if not task_name:
-                st.error("❌ الرجاء إدخال اسم البند")
+            if not selected_section or not selected_equipment or not task_name:
+                st.error("❌ الرجاء اختيار القسم والماكينة وإدخال اسم البند")
             else:
                 image_url = None
                 if task_image is not None:
@@ -1770,7 +1794,7 @@ def preventive_maintenance_tab(sheets_edit):
                     else:
                         st.warning("⚠️ فشل رفع الصورة")
                 sheets_edit = add_maintenance_task(sheets_edit, selected_equipment, task_name, period_hours, start_date, notes, default_spare, image_url)
-                if save_and_push_to_github(sheets_edit, f"إضافة بند صيانة '{task_name}' لـ {selected_equipment}"):
+                if save_and_push_to_github(sheets_edit, f"إضافة بند صيانة '{task_name}' لـ {selected_equipment} (قسم {selected_section})"):
                     st.success("✅ تم إضافة بند الصيانة بنجاح")
                     st.rerun()
                 else:
