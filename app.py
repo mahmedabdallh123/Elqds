@@ -133,6 +133,10 @@ def load_spare_parts():
                 df[col] = ""
         df = df.fillna("")
         df["الرصيد الموجود"] = pd.to_numeric(df["الرصيد الموجود"], errors='coerce').fillna(0)
+        if "حد_الإنذار" not in df.columns:
+            df["حد_الإنذار"] = 1
+        else:
+            df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
         return df
     except Exception:
         return pd.DataFrame(columns=APP_CONFIG["SPARE_PARTS_COLUMNS"])
@@ -166,7 +170,11 @@ def get_critical_spare_parts():
     df = load_spare_parts()
     if df.empty:
         return []
-    # تعتبر القطعة حرجة إذا كان الرصيد أقل من حد_الإنذار
+    # تحويل العمودين إلى أرقام (مع التعامل مع الأخطاء)
+    df["الرصيد الموجود"] = pd.to_numeric(df["الرصيد الموجود"], errors='coerce').fillna(0)
+    df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
+    # التأكد من أن حد الإنذار لا يقل عن 0
+    df["حد_الإنذار"] = df["حد_الإنذار"].clip(lower=0)
     critical = df[df["الرصيد الموجود"] < df["حد_الإنذار"]]
     return critical[["اسم القطعة", "اسم الماكينة", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
 # ------------------------------- دوال الصيانة الوقائية -------------------------------
