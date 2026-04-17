@@ -177,6 +177,72 @@ def get_critical_spare_parts():
     df["حد_الإنذار"] = df["حد_الإنذار"].clip(lower=0)
     critical = df[df["الرصيد الموجود"] < df["حد_الإنذار"]]
     return critical[["اسم القطعة", "اسم الماكينة", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
+
+# ------------------------------- دوال سجل النشاطات -------------------------------
+ACTIVITY_LOG_FILE = "activity_log.json"
+
+def log_activity(action_type, details, username=None):
+    """تسجيل حدث في سجل النشاطات"""
+    if username is None:
+        username = st.session_state.get("username", "غير معروف")
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "username": username,
+        "action_type": action_type,
+        "details": details
+    }
+    log = []
+    if os.path.exists(ACTIVITY_LOG_FILE):
+        try:
+            with open(ACTIVITY_LOG_FILE, "r", encoding="utf-8") as f:
+                log = json.load(f)
+        except:
+            log = []
+    log.append(log_entry)
+    if len(log) > 100:
+        log = log[-100:]
+    with open(ACTIVITY_LOG_FILE, "w", encoding="utf-8") as f:
+        json.dump(log, f, indent=2, ensure_ascii=False)
+    # رفع إلى GitHub إذا أمكن
+    if GITHUB_AVAILABLE:
+        try:
+            g = Github(GITHUB_TOKEN)
+            repo = g.get_repo(APP_CONFIG["REPO_NAME"])
+            content = json.dumps(log, indent=2, ensure_ascii=False)
+            try:
+                contents = repo.get_contents(ACTIVITY_LOG_FILE, ref=APP_CONFIG["BRANCH"])
+                repo.update_file(ACTIVITY_LOG_FILE, "تحديث سجل النشاطات", content, contents.sha, branch=APP_CONFIG["BRANCH"])
+            except:
+                repo.create_file(ACTIVITY_LOG_FILE, "إنشاء سجل النشاطات", content, branch=APP_CONFIG["BRANCH"])
+        except:
+            pass
+
+def load_activity_log():
+    """تحميل سجل النشاطات من الملف المحلي أو GitHub"""
+    if GITHUB_AVAILABLE:
+        try:
+            g = Github(GITHUB_TOKEN)
+            repo = g.get_repo(APP_CONFIG["REPO_NAME"])
+            try:
+                contents = repo.get_contents(ACTIVITY_LOG_FILE, ref=APP_CONFIG["BRANCH"])
+                import base64
+                content = base64.b64decode(contents.content).decode('utf-8')
+                log = json.loads(content)
+                with open(ACTIVITY_LOG_FILE, "w", encoding="utf-8") as f:
+                    f.write(content)
+                return log
+            except:
+                pass
+        except:
+            pass
+    if os.path.exists(ACTIVITY_LOG_FILE):
+        try:
+            with open(ACTIVITY_LOG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
 # ------------------------------- دوال الصيانة الوقائية -------------------------------
 def load_maintenance_tasks():
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
@@ -230,6 +296,8 @@ def add_maintenance_task(sheets_edit, equipment, task_name, period_hours, start_
     }])
     new_df = pd.concat([df, new_row], ignore_index=True)
     sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = new_df
+    # أضف هذا السطر
+    log_activity("add_maintenance_task", f"تم إضافة بند صيانة '{task_name}' للماكينة {equipment} (فترة {period_hours} ساعة)")
     return sheets_edit
 
 def execute_maintenance(sheets_edit, task_id, equipment_name, task_name, used_spare_part="", used_quantity=1):
@@ -1392,7 +1460,10 @@ def add_new_event(sheets_edit, sheet_name):
             
             if save_and_push_to_github(sheets_edit, f"إضافة حدث عطل مع استخدام قطعة {part_name}"):
                 st.cache_data.clear()
+                # تسجيل النشاط
+                log_activity("add_event", f"تم إضافة عطل: {event_desc[:50]} للماكينة {selected_equipment}")
                 st.success("✅ تم إضافة الحدث بنجاح ورفعه إلى GitHub!")
+                ...
                 if warning_msg:
                     st.warning(warning_msg)
                 st.rerun()
@@ -1506,7 +1577,9 @@ def manage_spare_parts_tab(sheets_edit):
                     }])
                     new_spare_df = pd.concat([spare_df, new_row], ignore_index=True)
                     sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = new_spare_df
-                    if save_and_push_to_github(sheets_edit, f"إضافة قطعة غيار: {part_name} للماكينة {selected_equipment}"):
+                         if save_and_push_to_github(sheets_edit, f"إضافة قطعة غيار: {part_name} للماكينة {selected_equipment}"):
+                        # أضف هذا السطر
+                        log_activity("add_spare_part", f"تم إضافة قطعة غيار '{part_name}' للماكينة {selected_equipment} (الرصيد: {initial_qty}, حد الإنذار: {warning_threshold})")
                         st.success("✅ تمت إضافة قطعة الغيار")
                         st.rerun()
                     else:
@@ -1570,6 +1643,9 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
         new_entry += f" | صورة: {image_url}"
     df.loc[idx, "ملاحظات"] = (old_notes + "\n" + new_entry) if old_notes else new_entry
     sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = df
+    # أضف هذا السطر
+    log_activity("execute_maintenance", f"تم تنفيذ صيانة '{task_name}' للماكينة {equipment_name} بواسطة {performed_by}")
+    return True, msg
     return True, f"تم تنفيذ الصيانة '{task_name}' بتاريخ {execution_date.strftime('%Y-%m-%d')} بواسطة {performed_by}. التاريخ التالي: {next_date.strftime('%Y-%m-%d')}" + (f" {warning_msg}" if warning_msg else "")
 
 def add_maintenance_as_event(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
@@ -1871,6 +1947,30 @@ with tabs[1]:
 
 with tabs[2]:
     st.header("🔔 الإشعارات")
+    # عرض سجل النشاطات
+    st.subheader("📋 آخر النشاطات")
+    activity_log = load_activity_log()
+    if activity_log:
+        for entry in reversed(activity_log[-20:]):
+            timestamp = datetime.fromisoformat(entry["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
+            action_type = entry["action_type"]
+            username = entry["username"]
+            details = entry["details"]
+            if action_type == "add_event":
+                icon = "🆕"
+            elif action_type == "execute_maintenance":
+                icon = "✅"
+            elif action_type == "add_spare_part":
+                icon = "🔩"
+            elif action_type == "add_maintenance_task":
+                icon = "🛠️"
+            else:
+                icon = "📌"
+            st.info(f"{icon} **{timestamp}** - **{username}**: {details}")
+    else:
+        st.info("لا توجد نشاطات مسجلة بعد.")
+    
+    st.markdown("---")
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("⚠️ قطع غيار حرجة")
@@ -1896,9 +1996,4 @@ with tabs[2]:
                 st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
         else:
             st.info("✅ لا توجد صيانات قادمة")
-
-if can_edit and len(tabs) > 3:  # لأن هناك 4 تبويبات إذا كان المستخدم يعدل
-    with tabs[3]:
-        sheets_edit = manage_data_edit(sheets_edit)
-
     # ------------------------------- دوال إدارة قطع الغيار -------------------------------
