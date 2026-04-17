@@ -1463,7 +1463,6 @@ def add_new_event(sheets_edit, sheet_name):
                 # تسجيل النشاط
                 log_activity("add_event", f"تم إضافة عطل: {event_desc[:50]} للماكينة {selected_equipment}")
                 st.success("✅ تم إضافة الحدث بنجاح ورفعه إلى GitHub!")
-                ...
                 if warning_msg:
                     st.warning(warning_msg)
                 st.rerun()
@@ -1642,11 +1641,9 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
         new_entry += f" | صورة: {image_url}"
     df.loc[idx, "ملاحظات"] = (old_notes + "\n" + new_entry) if old_notes else new_entry
     sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = df
-    # أضف هذا السطر
     log_activity("execute_maintenance", f"تم تنفيذ صيانة '{task_name}' للماكينة {equipment_name} بواسطة {performed_by}")
-    return True, msg
-    return True, f"تم تنفيذ الصيانة '{task_name}' بتاريخ {execution_date.strftime('%Y-%m-%d')} بواسطة {performed_by}. التاريخ التالي: {next_date.strftime('%Y-%m-%d')}" + (f" {warning_msg}" if warning_msg else "")
-
+    result_msg = f"تم تنفيذ الصيانة '{task_name}' بتاريخ {execution_date.strftime('%Y-%m-%d')} بواسطة {performed_by}. التاريخ التالي: {next_date.strftime('%Y-%m-%d')}" + (f" {warning_msg}" if warning_msg else "")
+    return True, result_msg
 def add_maintenance_as_event(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
     """إضافة سجل في جدول الأعطال لتسجيل تنفيذ الصيانة مع اسم المنفذ"""
     target_sheet = None
