@@ -17,7 +17,7 @@ from github import Github, GithubException
 APP_CONFIG = {
     "APP_TITLE": "نظام إدارة الصيانة - CMMS",
     "APP_ICON": "🏭",
-    "REPO_NAME": "mahmedabdallh123/Elqds",
+    "REPO_NAME": "mahmedabdallh123/stations",
     "BRANCH": "main",
     "FILE_PATH": "l9.xlsx",
     "LOCAL_FILE": "l9.xlsx",
@@ -60,8 +60,8 @@ IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
 EQUIPMENT_CONFIG_FILE = "equipment_config.json"
 
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
-GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/Elqds/refs/heads/main/users.json"
-GITHUB_REPO_USERS = "mahmedabdallh123/Elqds"
+GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/stations/refs/heads/main/users.json"
+GITHUB_REPO_USERS = "mahmedabdallh123/stations"
 GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
 GITHUB_AVAILABLE = GITHUB_TOKEN is not None
 
@@ -166,18 +166,9 @@ def get_critical_spare_parts():
     df = load_spare_parts()
     if df.empty:
         return []
-    df["الرصيد الموجود"] = pd.to_numeric(df["الرصيد الموجود"], errors='coerce').fillna(0)
-    if "حد_الإنذار" not in df.columns:
-        df["حد_الإنذار"] = 1
-    else:
-        df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
-    critical = df[df["الرصيد الموجود"] < df["حد_الإنذار"]]
-    # التأكد من وجود عمود 'القسم' (إذا كان قديماً 'اسم الماكينة' نحوله)
-    if "القسم" not in critical.columns:
-        if "اسم الماكينة" in critical.columns:
-            critical["القسم"] = critical["اسم الماكينة"]
-    result = critical[["اسم القطعة", "القسم", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
-    return result
+    critical = df[(df["ضرورية"] == "نعم") | (df["ضرورية"] == True) | (df["ضرورية"] == "ضروري")]
+    critical = critical[critical["الرصيد الموجود"] < 1]
+    return critical[["اسم القطعة", "اسم الماكينة", "الرصيد الموجود"]].to_dict('records')
 
 # ------------------------------- دوال الصيانة الوقائية -------------------------------
 def load_maintenance_tasks():
@@ -1990,10 +1981,7 @@ with tabs[2]:
         critical = get_critical_spare_parts()
         if critical:
             for part in critical:
-                threshold = part.get('حد_الإنذار', 1)
-                # استخدام 'القسم' بدلاً من 'اسم الماكينة'
-                section_name = part.get('القسم', part.get('اسم الماكينة', 'غير محدد'))
-                st.error(f"🔴 **{part['اسم القطعة']}** (قسم: {section_name}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
+                st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {part['حد_الإنذار']}")
         else:
             st.success("✅ لا توجد قطع غيار حرجة")
     with col2:
@@ -2012,5 +2000,7 @@ with tabs[2]:
                 st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
         else:
             st.info("✅ لا توجد صيانات قادمة")
+
+if can_edit and len(tabs) > 3:  # إذا كان هناك تبويب إدارة البيانات (الرابع)
     with tabs[3]:
         sheets_edit = manage_data_edit(sheets_edit)
