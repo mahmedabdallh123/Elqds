@@ -166,10 +166,21 @@ def get_critical_spare_parts():
     df = load_spare_parts()
     if df.empty:
         return []
-    critical = df[(df["ضرورية"] == "نعم") | (df["ضرورية"] == True) | (df["ضرورية"] == "ضروري")]
-    critical = critical[critical["الرصيد الموجود"] < 1]
-    return critical[["اسم القطعة", "اسم الماكينة", "الرصيد الموجود"]].to_dict('records')
-
+    # تحويل الرصيد إلى رقم
+    df["الرصيد الموجود"] = pd.to_numeric(df["الرصيد الموجود"], errors='coerce').fillna(0)
+    
+    # التأكد من وجود عمود 'حد_الإنذار'، وإن لم يكن موجوداً نضيفه بقيمة 1
+    if "حد_الإنذار" not in df.columns:
+        df["حد_الإنذار"] = 1
+    else:
+        df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
+    
+    # القطع الحرجة: الرصيد أقل من حد الإنذار
+    critical = df[df["الرصيد الموجود"] < df["حد_الإنذار"]]
+    
+    # إعادة الأعمدة المطلوبة (مع التأكد من وجود 'حد_الإنذار')
+    result = critical[["اسم القطعة", "اسم الماكينة", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
+    return result
 # ------------------------------- دوال الصيانة الوقائية -------------------------------
 def load_maintenance_tasks():
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
@@ -1999,7 +2010,9 @@ with tabs[2]:
         critical = get_critical_spare_parts()
         if critical:
             for part in critical:
-                st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {part['حد_الإنذار']}")
+                # التأكد من وجود المفتاح 'حد_الإنذار'، وإذا لم يكن موجوداً نستخدم قيمة افتراضية 1
+                threshold = part.get('حد_الإنذار', 1)
+                st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
         else:
             st.success("✅ لا توجد قطع غيار حرجة")
     with col2:
