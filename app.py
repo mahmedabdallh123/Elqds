@@ -1999,9 +1999,8 @@ with tabs[2]:
         critical = get_critical_spare_parts()
         if critical:
             for part in critical:
-                # التأكد من وجود المفتاح 'حد_الإنذار'، وإذا لم يكن موجوداً نستخدم قيمة افتراضية 1
                 threshold = part.get('حد_الإنذار', 1)
-                 st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
+                st.error(f"🔴 **{part['اسم القطعة']}** (قسم: {part['القسم']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
         else:
             st.success("✅ لا توجد قطع غيار حرجة")
     with col2:
@@ -2020,7 +2019,3 @@ with tabs[2]:
                 st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
         else:
             st.info("✅ لا توجد صيانات قادمة")
-
-if can_edit and len(tabs) > 3:  # إذا كان هناك تبويب إدارة البيانات (الرابع)
-    with tabs[3]:
-        sheets_edit = manage_data_edit(sheets_edit)
