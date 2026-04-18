@@ -1311,7 +1311,7 @@ def add_new_event(sheets_edit, sheet_name):
         st.session_state.selected_equipment_temp = selected_equipment
         st.rerun()
     
-    spare_parts_list = get_spare_parts_for_equipment(selected_equipment)
+    spare_parts_list = get_spare_parts_for_equipment(selected_equipment, sheets_edit)  # ملاحظة: أضفنا sheets_edit
     
     with st.form(key="add_event_form"):
         col1, col2 = st.columns(2)
@@ -1354,7 +1354,8 @@ def add_new_event(sheets_edit, sheet_name):
             spare_part_used = ""
             warning_msg = ""
             if part_name and consume_qty > 0:
-                     success, msg, new_qty = consume_spare_part(part_name, sheet_name, consume_qty)
+                # الحصول على القسم الحالي (sheet_name) لاستخدامه في consume_spare_part
+                success, msg, new_qty = consume_spare_part(part_name, sheet_name, consume_qty)
                 if success:
                     spare_part_used = f"{part_name} (كمية {consume_qty})"
                     critical_parts = get_critical_spare_parts()
