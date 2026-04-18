@@ -166,9 +166,18 @@ def get_critical_spare_parts():
     df = load_spare_parts()
     if df.empty:
         return []
-    critical = df[(df["ضرورية"] == "نعم") | (df["ضرورية"] == True) | (df["ضرورية"] == "ضروري")]
-    critical = critical[critical["الرصيد الموجود"] < 1]
-    return critical[["اسم القطعة", "اسم الماكينة", "الرصيد الموجود"]].to_dict('records')
+    df["الرصيد الموجود"] = pd.to_numeric(df["الرصيد الموجود"], errors='coerce').fillna(0)
+    if "حد_الإنذار" not in df.columns:
+        df["حد_الإنذار"] = 1
+    else:
+        df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
+    critical = df[df["الرصيد الموجود"] < df["حد_الإنذار"]]
+    # التأكد من وجود عمود 'القسم' (إذا كان قديماً 'اسم الماكينة' نحوله)
+    if "القسم" not in critical.columns:
+        if "اسم الماكينة" in critical.columns:
+            critical["القسم"] = critical["اسم الماكينة"]
+    result = critical[["اسم القطعة", "القسم", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
+    return result
 
 # ------------------------------- دوال الصيانة الوقائية -------------------------------
 def load_maintenance_tasks():
@@ -1981,7 +1990,10 @@ with tabs[2]:
         critical = get_critical_spare_parts()
         if critical:
             for part in critical:
-                st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {part['حد_الإنذار']}")
+                threshold = part.get('حد_الإنذار', 1)
+                # استخدام 'القسم' بدلاً من 'اسم الماكينة'
+                section_name = part.get('القسم', part.get('اسم الماكينة', 'غير محدد'))
+                st.error(f"🔴 **{part['اسم القطعة']}** (قسم: {section_name}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
         else:
             st.success("✅ لا توجد قطع غيار حرجة")
     with col2:
@@ -2000,7 +2012,5 @@ with tabs[2]:
                 st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
         else:
             st.info("✅ لا توجد صيانات قادمة")
-
-if can_edit and len(tabs) > 3:  # إذا كان هناك تبويب إدارة البيانات (الرابع)
     with tabs[3]:
         sheets_edit = manage_data_edit(sheets_edit)
