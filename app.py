@@ -1805,7 +1805,8 @@ def preventive_maintenance_tab(sheets_edit):
             if selected_task:
                 execution_date = st.date_input("📅 تاريخ التنفيذ:", value=datetime.now().date(), key="execution_date_input")
                 performed_by = st.text_input("👨‍🔧 تم بواسطة:", key="maintenance_performed_by", placeholder="اسم الشخص الذي نفذ الصيانة")
-                    spare_parts_list = get_spare_parts_for_equipment(selected_equipment, sheets_edit)
+                # استدعاء get_spare_parts_for_equipment مع تمرير sheets_edit
+                spare_parts_list = get_spare_parts_for_equipment(selected_equipment, sheets_edit)
                 st.markdown("**🔩 استهلاك قطع غيار (اختياري)**")
                 part_name = ""
                 consume_qty = 0
@@ -1837,10 +1838,10 @@ def preventive_maintenance_tab(sheets_edit):
                         if execution_image:
                             maint_id = str(uuid.uuid4())[:8]
                             image_url = upload_image_to_github(execution_image, "maintenance_execution", maint_id)
-                                                success, msg = execute_maintenance_with_date(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, selected_section, part_name, consume_qty, image_url)
+                        success, msg = execute_maintenance_with_date(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, selected_section, part_name, consume_qty, image_url)
                         if success:
                             if link_to_event:
-                                                            event_success, event_msg = add_maintenance_as_event(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, selected_section, part_name, consume_qty, image_url)
+                                event_success, event_msg = add_maintenance_as_event(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, selected_section, part_name, consume_qty, image_url)
                                 if event_success:
                                     st.success(f"✅ {msg} وتم تسجيله كحدث عطل")
                                 else:
@@ -1894,7 +1895,6 @@ def preventive_maintenance_tab(sheets_edit):
                 else:
                     st.error("❌ فشل الحفظ")
     return sheets_edit
-
 # ------------------------------- دالة إدارة البيانات الرئيسية -------------------------------
 def manage_data_edit(sheets_edit):
     if sheets_edit is None:
