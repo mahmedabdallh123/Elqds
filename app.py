@@ -28,7 +28,7 @@ APP_CONFIG = {
     "MAX_IMAGE_SIZE_MB": 10,
     "DEFAULT_SHEET_COLUMNS": ["مده الاصلاح", "التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "رابط الصورة"],
     "SPARE_PARTS_SHEET": "قطع_الغيار",
-    "SPARE_PARTS_COLUMNS": ["اسم القطعة", "المقاس", "الرصيد الموجود", "مدة التوريد", "ضرورية", "اسم الماكينة", "رابط_الصورة"],
+    "SPARE_PARTS_COLUMNS": ["اسم القطعة", "المقاس", "الرصيد الموجود", "مدة التوريد", "ضرورية", "القسم", "رابط_الصورة"],
     "MAINTENANCE_SHEET": "صيانة_وقائية",
     "MAINTENANCE_COLUMNS": ["المعدة", "نوع_الصيانة", "اسم_البند", "الفترة_بالأيام", "آخر_تنفيذ", "التاريخ_التالي", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية", "رابط_الصورة"]
 }
@@ -133,24 +133,38 @@ def load_spare_parts():
                 df[col] = ""
         df = df.fillna("")
         df["الرصيد الموجود"] = pd.to_numeric(df["الرصيد الموجود"], errors='coerce').fillna(0)
+        # إذا كان هناك عمود "اسم الماكينة" قديم نحوله إلى "القسم" (للتوافق مع البيانات القديمة)
+        if "اسم الماكينة" in df.columns and "القسم" not in df.columns:
+            df["القسم"] = df["اسم الماكينة"]
+            df = df.drop(columns=["اسم الماكينة"])
         return df
     except Exception:
         return pd.DataFrame(columns=APP_CONFIG["SPARE_PARTS_COLUMNS"])
 
-def get_spare_parts_for_equipment(equipment_name):
+def get_spare_parts_for_equipment(equipment_name, sheets_edit):
+    """إرجاع قائمة قطع الغيار للقسم الذي تنتمي إليه المعدة"""
+    # تحديد القسم الذي توجد فيه المعدة
+    section = None
+    for sheet_name, df in sheets_edit.items():
+        if sheet_name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
+            if equipment_name in get_equipment_list_from_sheet(df):
+                section = sheet_name
+                break
+    if section is None:
+        return []
     df = load_spare_parts()
     if df.empty:
         return []
-    filtered = df[df["اسم الماكينة"] == equipment_name]
+    filtered = df[df["القسم"] == section]
     return list(zip(filtered["اسم القطعة"], filtered["الرصيد الموجود"]))
 
-def consume_spare_part(part_name, quantity=1):
+def consume_spare_part(part_name, section, quantity=1):
     df = load_spare_parts()
     if df.empty:
         return False, "لا توجد قطع غيار مسجلة", None
-    mask = df["اسم القطعة"] == part_name
+    mask = (df["اسم القطعة"] == part_name) & (df["القسم"] == section)
     if not mask.any():
-        return False, f"القطعة '{part_name}' غير موجودة", None
+        return False, f"القطعة '{part_name}' غير موجودة في قسم '{section}'", None
     current_qty = df.loc[mask, "الرصيد الموجود"].values[0]
     if current_qty < quantity:
         return False, f"الرصيد غير كافٍ (الموجود: {current_qty}, المطلوب: {quantity})", current_qty
@@ -161,25 +175,17 @@ def consume_spare_part(part_name, quantity=1):
     else:
         st.session_state.temp_spare_parts_df = df
     return True, f"تم خصم {quantity} من '{part_name}'، الرصيد الجديد: {new_qty}", new_qty
-
 def get_critical_spare_parts():
     df = load_spare_parts()
     if df.empty:
         return []
-    # تحويل الرصيد إلى رقم
     df["الرصيد الموجود"] = pd.to_numeric(df["الرصيد الموجود"], errors='coerce').fillna(0)
-    
-    # التأكد من وجود عمود 'حد_الإنذار'، وإن لم يكن موجوداً نضيفه بقيمة 1
     if "حد_الإنذار" not in df.columns:
         df["حد_الإنذار"] = 1
     else:
         df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
-    
-    # القطع الحرجة: الرصيد أقل من حد الإنذار
     critical = df[df["الرصيد الموجود"] < df["حد_الإنذار"]]
-    
-    # إعادة الأعمدة المطلوبة (مع التأكد من وجود 'حد_الإنذار')
-    result = critical[["اسم القطعة", "اسم الماكينة", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
+    result = critical[["اسم القطعة", "القسم", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
     return result
 # ------------------------------- دوال الصيانة الوقائية -------------------------------
 def load_maintenance_tasks():
@@ -1348,7 +1354,7 @@ def add_new_event(sheets_edit, sheet_name):
             spare_part_used = ""
             warning_msg = ""
             if part_name and consume_qty > 0:
-                success, msg, new_qty = consume_spare_part(part_name, consume_qty)
+                     success, msg, new_qty = consume_spare_part(part_name, sheet_name, consume_qty)
                 if success:
                     spare_part_used = f"{part_name} (كمية {consume_qty})"
                     critical_parts = get_critical_spare_parts()
@@ -1408,7 +1414,7 @@ def add_new_event(sheets_edit, sheet_name):
 
 def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
-    st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة.")
+    st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل قسم (بدون ربط بماكينة محددة).")
 
     # اختيار القسم أولاً
     sections = get_available_sections(sheets_edit)
@@ -1417,40 +1423,26 @@ def manage_spare_parts_tab(sheets_edit):
         return sheets_edit
 
     selected_section = st.selectbox("🏭 اختر القسم:", sections, key="spare_section")
-    df_section = sheets_edit[selected_section]
-    equipment_list = get_equipment_list_from_sheet(df_section)
-    if not equipment_list:
-        st.warning(f"⚠️ لا توجد ماكينات في قسم '{selected_section}'.")
-        return sheets_edit
-
-    selected_equipment = st.selectbox("🔧 اختر الماكينة:", equipment_list, key="spare_equipment")
 
     spare_df = load_spare_parts()
-    view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="spare_view_mode")
-
-    st.subheader("📋 قائمة قطع الغيار")
-    # فلترة حسب الماكينة المختارة
-    filtered_df = spare_df[spare_df["اسم الماكينة"] == selected_equipment].copy()
-    # إضافة عمود مؤقت للرقم التسلسلي
-    filtered_df.reset_index(inplace=True, drop=True)
+    # فلترة حسب القسم المختار
+    filtered_df = spare_df[spare_df["القسم"] == selected_section].copy()
+    filtered_df.reset_index(drop=True, inplace=True)
     filtered_df["id"] = filtered_df.index
 
+    view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="spare_view_mode")
+    st.subheader(f"📋 قائمة قطع الغيار في قسم {selected_section}")
+
     if filtered_df.empty:
-        st.info(f"لا توجد قطع غيار مسجلة للماكينة '{selected_equipment}'.")
+        st.info(f"لا توجد قطع غيار مسجلة في قسم '{selected_section}'.")
     else:
-        # فلتر إضافي حسب اسم القطعة
         part_name_filter = st.text_input("فلتر حسب اسم القطعة:", placeholder="اكتب جزءاً من الاسم...", key="spare_name_filter")
         if part_name_filter:
             filtered_df = filtered_df[filtered_df["اسم القطعة"].str.contains(part_name_filter, case=False, na=False)]
 
-        # ========== عرض البيانات مع أزرار تعديل وحذف ==========
         if view_mode == "جدول":
-            # في وضع الجدول، نضيف أزرار في عمود منفصل
             display_cols = [c for c in filtered_df.columns if c not in ["id", "رابط_الصورة"]]
-            # نعرض الجدول
             st.dataframe(filtered_df[display_cols], use_container_width=True)
-            
-            # أزرار التعديل والحذف أسفل الجدول (اختيار العنصر أولا)
             st.markdown("#### 🛠️ تعديل أو حذف قطعة")
             part_options = filtered_df["اسم القطعة"].tolist()
             selected_part_name = st.selectbox("اختر القطعة:", part_options, key="edit_part_name_select")
@@ -1462,16 +1454,13 @@ def manage_spare_parts_tab(sheets_edit):
                     new_qty = st.number_input("الرصيد", value=int(part_row["الرصيد الموجود"]), step=1, key="edit_qty")
                     new_lead = st.text_input("مدة التوريد", value=part_row["مدة التوريد"], key="edit_lead")
                     new_critical = st.checkbox("قطعة ضرورية", value=(part_row["ضرورية"] == "نعم"), key="edit_critical")
-                    
                     if st.button("💾 حفظ التغييرات", key="save_edit_part"):
-                        spare_df.loc[(spare_df["اسم القطعة"] == part_row["اسم القطعة"]) & 
-                                    (spare_df["اسم الماكينة"] == selected_equipment), 
+                        spare_df.loc[(spare_df["اسم القطعة"] == part_row["اسم القطعة"]) & (spare_df["القسم"] == selected_section), 
                                     ["اسم القطعة", "المقاس", "الرصيد الموجود", "مدة التوريد", "ضرورية"]] = [new_name, new_size, new_qty, new_lead, "نعم" if new_critical else "لا"]
                         sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = spare_df
                         if save_and_push_to_github(sheets_edit, f"تعديل قطعة: {selected_part_name}"):
                             st.success("تم التعديل")
                             st.rerun()
-                
                 if st.button("🗑️ حذف هذه القطعة", key="delete_part_btn"):
                     spare_df = spare_df.drop(index=part_row.name)
                     sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = spare_df
@@ -1479,7 +1468,7 @@ def manage_spare_parts_tab(sheets_edit):
                         st.success("تم الحذف")
                         st.rerun()
         else:
-            # وضع البطاقات: عرض كل قطعة مع زر تعديل وحذف داخل البطاقة
+            # وضع البطاقات
             cols_per_row = 2
             for i in range(0, len(filtered_df), cols_per_row):
                 row_cols = st.columns(cols_per_row)
@@ -1503,8 +1492,6 @@ def manage_spare_parts_tab(sheets_edit):
                                 st.markdown(f"**ضرورية:** {row['ضرورية']}")
                                 if row.get('مدة التوريد'):
                                     st.markdown(f"**مدة التوريد:** {row['مدة التوريد']}")
-                                
-                                # أزرار التعديل والحذف داخل البطاقة
                                 col_btn1, col_btn2 = st.columns(2)
                                 with col_btn1:
                                     if st.button("✏️ تعديل", key=f"edit_card_{row['id']}"):
@@ -1516,8 +1503,6 @@ def manage_spare_parts_tab(sheets_edit):
                                         if save_and_push_to_github(sheets_edit, f"حذف قطعة: {row['اسم القطعة']}"):
                                             st.success("تم الحذف")
                                             st.rerun()
-                                
-                                # نموذج التعديل داخل البطاقة (إذا تم الضغط على تعديل)
                                 if st.session_state.get(f"edit_mode_{row['id']}", False):
                                     with st.form(key=f"edit_form_{row['id']}"):
                                         new_name = st.text_input("اسم القطعة", value=row['اسم القطعة'])
@@ -1526,8 +1511,7 @@ def manage_spare_parts_tab(sheets_edit):
                                         new_lead = st.text_input("مدة التوريد", value=row['مدة التوريد'])
                                         new_critical = st.checkbox("ضرورية", value=(row['ضرورية'] == "نعم"))
                                         if st.form_submit_button("💾 حفظ"):
-                                            spare_df.loc[(spare_df["اسم القطعة"] == row['اسم القطعة']) & 
-                                                        (spare_df["اسم الماكينة"] == selected_equipment), 
+                                            spare_df.loc[(spare_df["اسم القطعة"] == row['اسم القطعة']) & (spare_df["القسم"] == selected_section), 
                                                         ["اسم القطعة", "المقاس", "الرصيد الموجود", "مدة التوريد", "ضرورية"]] = [new_name, new_size, new_qty, new_lead, "نعم" if new_critical else "لا"]
                                             sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = spare_df
                                             if save_and_push_to_github(sheets_edit, f"تعديل قطعة: {row['اسم القطعة']}"):
@@ -1536,8 +1520,8 @@ def manage_spare_parts_tab(sheets_edit):
                                                 st.rerun()
                                             else:
                                                 st.error("فشل الحفظ")
-    
-    # ========== إضافة قطعة جديدة (نفس الكود القديم) ==========
+
+    # إضافة قطعة غيار جديدة
     st.subheader("➕ إضافة قطعة غيار جديدة")
     with st.form(key="add_spare_part_form"):
         col1, col2 = st.columns(2)
@@ -1554,9 +1538,9 @@ def manage_spare_parts_tab(sheets_edit):
             if not part_name:
                 st.error("❌ الرجاء إدخال اسم القطعة")
             else:
-                existing = spare_df[(spare_df["اسم القطعة"] == part_name) & (spare_df["اسم الماكينة"] == selected_equipment)]
+                existing = spare_df[(spare_df["اسم القطعة"] == part_name) & (spare_df["القسم"] == selected_section)]
                 if not existing.empty:
-                    st.error(f"❌ القطعة '{part_name}' موجودة بالفعل للماكينة '{selected_equipment}'")
+                    st.error(f"❌ القطعة '{part_name}' موجودة بالفعل في قسم '{selected_section}'")
                 else:
                     image_url = None
                     if part_image is not None:
@@ -1572,12 +1556,12 @@ def manage_spare_parts_tab(sheets_edit):
                         "الرصيد الموجود": initial_qty,
                         "مدة التوريد": lead_time,
                         "ضرورية": "نعم" if is_critical else "لا",
-                        "اسم الماكينة": selected_equipment,
+                        "القسم": selected_section,
                         "رابط_الصورة": image_url or ""
                     }])
                     new_spare_df = pd.concat([spare_df, new_row], ignore_index=True)
                     sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = new_spare_df
-                    if save_and_push_to_github(sheets_edit, f"إضافة قطعة غيار: {part_name} للماكينة {selected_equipment}"):
+                    if save_and_push_to_github(sheets_edit, f"إضافة قطعة غيار: {part_name} في قسم {selected_section}"):
                         st.success("✅ تمت إضافة قطعة الغيار")
                         st.rerun()
                     else:
@@ -1585,7 +1569,11 @@ def manage_spare_parts_tab(sheets_edit):
     return sheets_edit
 
 # ------------------------------- دوال مساعدة للصيانة الوقائية -------------------------------
-def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
+def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execution_date, performed_by, section, used_spare_part="", used_quantity=1, image_url=None):
+    # ... ثم في الداخل:
+    if used_spare_part and used_quantity > 0:
+        success, msg, new_qty = consume_spare_part(used_spare_part, section, used_quantity)
+        ...
     """تنفيذ صيانة مع تحديد تاريخ التنفيذ واسم المنفذ (الفترة بالساعات)"""
     df = sheets_edit.get(APP_CONFIG["MAINTENANCE_SHEET"])
     if df is None:
@@ -1629,8 +1617,8 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
     
     result_msg = f"تم تنفيذ الصيانة '{task_name}' بتاريخ {execution_date.strftime('%Y-%m-%d')} بواسطة {performed_by}. التاريخ التالي: {next_date.strftime('%Y-%m-%d')}" + (f" {warning_msg}" if warning_msg else "")
     return True, result_msg
-def add_maintenance_as_event(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
-    """إضافة سجل في جدول الأعطال لتسجيل تنفيذ الصيانة مع اسم المنفذ"""
+def add_maintenance_as_event(sheets_edit, equipment_name, task_name, execution_date, performed_by, section, used_spare_part="", used_quantity=1, image_url=None):
+    # لا نقوم باستهلاك قطع غيار هنا، فقط نسجل الحدث.
     target_sheet = None
     target_df = None
     for sheet_name, df in sheets_edit.items():
@@ -1816,7 +1804,7 @@ def preventive_maintenance_tab(sheets_edit):
             if selected_task:
                 execution_date = st.date_input("📅 تاريخ التنفيذ:", value=datetime.now().date(), key="execution_date_input")
                 performed_by = st.text_input("👨‍🔧 تم بواسطة:", key="maintenance_performed_by", placeholder="اسم الشخص الذي نفذ الصيانة")
-                spare_parts_list = get_spare_parts_for_equipment(selected_equipment)
+                    spare_parts_list = get_spare_parts_for_equipment(selected_equipment, sheets_edit)
                 st.markdown("**🔩 استهلاك قطع غيار (اختياري)**")
                 part_name = ""
                 consume_qty = 0
@@ -1848,10 +1836,10 @@ def preventive_maintenance_tab(sheets_edit):
                         if execution_image:
                             maint_id = str(uuid.uuid4())[:8]
                             image_url = upload_image_to_github(execution_image, "maintenance_execution", maint_id)
-                        success, msg = execute_maintenance_with_date(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, part_name, consume_qty, image_url)
+                                                success, msg = execute_maintenance_with_date(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, selected_section, part_name, consume_qty, image_url)
                         if success:
                             if link_to_event:
-                                event_success, event_msg = add_maintenance_as_event(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, part_name, consume_qty, image_url)
+                                                            event_success, event_msg = add_maintenance_as_event(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, selected_section, part_name, consume_qty, image_url)
                                 if event_success:
                                     st.success(f"✅ {msg} وتم تسجيله كحدث عطل")
                                 else:
@@ -2012,7 +2000,7 @@ with tabs[2]:
             for part in critical:
                 # التأكد من وجود المفتاح 'حد_الإنذار'، وإذا لم يكن موجوداً نستخدم قيمة افتراضية 1
                 threshold = part.get('حد_الإنذار', 1)
-                st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
+                 st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
         else:
             st.success("✅ لا توجد قطع غيار حرجة")
     with col2:
