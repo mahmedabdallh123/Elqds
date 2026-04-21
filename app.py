@@ -814,7 +814,50 @@ def login_ui():
         if st.button("تسجيل الخروج"):
             logout_action()
         return True
+def get_user_permissions(username):
+    """جلب صلاحيات المستخدم من users.json مع التوافق القديم"""
+    users = load_users()
+    if username not in users:
+        return {"all_sections": False, "sections_permissions": {}}
+    
+    user_data = users[username]
+    # التوافق مع الإصدارات القديمة (قبل إضافة الصلاحيات)
+    if "permissions" not in user_data:
+        old_role = user_data.get("role", "viewer")
+        if old_role == "admin":
+            return {"all_sections": True, "sections_permissions": {}}
+        elif old_role == "editor":
+            return {"all_sections": True, "sections_permissions": {}}
+        else:
+            return {"all_sections": False, "sections_permissions": {}}
+    
+    return user_data.get("permissions", {"all_sections": False, "sections_permissions": {}})
+def has_section_permission(username, section_name, required_permission="view"):
+    """التحقق من صلاحية المستخدم على قسم معين"""
+    if username == "admin":
+        return True
+    
+    permissions = get_user_permissions(username)
+    if not permissions:
+        return False
+    
+    # إذا كان لديه صلاحية الوصول لجميع الأقسام
+    if permissions.get("all_sections", False):
+        return True
+    
+    # التحقق من صلاحية القسم المحدد
+    section_perms = permissions.get("sections_permissions", {}).get(section_name, [])
+    return required_permission in section_perms
 
+def get_allowed_sections(all_sheets, username, required_permission="view"):
+    """إرجاع قائمة الأقسام التي يسمح للمستخدم بالوصول إليها بصلاحية معينة"""
+    allowed = []
+    for sheet_name in all_sheets.keys():
+        if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
+            continue
+        if has_section_permission(username, sheet_name, required_permission):
+            allowed.append(sheet_name)
+    return allowed
 # ------------------------------- دوال الملفات -------------------------------
 def fetch_from_github_requests():
     try:
@@ -952,7 +995,15 @@ def export_filtered_results_to_excel(results_df, sheet_name):
     return output
 
 def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
+    username = st.session_state.get("username")
+    
+    # التحقق من صلاحية العرض لهذا القسم
+    if not has_section_permission(username, sheet_name, "view"):
+        st.warning(f"⚠️ ليس لديك صلاحية لعرض بيانات قسم '{sheet_name}'.")
+        return
+    
     st.markdown(f"### 🏭 {sheet_name}")
+    # ... باقي الكود كما هو (لا حاجة لفلتر الماكينات لأن القسم هو وحدة التحكم)
     st.info(f"عدد الماكينات المسجلة: {len(df)} | عدد الأعمدة: {len(df.columns)}")
     equipment_list = get_equipment_list_from_sheet(df)
     if equipment_list and "المعدة" in df.columns:
@@ -1000,6 +1051,17 @@ def search_across_sheets(all_sheets):
     if not all_sheets:
         st.warning("لا توجد بيانات للبحث")
         return
+    
+    username = st.session_state.get("username")
+    
+    # الحصول على الأقسام المسموحة للبحث (صلاحية view)
+    allowed_sections = get_allowed_sections(all_sheets, username, "view")
+    if not allowed_sections:
+        st.warning("لا توجد أقسام مسموح لك بالبحث فيها")
+        return
+    
+    sheet_options = ["جميع الأقسام"] + allowed_sections
+    # ... باقي الكود
     
     col1, col2 = st.columns(2)
     with col1:
@@ -1245,6 +1307,14 @@ def add_new_machine(sheets_edit, sheet_name):
     return sheets_edit
 
 def manage_machines(sheets_edit, sheet_name):
+    username = st.session_state.get("username")
+    
+    # التحقق من صلاحية إدارة الماكينات لهذا القسم
+    if not has_section_permission(username, sheet_name, "manage_machines"):
+        st.warning("⚠️ ليس لديك صلاحية لإدارة الماكينات في هذا القسم.")
+        return
+    
+    # ... باقي الكود كما هو
     st.markdown(f"### 🔧 إدارة الماكينات في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
     equipment_list = get_equipment_list_from_sheet(df)
@@ -1289,6 +1359,14 @@ def manage_machines(sheets_edit, sheet_name):
                     st.error(msg)
 
 def add_new_event(sheets_edit, sheet_name):
+    username = st.session_state.get("username")
+    
+    # التحقق من صلاحية إضافة أحداث لهذا القسم
+    if not has_section_permission(username, sheet_name, "add_event"):
+        st.warning("⚠️ ليس لديك صلاحية لإضافة أحداث عطل في هذا القسم.")
+        return sheets_edit
+    
+    # ... باقي الكود كما هو (بدون تعديل قائمة الماكينات لأن القسم هو الفلتر الأساسي)
     st.markdown(f"### 📝 إضافة حدث عطل جديد في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
     equipment_list = get_equipment_list_from_sheet(df)
@@ -1413,6 +1491,19 @@ def add_new_event(sheets_edit, sheet_name):
 
 def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
+    
+    username = st.session_state.get("username")
+    
+    # الحصول على الأقسام المسموحة (صلاحية view على الأقل)
+    allowed_sections = get_allowed_sections(sheets_edit, username, "view")
+    if not allowed_sections:
+        st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
+        return sheets_edit
+    
+    selected_section = st.selectbox("🏭 اختر القسم:", allowed_sections, key="spare_section")
+    df_section = sheets_edit[selected_section]
+    equipment_list = get_equipment_list_from_sheet(df_section)
+    # ... باقي الكود
     st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة.")
 
     sections = get_available_sections(sheets_edit)
@@ -1669,6 +1760,19 @@ def add_maintenance_as_event(sheets_edit, equipment_name, task_name, execution_d
 # ------------------------------- تبويب الصيانة الوقائية -------------------------------
 def preventive_maintenance_tab(sheets_edit):
     st.header("🛠 الصيانة الوقائية")
+    
+    username = st.session_state.get("username")
+    
+    # الحصول على الأقسام المسموحة (صلاحية view على الأقل)
+    allowed_sections = get_allowed_sections(sheets_edit, username, "view")
+    if not allowed_sections:
+        st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
+        return sheets_edit
+    
+    selected_section = st.selectbox("🏭 اختر القسم:", allowed_sections, key="pm_section")
+    df_section = sheets_edit[selected_section]
+    equipment_list = get_equipment_list_from_sheet(df_section)
+    # ... باقي الكود
     st.info("إدارة بنود الصيانة الدورية. يتم حفظ البيانات تلقائياً في ملف Excel.")
 
     # اختيار القسم أولاً
@@ -1928,8 +2032,49 @@ def preventive_maintenance_tab(sheets_edit):
 # ------------------------------- دالة إدارة البيانات الرئيسية -------------------------------
 def manage_data_edit(sheets_edit):
     if sheets_edit is None:
-        st.warning("الملف غير موجود. استخدم زر 'تحديث من GitHub' في الشريط الجانبي أولاً")
+        st.warning("الملف غير موجود...")
         return sheets_edit
+    
+    username = st.session_state.get("username")
+    
+    # الحصول على الأقسام المسموحة (صلاحية view على الأقل)
+    allowed_sections = get_allowed_sections(sheets_edit, username, "view")
+    
+    # تبويب عرض الأقسام
+    with tabs_edit[0]:
+        st.subheader("جميع الأقسام")
+        if allowed_sections:
+            dept_tabs = st.tabs(allowed_sections)
+            for i, dept_name in enumerate(allowed_sections):
+                with dept_tabs[i]:
+                    df = sheets_edit[dept_name]
+                    display_sheet_data(dept_name, df, f"view_{dept_name}", sheets_edit)
+                    # التعديل المباشر يتطلب صلاحية edit
+                    if has_section_permission(username, dept_name, "edit"):
+                        with st.expander("✏️ تعديل مباشر للبيانات", expanded=False):
+                            # ... كود التعديل
+        else:
+            st.info("لا توجد أقسام مسموح لك بالوصول إليها")
+    
+    # تبويب إضافة حدث عطل (يظهر فقط إذا كان هناك قسم مسموح بصلاحية add_event)
+    with tabs_edit[1]:
+        add_event_sections = get_allowed_sections(sheets_edit, username, "add_event")
+        if add_event_sections:
+            sheet_name = st.selectbox("اختر القسم:", add_event_sections, key="add_event_sheet")
+            sheets_edit = add_new_event(sheets_edit, sheet_name)
+        else:
+            st.warning("لا توجد أقسام مسموح لك بإضافة أحداث فيها")
+    
+    # تبويب إدارة الماكينات (يظهر فقط إذا كان هناك قسم مسموح بصلاحية manage_machines)
+    with tabs_edit[2]:
+        manage_machines_sections = get_allowed_sections(sheets_edit, username, "manage_machines")
+        if manage_machines_sections:
+            sheet_name = st.selectbox("اختر القسم:", manage_machines_sections, key="manage_machines_sheet")
+            manage_machines(sheets_edit, sheet_name)
+        else:
+            st.warning("لا توجد أقسام مسموح لك بإدارة ماكيناتها")
+    
+    # ... باقي التبويبات (إضافة قسم جديد، قطع الغيار، صيانة وقائية) قد تحتاج نفس المنطق
     if APP_CONFIG["SPARE_PARTS_SHEET"] not in sheets_edit:
         sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = load_spare_parts()
     if APP_CONFIG["MAINTENANCE_SHEET"] not in sheets_edit:
@@ -1997,7 +2142,83 @@ with st.sidebar:
             st.rerun()
         if st.button("🚪 تسجيل الخروج"):
             logout_action()
-        # تم إزالة أقسام الإشعارات من الشريط الجانبي
+        
+        # ========== هنا ضع كود إدارة الصلاحيات ==========
+        # إدارة الصلاحيات (للمدير فقط)
+        if st.session_state.get("username") == "admin":
+            st.markdown("---")
+            st.subheader("👥 إدارة الصلاحيات")
+            with st.expander("⚙️ تعديل صلاحيات المستخدمين"):
+                users = load_users()
+                user_list = [u for u in users.keys() if u != "admin"]
+                if user_list:
+                    selected_user = st.selectbox("اختر المستخدم:", user_list)
+                    if selected_user:
+                        perms = get_user_permissions(selected_user)
+                        all_sections_access = st.checkbox("الوصول إلى جميع الأقسام", value=perms.get("all_sections", False))
+                        
+                        existing_sections = ["التفتيح", "التمشيط", "الملفات", "الغزل", "البرم", "الكرد", "سحب اول", "سحب تاني", "التدوير", "المكابس", "المحطات"]
+                        
+                        if not all_sections_access:
+                            st.markdown("**صلاحيات الأقسام:**")
+                            section_perms = perms.get("sections_permissions", {})
+                            cols = st.columns(4)
+                            for idx, section in enumerate(existing_sections):
+                                with cols[idx % 4]:
+                                    st.markdown(f"**📁 {section}**")
+                                    can_view = st.checkbox("عرض", key=f"view_{section}_{selected_user}", value="view" in section_perms.get(section, []))
+                                    can_edit = st.checkbox("تعديل", key=f"edit_{section}_{selected_user}", value="edit" in section_perms.get(section, []))
+                                    can_add = st.checkbox("إضافة حدث", key=f"add_{section}_{selected_user}", value="add_event" in section_perms.get(section, []))
+                                    can_manage = st.checkbox("إدارة ماكينات", key=f"manage_{section}_{selected_user}", value="manage_machines" in section_perms.get(section, []))
+                                    
+                                    new_perms_list = []
+                                    if can_view: new_perms_list.append("view")
+                                    if can_edit: new_perms_list.append("edit")
+                                    if can_add: new_perms_list.append("add_event")
+                                    if can_manage: new_perms_list.append("manage_machines")
+                                    if new_perms_list:
+                                        section_perms[section] = new_perms_list
+                                    elif section in section_perms:
+                                        del section_perms[section]
+                            
+                            perms["sections_permissions"] = section_perms
+                        
+                        perms["all_sections"] = all_sections_access
+                        
+                        if st.button("💾 حفظ الصلاحيات", key="save_permissions"):
+                            users[selected_user]["permissions"] = perms
+                            if upload_users_to_github(users):
+                                st.success("✅ تم حفظ الصلاحيات بنجاح")
+                                st.rerun()
+                            else:
+                                st.error("❌ فشل حفظ الصلاحيات")
+                else:
+                    st.info("لا يوجد مستخدمون عاديون لإدارة صلاحياتهم")
+        # ========== نهاية كود إدارة الصلاحيات ==========
+        
+        st.markdown("---")
+        st.subheader("⚠️ قطع غيار حرجة")
+        critical = get_critical_spare_parts()
+        if critical:
+            for part in critical:
+                threshold = part.get('حد_الإنذار', 1)
+                st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
+        else:
+            st.success("✅ لا توجد قطع غيار حرجة")
+        st.markdown("---")
+        st.subheader("🔧 صيانة مستحقة")
+        overdue, upcoming = get_upcoming_maintenance(3)
+        if not overdue.empty:
+            st.warning("🟡 صيانة متأخرة:")
+            for _, row in overdue.iterrows():
+                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (تاريخ مستحق: {row['التاريخ_التالي'].strftime('%Y-%m-%d')})")
+        if not upcoming.empty:
+            st.info("🟢 صيانة قادمة خلال 3 أيام:")
+            for _, row in upcoming.iterrows():
+                days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
+                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
+        if overdue.empty and upcoming.empty:
+            st.success("✅ لا توجد صيانات مستحقة حالياً")
 
 all_sheets = load_all_sheets()
 sheets_edit = load_sheets_for_edit()
