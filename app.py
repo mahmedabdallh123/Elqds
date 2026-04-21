@@ -2215,4 +2215,4 @@ with st.sidebar:
                 days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
                 st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
         if overdue.empty and upcoming.empty:
-            st.success("✅ لا توجد صيانات مستحقة حالياً")  sheets_edit = manage_data_edit(sheets_edit)
+            st.success("✅ لا توجد صيانات مستحقة حالياً")
