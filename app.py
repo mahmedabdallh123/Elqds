@@ -833,26 +833,20 @@ def get_user_permissions(username):
     
     return user_data.get("permissions", {"all_sections": False, "sections_permissions": {}})
 def has_section_permission(username, section_name, required_permission="view"):
-    """التحقق من صلاحية المستخدم على قسم معين"""
     if username == "admin":
         return True
-    
     permissions = get_user_permissions(username)
     if not permissions:
         return False
-    
-    # إذا كان لديه صلاحية الوصول لجميع الأقسام
     if permissions.get("all_sections", False):
         return True
-    
-    # التحقق من صلاحية القسم المحدد
     section_perms = permissions.get("sections_permissions", {}).get(section_name, [])
     return required_permission in section_perms
 
-def get_allowed_sections(all_sheets, username, required_permission="view"):
+def get_allowed_sections(sheets_edit, username, required_permission="view"):
     """إرجاع قائمة الأقسام التي يسمح للمستخدم بالوصول إليها بصلاحية معينة"""
     allowed = []
-    for sheet_name in all_sheets.keys():
+    for sheet_name in sheets_edit.keys():
         if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
             continue
         if has_section_permission(username, sheet_name, required_permission):
@@ -1055,15 +1049,19 @@ def search_across_sheets(all_sheets):
     username = st.session_state.get("username")
     
     # الحصول على الأقسام المسموحة للبحث (صلاحية view)
-    allowed_sections = get_allowed_sections(all_sheets, username, "view")
+        allowed_sections = get_allowed_sections(sheets_edit, username, "view")
     if not allowed_sections:
-        st.warning("لا توجد أقسام مسموح لك بالبحث فيها")
-        return
+        st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
+        return sheets_edit
     
-    sheet_options = ["جميع الأقسام"] + allowed_sections
-    # ... باقي الكود
-    
-    col1, col2 = st.columns(2)
+    selected_section = st.selectbox("🏭 اختر القسم:", allowed_sections, key="spare_section")
+    df_section = sheets_edit[selected_section]
+    equipment_list = get_equipment_list_from_sheet(df_section)
+    if not equipment_list:
+        st.warning(f"⚠️ لا توجد ماكينات في قسم '{selected_section}'.")
+        return sheets_edit
+
+    selected_equipment = st.selectbox("🔧 اختر الماكينة:", equipment_list, key="spare_equipment")
     with col1:
         sheet_options = ["جميع الأقسام"] + list(all_sheets.keys())
         selected_sheet = st.selectbox("اختر القسم للبحث:", sheet_options, key="search_sheet")
@@ -1488,9 +1486,9 @@ def add_new_event(sheets_edit, sheet_name):
     return sheets_edit
 
 # ------------------------------- الجزء السادس: إدارة قطع الغيار، الصيانة الوقائية، والواجهة الرئيسية -------------------------------
-
 def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
+    st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة.")
     
     username = st.session_state.get("username")
     
@@ -1503,39 +1501,28 @@ def manage_spare_parts_tab(sheets_edit):
     selected_section = st.selectbox("🏭 اختر القسم:", allowed_sections, key="spare_section")
     df_section = sheets_edit[selected_section]
     equipment_list = get_equipment_list_from_sheet(df_section)
-    # ... باقي الكود
-    st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة.")
-
-    sections = get_available_sections(sheets_edit)
-    if not sections:
-        st.warning("⚠️ لا توجد أقسام بها ماكينات. أضف قسم وماكينات أولاً.")
-        return sheets_edit
-
-    selected_section = st.selectbox("🏭 اختر القسم:", sections, key="spare_section")
-    df_section = sheets_edit[selected_section]
-    equipment_list = get_equipment_list_from_sheet(df_section)
     if not equipment_list:
         st.warning(f"⚠️ لا توجد ماكينات في قسم '{selected_section}'.")
         return sheets_edit
-
+    
     selected_equipment = st.selectbox("🔧 اختر الماكينة:", equipment_list, key="spare_equipment")
-
+    
     spare_df = load_spare_parts()
     view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="spare_view_mode")
-
+    
     st.subheader("📋 قائمة قطع الغيار")
     filtered_df = spare_df[spare_df["اسم الماكينة"] == selected_equipment].copy()
     filtered_df.reset_index(drop=False, inplace=True)
     filtered_df.rename(columns={'index': 'original_index'}, inplace=True)
     filtered_df["id"] = filtered_df.index
-
+    
     if filtered_df.empty:
         st.info(f"لا توجد قطع غيار مسجلة للماكينة '{selected_equipment}'.")
     else:
         part_name_filter = st.text_input("فلتر حسب اسم القطعة:", placeholder="اكتب جزءاً من الاسم...", key="spare_name_filter")
         if part_name_filter:
             filtered_df = filtered_df[filtered_df["اسم القطعة"].str.contains(part_name_filter, case=False, na=False)]
-
+        
         if view_mode == "جدول":
             display_cols = [c for c in filtered_df.columns if c not in ["original_index", "id", "رابط_الصورة"]]
             st.dataframe(filtered_df[display_cols], use_container_width=True)
@@ -1571,7 +1558,7 @@ def manage_spare_parts_tab(sheets_edit):
                         st.success("تم الحذف")
                         st.rerun()
         else:
-            # وضع البطاقات مع أزرار تعديل وحذف
+            # وضع البطاقات
             cols_per_row = 2
             for i in range(0, len(filtered_df), cols_per_row):
                 row_cols = st.columns(cols_per_row)
@@ -1630,8 +1617,8 @@ def manage_spare_parts_tab(sheets_edit):
                                                 st.rerun()
                                             else:
                                                 st.error("فشل الحفظ")
-
-    # إضافة قطعة جديدة (نفس الكود القديم)
+    
+    # إضافة قطعة جديدة
     st.subheader("➕ إضافة قطعة غيار جديدة")
     with st.form(key="add_spare_part_form"):
         col1, col2 = st.columns(2)
@@ -2030,95 +2017,7 @@ def preventive_maintenance_tab(sheets_edit):
                     st.error("❌ فشل الحفظ")
     return sheets_edit
 # ------------------------------- دالة إدارة البيانات الرئيسية -------------------------------
-def manage_data_edit(sheets_edit):
-    if sheets_edit is None:
-        st.warning("الملف غير موجود...")
-        return sheets_edit
-    
-    username = st.session_state.get("username")
-    
-    # الحصول على الأقسام المسموحة (صلاحية view على الأقل)
-    allowed_sections = get_allowed_sections(sheets_edit, username, "view")
-    
-    # تبويب عرض الأقسام
-    with tabs_edit[0]:
-        st.subheader("جميع الأقسام")
-        if allowed_sections:
-            dept_tabs = st.tabs(allowed_sections)
-            for i, dept_name in enumerate(allowed_sections):
-                with dept_tabs[i]:
-                    df = sheets_edit[dept_name]
-                    display_sheet_data(dept_name, df, f"view_{dept_name}", sheets_edit)
-                    # التعديل المباشر يتطلب صلاحية edit
-                    if has_section_permission(username, dept_name, "edit"):
-                        with st.expander("✏️ تعديل مباشر للبيانات", expanded=False):
-                            # ... كود التعديل
-        else:
-            st.info("لا توجد أقسام مسموح لك بالوصول إليها")
-    
-    # تبويب إضافة حدث عطل (يظهر فقط إذا كان هناك قسم مسموح بصلاحية add_event)
-    with tabs_edit[1]:
-        add_event_sections = get_allowed_sections(sheets_edit, username, "add_event")
-        if add_event_sections:
-            sheet_name = st.selectbox("اختر القسم:", add_event_sections, key="add_event_sheet")
-            sheets_edit = add_new_event(sheets_edit, sheet_name)
-        else:
-            st.warning("لا توجد أقسام مسموح لك بإضافة أحداث فيها")
-    
-    # تبويب إدارة الماكينات (يظهر فقط إذا كان هناك قسم مسموح بصلاحية manage_machines)
-    with tabs_edit[2]:
-        manage_machines_sections = get_allowed_sections(sheets_edit, username, "manage_machines")
-        if manage_machines_sections:
-            sheet_name = st.selectbox("اختر القسم:", manage_machines_sections, key="manage_machines_sheet")
-            manage_machines(sheets_edit, sheet_name)
-        else:
-            st.warning("لا توجد أقسام مسموح لك بإدارة ماكيناتها")
-    
-    # ... باقي التبويبات (إضافة قسم جديد، قطع الغيار، صيانة وقائية) قد تحتاج نفس المنطق
-    if APP_CONFIG["SPARE_PARTS_SHEET"] not in sheets_edit:
-        sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = load_spare_parts()
-    if APP_CONFIG["MAINTENANCE_SHEET"] not in sheets_edit:
-        sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = load_maintenance_tasks()
-    
-    tab_names = ["📋 عرض الأقسام", "📝 إضافة حدث عطل", "🔧 إدارة الماكينات", "➕ إضافة قسم جديد", "📦 قطع الغيار", "🛠 الصيانة الوقائية"]
-    tabs_edit = st.tabs(tab_names)
-    with tabs_edit[0]:
-        st.subheader("جميع الأقسام")
-        if sheets_edit:
-            dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
-            if dept_names:
-                dept_tabs = st.tabs(dept_names)
-                for i, dept_name in enumerate(dept_names):
-                    with dept_tabs[i]:
-                        df = sheets_edit[dept_name]
-                        display_sheet_data(dept_name, df, f"view_{dept_name}", sheets_edit)
-                        with st.expander("✏️ تعديل مباشر للبيانات", expanded=False):
-                            edited_df = st.data_editor(df.astype(str), num_rows="dynamic", use_container_width=True, key=f"editor_{dept_name}")
-                            if st.button(f"💾 حفظ", key=f"save_{dept_name}"):
-                                sheets_edit[dept_name] = edited_df.astype(object)
-                                if save_and_push_to_github(sheets_edit, f"تعديل بيانات في قسم {dept_name}"):
-                                    st.cache_data.clear()
-                                    st.success("تم الحفظ والرفع إلى GitHub!")
-                                    st.rerun()
-            else:
-                st.info("لا توجد أقسام بعد")
-    with tabs_edit[1]:
-        if sheets_edit:
-            sheet_name = st.selectbox("اختر القسم:", [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]], key="add_event_sheet")
-            sheets_edit = add_new_event(sheets_edit, sheet_name)
-    with tabs_edit[2]:
-        if sheets_edit:
-            sheet_name = st.selectbox("اختر القسم:", [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]], key="manage_machines_sheet")
-            manage_machines(sheets_edit, sheet_name)
-    with tabs_edit[3]:
-        sheets_edit = add_new_department(sheets_edit)
-    with tabs_edit[4]:
-        sheets_edit = manage_spare_parts_tab(sheets_edit)
-    with tabs_edit[5]:
-        sheets_edit = preventive_maintenance_tab(sheets_edit)
-    return sheets_edit
-
-
+def manage_data_edit
 # ------------------------------- الواجهة الرئيسية -------------------------------
 # ------------------------------- الواجهة الرئيسية -------------------------------
 with st.sidebar:
