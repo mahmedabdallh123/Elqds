@@ -2142,28 +2142,25 @@ with st.sidebar:
             st.rerun()
         if st.button("🚪 تسجيل الخروج"):
             logout_action()
-        
-         # إدارة الصلاحيات (للمدير فقط)
+
+        # إدارة الصلاحيات (للمدير فقط)
         if st.session_state.get("username") == "admin":
             st.markdown("---")
             st.subheader("👥 إدارة الصلاحيات")
             with st.expander("⚙️ تعديل صلاحيات المستخدمين"):
                 users = load_users()
-                # قائمة المستخدمين (استبعاد admin)
                 user_list = [u for u in users.keys() if u != "admin"]
                 if user_list:
                     selected_user = st.selectbox("اختر المستخدم:", user_list)
                     if selected_user:
                         perms = get_user_permissions(selected_user)
                         all_sections_access = st.checkbox("الوصول إلى جميع الأقسام", value=perms.get("all_sections", False))
-                        
-                        # قائمة الأقسام الموجودة في النظام (يمكن تعديلها حسب الأقسام الفعلية)
+
                         existing_sections = ["التفتيح", "التمشيط", "الملفات", "الغزل", "البرم", "الكرد", "سحب اول", "سحب تاني", "التدوير", "المكابس", "المحطات"]
-                        
+
                         if not all_sections_access:
                             st.markdown("**صلاحيات الأقسام:**")
                             section_perms = perms.get("sections_permissions", {})
-                            # عرض الأقسام في أعمدة
                             cols = st.columns(4)
                             for idx, section in enumerate(existing_sections):
                                 with cols[idx % 4]:
@@ -2172,7 +2169,7 @@ with st.sidebar:
                                     can_edit = st.checkbox("تعديل", key=f"edit_{section}_{selected_user}", value="edit" in section_perms.get(section, []))
                                     can_add = st.checkbox("إضافة حدث", key=f"add_{section}_{selected_user}", value="add_event" in section_perms.get(section, []))
                                     can_manage = st.checkbox("إدارة ماكينات", key=f"manage_{section}_{selected_user}", value="manage_machines" in section_perms.get(section, []))
-                                    
+
                                     new_perms_list = []
                                     if can_view: new_perms_list.append("view")
                                     if can_edit: new_perms_list.append("edit")
@@ -2183,9 +2180,9 @@ with st.sidebar:
                                     elif section in section_perms:
                                         del section_perms[section]
                             perms["sections_permissions"] = section_perms
-                        
+
                         perms["all_sections"] = all_sections_access
-                        
+
                         if st.button("💾 حفظ الصلاحيات", key="save_permissions"):
                             users[selected_user]["permissions"] = perms
                             if upload_users_to_github(users):
@@ -2195,7 +2192,7 @@ with st.sidebar:
                                 st.error("❌ فشل حفظ الصلاحيات")
                 else:
                     st.info("لا يوجد مستخدمون عاديون لإدارة صلاحياتهم")
-        
+
         st.markdown("---")
         st.subheader("⚠️ قطع غيار حرجة")
         critical = get_critical_spare_parts()
@@ -2205,6 +2202,17 @@ with st.sidebar:
                 st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
         else:
             st.success("✅ لا توجد قطع غيار حرجة")
-      d len(tabs) > 3:  # إذا كان هناك تبويب إدارة البيانات (الرابع)
-    with tabs[3]:
-        sheets_edit = manage_data_edit(sheets_edit)
+        st.markdown("---")
+        st.subheader("🔧 صيانة مستحقة")
+        overdue, upcoming = get_upcoming_maintenance(3)
+        if not overdue.empty:
+            st.warning("🟡 صيانة متأخرة:")
+            for _, row in overdue.iterrows():
+                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (تاريخ مستحق: {row['التاريخ_التالي'].strftime('%Y-%m-%d')})")
+        if not upcoming.empty:
+            st.info("🟢 صيانة قادمة خلال 3 أيام:")
+            for _, row in upcoming.iterrows():
+                days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
+                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
+        if overdue.empty and upcoming.empty:
+            st.success("✅ لا توجد صيانات مستحقة حالياً")  sheets_edit = manage_data_edit(sheets_edit)
