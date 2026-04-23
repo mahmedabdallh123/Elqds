@@ -729,7 +729,9 @@ def login_ui():
         st.session_state.username = None
         st.session_state.user_role = None
         st.session_state.user_permissions = []
-
+     # للتصحيح فقط
+    users = load_users()
+    st.write("المستخدمين المحملين:", users)
     st.title(f"{APP_CONFIG['APP_ICON']} تسجيل الدخول - {APP_CONFIG['APP_TITLE']}")
     username_input = st.selectbox("اختر المستخدم", list(users.keys()))
     password = st.text_input("كلمة المرور", type="password")
