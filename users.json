@@ -14,7 +14,16 @@
       "all_sections": true
     },
     "sections_permissions": {}
-
+  },
+  "مشرف_التفتيح": {
+    "password": "123456",
+    "role": "user",
+    "permissions": {
+      "all_sections": false
+    },
+    "sections_permissions": {
+      "التفتيح": ["view", "edit", "add_event"]
+    }
   },
   "مشرف_التمشيط": {
     "password": "1234567",
@@ -26,8 +35,8 @@
       "تمشيط": ["view", "edit", "add_event"],
       "ملفات": ["view", "edit", "add_event"],
       "سحب1": ["view", "edit", "add_event"],
-      "سحب2": ["view", "edit", "add_event"]
-     
+      "سحب2": ["view", "edit", "add_event"],
+      "محطه التمشيط": ["view", "add_event"]
     }
   },
   "مشرف_البرم": {
@@ -48,10 +57,23 @@
       "all_sections": false
     },
     "sections_permissions": {
-      "الغزل": ["view", "edit", "add_event"]
-    
+      "الغزل": ["view", "edit", "add_event"],
+      "محطه غزل 1": ["view"],
+      "محطه غزل 2": ["view"]
     }
-
+  },
+  "مشرف_الكرد": {
+    "password": "1111",
+    "role": "user",
+    "permissions": {
+      "all_sections": false
+    },
+    "sections_permissions": {
+      "الكرد": ["view", "edit", "add_event", "manage_machines"],
+      "محطه كرد1": ["view", "edit", "add_event", "manage_machines"],
+      "محطه كرد2": ["view", "add_event"],
+      "محطه ترطيب الكرد": ["view"]
+    }
   },
   "مشرف_المكابس": {
     "password": "2222",
