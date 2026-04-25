@@ -70,34 +70,34 @@ def upload_image_to_github(image_file, entity_type, entity_id, custom_filename=N
     if not GITHUB_AVAILABLE:
         st.error("❌ GitHub token غير متوفر، لا يمكن رفع الصور")
         return None
-    
+
     try:
         img = Image.open(image_file)
         if img.mode in ('RGBA', 'LA', 'P'):
             img = img.convert('RGB')
-        
+
         buffer = io.BytesIO()
         img.save(buffer, format='JPEG', quality=85, optimize=True)
         buffer.seek(0)
-        
+
         if custom_filename:
             filename = custom_filename
         else:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{entity_type}_{entity_id}_{timestamp}.jpg"
-        
+
         repo_path = f"{IMAGES_FOLDER}/{entity_type}/{filename}"
-        
+
         g = Github(GITHUB_TOKEN)
         repo = g.get_repo(APP_CONFIG["REPO_NAME"])
-        
+
         try:
             repo.get_contents(f"{IMAGES_FOLDER}/{entity_type}/", ref=APP_CONFIG["BRANCH"])
         except GithubException:
-            repo.create_file(f"{IMAGES_FOLDER}/{entity_type}/.gitkeep", 
-                            f"Create folder for {entity_type} images", 
+            repo.create_file(f"{IMAGES_FOLDER}/{entity_type}/.gitkeep",
+                            f"Create folder for {entity_type} images",
                             "", branch=APP_CONFIG["BRANCH"])
-        
+
         content = buffer.getvalue()
         result = repo.create_file(
             path=repo_path,
@@ -272,7 +272,7 @@ def analyze_technician_performance(df):
     data["قدرة الفني"] = pd.to_numeric(data["قدرة الفني (حل/تفكير/مبادرة/قرار)"], errors='coerce').fillna(0)
     data["نوع العطل"] = data["نوع العطل"].fillna("غير محدد").astype(str)
     data["الالتزام"] = data["الالتزام بتعليمات السلامة"].fillna("غير مطبق").astype(str)
-    
+
     tech_summary = data.groupby("تم بواسطة").agg({
         "مده الاصلاح": ["mean", "count", "std"],
         "قدرة الفني": "mean",
@@ -281,13 +281,13 @@ def analyze_technician_performance(df):
     tech_summary.columns = ["متوسط_مدة_الاصلاح", "عدد_الأعطال", "انحراف_مدة_الاصلاح", "متوسط_القدرة", "توزيع_الالتزام"]
     tech_summary = tech_summary.reset_index()
     tech_summary["متوسط_مدة_الاصلاح"] = tech_summary["متوسط_مدة_الاصلاح"].round(1)
-    
+
     tech_by_fault = data.groupby(["تم بواسطة", "نوع العطل"]).agg({
         "قدرة الفني": "mean",
         "مده الاصلاح": "mean"
     }).round(2).reset_index()
     tech_by_fault.columns = ["تم بواسطة", "نوع العطل", "متوسط_القدرة_لهذا_النوع", "متوسط_مدة_اصلاح_لهذا_النوع"]
-    
+
     fault_avg = data.groupby("نوع العطل")["قدرة الفني"].mean().reset_index()
     fault_avg.columns = ["نوع العطل", "متوسط_القدرة_العام"]
     tech_by_fault = tech_by_fault.merge(fault_avg, on="نوع العطل", how="left")
@@ -295,14 +295,14 @@ def analyze_technician_performance(df):
     tech_by_fault["الأداء"] = tech_by_fault["مقارنة_بالمتوسط"].apply(
         lambda x: "🟢 قوي" if x > 0.3 else ("🟡 متوسط" if abs(x) <= 0.3 else "🔴 ضعيف")
     )
-    
+
     strengths = {}
     weaknesses = {}
     for tech in tech_summary["تم بواسطة"].unique():
         tech_data = tech_by_fault[tech_by_fault["تم بواسطة"] == tech]
         strengths[tech] = tech_data[tech_data["الأداء"] == "🟢 قوي"]["نوع العطل"].tolist()
         weaknesses[tech] = tech_data[tech_data["الأداء"] == "🔴 ضعيف"]["نوع العطل"].tolist()
-    
+
     return tech_summary, tech_by_fault, {"strengths": strengths, "weaknesses": weaknesses}
 
 def analyze_failures(df, equipment_name=None):
@@ -325,20 +325,20 @@ def analyze_failures(df, equipment_name=None):
     failure_rate = data["المعدة"].value_counts().reset_index()
     failure_rate.columns = ["المعدة", "عدد الأعطال"]
     failure_rate["النسبة المئوية"] = (failure_rate["عدد الأعطال"] / total_failures * 100).round(2)
-    
+
     if "الحدث/العطل" in data.columns:
         all_issues = data["الحدث/العطل"].dropna().astype(str)
         issue_counts = all_issues.value_counts().head(10).reset_index()
         issue_counts.columns = ["الحدث/العطل", "عدد المرات"]
     else:
         issue_counts = pd.DataFrame()
-    
+
     if "نوع العطل" in data.columns:
         fault_types = data["نوع العطل"].dropna().astype(str).value_counts().reset_index()
         fault_types.columns = ["نوع العطل", "عدد المرات"]
     else:
         fault_types = pd.DataFrame()
-    
+
     mtbf_results = []
     for equipment in data["المعدة"].unique():
         eq_data = data[data["المعدة"] == equipment].sort_values("التاريخ")
@@ -354,28 +354,28 @@ def analyze_failures(df, equipment_name=None):
                 "آخر عطل": eq_data["التاريخ"].max().strftime("%Y-%m-%d")
             })
     mtbf_df = pd.DataFrame(mtbf_results) if mtbf_results else pd.DataFrame()
-    
+
     time_between_df = analyze_time_between_failures(data)
     tech_summary, tech_by_fault, tech_strengths_weaknesses = analyze_technician_performance(data)
-    
+
     data["الشهر"] = data["التاريخ"].dt.to_period("M").astype(str)
     monthly_failures = data.groupby(["الشهر", "المعدة"]).size().reset_index(name="عدد الأعطال")
-    
+
     weekday_names = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
     data["يوم_الأسبوع"] = data["التاريخ"].dt.dayofweek.map({
-        0: "الاثنين", 1: "الثلاثاء", 2: "الأربعاء", 3: "الخميس", 
+        0: "الاثنين", 1: "الثلاثاء", 2: "الأربعاء", 3: "الخميس",
         4: "الجمعة", 5: "السبت", 6: "الأحد"
     })
     weekday_failures = data["يوم_الأسبوع"].value_counts().reindex(weekday_names).fillna(0).reset_index()
     weekday_failures.columns = ["اليوم", "عدد الأعطال"]
-    
+
     if "الإجراء التصحيحي" in data.columns:
         corrections = data["الإجراء التصحيحي"].dropna().astype(str)
         correction_counts = corrections.value_counts().head(10).reset_index()
         correction_counts.columns = ["الإجراء التصحيحي", "عدد المرات"]
     else:
         correction_counts = pd.DataFrame()
-    
+
     if "مده الاصلاح" in data.columns:
         data["مده الاصلاح"] = pd.to_numeric(data["مده الاصلاح"], errors='coerce')
         avg_repair_time = data["مده الاصلاح"].mean()
@@ -386,7 +386,7 @@ def analyze_failures(df, equipment_name=None):
         avg_repair_time = None
         median_repair_time = None
         repair_by_equipment = pd.DataFrame()
-    
+
     return {
         "total_failures": total_failures,
         "unique_equipment": unique_equipment,
@@ -440,7 +440,7 @@ def generate_excel_report(analysis, sheet_name, equipment_filter):
             analysis["technician_summary"].to_excel(writer, sheet_name="ملخص أداء الفنيين", index=False)
         if analysis["technician_by_fault"] is not None and not analysis["technician_by_fault"].empty:
             analysis["technician_by_fault"].to_excel(writer, sheet_name="أداء الفنيين حسب نوع العطل", index=False)
-        
+
         desired_cols = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "رابط الصورة"]
         if "مده الاصلاح" in analysis["raw_data"].columns:
             desired_cols.insert(0, "مده الاصلاح")
@@ -528,7 +528,7 @@ def failures_analysis_tab(all_sheets):
                 for chart in charts: st.plotly_chart(chart, use_container_width=True)
             else:
                 st.warning("مكتبات الرسم غير متوفرة")
-            
+
             st.subheader("📋 الجداول التفصيلية")
             tabs_list = ["معدل تكرار الأعطال", "أكثر الأعطال تكراراً", "أنواع الأعطال", "MTBF", "الفجوات الزمنية", "التحليل الشهري", "الإجراءات التصحيحية", "متوسط مدة الإصلاح", "تحليل أداء الفنيين"]
             tabs_analysis = st.tabs(tabs_list)
@@ -572,7 +572,7 @@ def failures_analysis_tab(all_sheets):
                                 if isinstance(compliance, dict):
                                     compliant_pct = compliance.get("ملتزم بالكامل", 0) / row['عدد_الأعطال'] * 100 if row['عدد_الأعطال'] > 0 else 0
                                     st.progress(compliant_pct/100, text=f"الالتزام الكامل: {compliant_pct:.0f}%")
-                    
+
                     st.markdown("#### أداء الفنيين حسب نوع العطل")
                     if analysis["technician_by_fault"] is not None and not analysis["technician_by_fault"].empty:
                         display_df = analysis["technician_by_fault"].copy()
@@ -589,7 +589,7 @@ def failures_analysis_tab(all_sheets):
                             st.dataframe(display_df, use_container_width=True)
                     else:
                         st.info("لا توجد بيانات كافية عن أداء الفنيين حسب نوع العطل")
-                    
+
                     st.markdown("#### نقاط القوة والضعف")
                     strengths_weak = analysis["technician_strengths_weaknesses"]
                     if strengths_weak:
@@ -609,7 +609,7 @@ def failures_analysis_tab(all_sheets):
                         st.info("لا توجد بيانات كافية لتحليل نقاط القوة والضعف")
                 else:
                     st.info("لا توجد بيانات كافية لتحليل أداء الفنيين (تأكد من وجود أعطال مسجلة مع تحديد 'تم بواسطة' و'قدرة الفني' و'نوع العطل')")
-            
+
             st.markdown("---")
             st.subheader("📥 تصدير التقرير")
             excel_report = generate_excel_report(analysis, selected_sheet, selected_equipment)
@@ -621,22 +621,19 @@ def download_users_from_github():
         response = requests.get(GITHUB_USERS_URL, timeout=10)
         response.raise_for_status()
         users_data = response.json()
-        
+
         # تحويل هيكل الصلاحيات القديم إلى الجديد
         for username, user_info in users_data.items():
             if "permissions" in user_info and isinstance(user_info["permissions"], list):
-                # الهيكل القديم: permissions = ["all"] أو ["view"] ...
                 if "all" in user_info["permissions"]:
                     user_info["permissions"] = {"all_sections": True}
                 else:
                     user_info["permissions"] = {"all_sections": False}
                 user_info["sections_permissions"] = {}
             elif "permissions" not in user_info:
-                # إذا لم يكن هناك صلاحيات على الإطلاق، نعطي صلاحية عرض لكل الأقسام (viewer)
                 user_info["permissions"] = {"all_sections": False}
                 user_info["sections_permissions"] = {}
-        
-        # حفظ النسخة المحلية بعد التحويل
+
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(users_data, f, indent=4, ensure_ascii=False)
         return users_data
@@ -671,14 +668,11 @@ def load_users():
     try:
         users_data = download_users_from_github()
         if not users_data or "admin" not in users_data:
-            # إذا لم يتم تحميل المستخدمين من GitHub أو لم يكن admin موجودًا،
-            # استخدم المستخدمين المحليين أو الافتراضيين
             if os.path.exists(USERS_FILE):
                 with open(USERS_FILE, "r", encoding="utf-8") as f:
                     local_users = json.load(f)
                     if "admin" in local_users:
                         return local_users
-            # البيانات الافتراضية (متطابقة مع ملف users.json المرفق)
             default_users = {
                 "admin": {
                     "password": "1234",
@@ -692,7 +686,6 @@ def load_users():
                     "permissions": {"all_sections": True},
                     "sections_permissions": {}
                 }
-                # يمكن إضافة باقي المستخدمين هنا كنسخة احتياطية
             }
             return default_users
         return users_data
@@ -767,7 +760,7 @@ def login_ui():
         st.session_state.username = None
         st.session_state.user_role = None
         st.session_state.user_permissions = []
-  
+
     st.title(f"{APP_CONFIG['APP_ICON']} تسجيل الدخول - {APP_CONFIG['APP_TITLE']}")
     username_input = st.selectbox("اختر المستخدم", list(users.keys()))
     password = st.text_input("كلمة المرور", type="password")
@@ -812,23 +805,20 @@ def get_user_permissions(username):
     if username not in users:
         return {"all_sections": False, "sections_permissions": {}}
     user_data = users[username]
-    
-    # التعامل مع الهيكل القديم إن وجد
+
     if "permissions" in user_data and isinstance(user_data["permissions"], dict):
         perms = user_data["permissions"]
     elif "permissions" in user_data and isinstance(user_data["permissions"], list):
-        # تحويل القائمة القديمة
         if "all" in user_data["permissions"]:
             perms = {"all_sections": True}
         else:
             perms = {"all_sections": False}
     else:
         perms = {"all_sections": False}
-    
-    # التأكد من وجود sections_permissions
+
     if "sections_permissions" not in user_data:
         user_data["sections_permissions"] = {}
-    
+
     return {
         "all_sections": perms.get("all_sections", False),
         "sections_permissions": user_data.get("sections_permissions", {})
@@ -1000,17 +990,17 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
         if selected_filter != "جميع الماكينات":
             df = df[df["المعدة"] == selected_filter]
             st.info(f"عرض لماكينة: {selected_filter} - السجلات: {len(df)}")
-    
+
     display_df = df.copy()
     for col in display_df.columns:
         if display_df[col].dtype == 'object':
             display_df[col] = display_df[col].astype(str).apply(lambda x: x[:100] + "..." if len(x) > 100 else x)
-    
+
     if "رابط الصورة" in display_df.columns:
         display_df = display_df.drop(columns=["رابط الصورة"])
-    
+
     st.dataframe(display_df, use_container_width=True, height=400)
-    
+
     if "رابط الصورة" in df.columns and not df["رابط الصورة"].isnull().all():
         st.markdown("#### 🖼️ الصور المرفقة")
         for idx, row in df.iterrows():
@@ -1022,7 +1012,7 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
                         st.caption(f"[رابط الصورة]({img_url})")
                     except Exception as e:
                         st.warning(f"⚠️ تعذر عرض الصورة: {e}")
-    
+
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         excel_file = export_sheet_to_excel({sheet_name: df}, sheet_name)
@@ -1036,7 +1026,7 @@ def search_across_sheets(all_sheets):
     if not all_sheets:
         st.warning("لا توجد بيانات للبحث")
         return
-    
+
     col1, col2 = st.columns(2)
     with col1:
         sheet_options = ["جميع الأقسام"] + list(all_sheets.keys())
@@ -1063,9 +1053,9 @@ def search_across_sheets(all_sheets):
         else:
             start_date = None
             end_date = None
-    
+
     view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="search_view_mode")
-    
+
     if st.button("بحث", key="search_btn", type="primary"):
         results = []
         sheets_to_search = all_sheets.items()
@@ -1094,11 +1084,11 @@ def search_across_sheets(all_sheets):
             if not df_filtered.empty:
                 df_filtered["القسم"] = sheet_name
                 results.append(df_filtered)
-        
+
         if results:
             combined_results = pd.concat(results, ignore_index=True)
             st.success(f"تم العثور على {len(combined_results)} نتيجة")
-            
+
             if view_mode == "جدول":
                 display_cols = [c for c in combined_results.columns if c != "رابط الصورة"]
                 st.dataframe(combined_results[display_cols], use_container_width=True, height=500)
@@ -1125,7 +1115,7 @@ def search_across_sheets(all_sheets):
                             st.markdown(f"**🔧 الإجراء:** {correction_str[:150]}")
                             if img_url:
                                 st.caption(f"[🔗 رابط الصورة]({img_url})")
-            
+
             excel_file = export_filtered_results_to_excel(combined_results, "نتائج_البحث")
             st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
         else:
@@ -1329,14 +1319,14 @@ def add_new_event(sheets_edit, sheet_name):
     st.markdown(f"### 📝 إضافة حدث عطل جديد في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
     equipment_list = get_equipment_list_from_sheet(df)
-    
+
     if not equipment_list:
         st.warning("⚠ لا توجد ماكينات مسجلة في هذا القسم. يرجى إضافة ماكينة أولاً من تبويب 'إدارة الماكينات'")
         return sheets_edit
 
     if "selected_equipment_temp" not in st.session_state:
         st.session_state.selected_equipment_temp = equipment_list[0] if equipment_list else ""
-    
+
     selected_equipment = st.selectbox(
         "🔧 اختر الماكينة:",
         equipment_list,
@@ -1346,9 +1336,9 @@ def add_new_event(sheets_edit, sheet_name):
     if selected_equipment != st.session_state.selected_equipment_temp:
         st.session_state.selected_equipment_temp = selected_equipment
         st.rerun()
-    
+
     spare_parts_list = get_spare_parts_for_equipment(selected_equipment)
-    
+
     with st.form(key="add_event_form"):
         col1, col2 = st.columns(2)
         with col1:
@@ -1383,9 +1373,9 @@ def add_new_event(sheets_edit, sheet_name):
                 st.info("لا توجد قطع غيار مسجلة لهذه الماكينة. يمكنك إضافتها من تبويب 'قطع الغيار'.")
                 part_name = ""
                 consume_qty = 0
-        
+
         submitted = st.form_submit_button("✅ إضافة الحدث", type="primary")
-        
+
         if submitted:
             spare_part_used = ""
             warning_msg = ""
@@ -1401,7 +1391,7 @@ def add_new_event(sheets_edit, sheet_name):
                 else:
                     st.error(msg)
                     return sheets_edit
-            
+
             image_url = None
             if uploaded_image is not None:
                 event_id = str(uuid.uuid4())[:8]
@@ -1410,7 +1400,7 @@ def add_new_event(sheets_edit, sheet_name):
                     st.success("✅ تم رفع الصورة بنجاح!")
                 else:
                     st.warning("⚠️ فشل رفع الصورة، سيتم حفظ الحدث بدون صورة")
-            
+
             new_row = {
                 "مده الاصلاح": repair_duration if repair_duration > 0 else "",
                 "التاريخ": event_date.strftime("%Y-%m-%d"),
@@ -1430,11 +1420,11 @@ def add_new_event(sheets_edit, sheet_name):
             new_row_df = pd.DataFrame([new_row])
             df_new = pd.concat([df, new_row_df], ignore_index=True)
             sheets_edit[sheet_name] = df_new
-            
+
             if "temp_spare_parts_df" in st.session_state:
                 sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = st.session_state.temp_spare_parts_df
                 del st.session_state.temp_spare_parts_df
-            
+
             if save_and_push_to_github(sheets_edit, f"إضافة حدث عطل مع استخدام قطعة {part_name}"):
                 st.cache_data.clear()
                 st.success("✅ تم إضافة الحدث بنجاح ورفعه إلى GitHub!")
@@ -1515,6 +1505,7 @@ def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
     st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة.")
     username = st.session_state.get("username")
+    all_sheets = load_all_sheets()  # استخدمنا all_sheets من خارج النطاق، نستدعيه هنا
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
     if not allowed_sections:
         st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
@@ -1678,6 +1669,7 @@ def preventive_maintenance_tab(sheets_edit):
     st.header("🛠 الصيانة الوقائية")
     st.info("إدارة بنود الصيانة الدورية. يتم حفظ البيانات تلقائياً في ملف Excel.")
     username = st.session_state.get("username")
+    all_sheets = load_all_sheets()
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
     if not allowed_sections:
         st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
@@ -1975,7 +1967,7 @@ with st.sidebar:
             st.rerun()
         if st.button("🚪 تسجيل الخروج"):
             logout_action()
-               # إدارة الصلاحيات (للمدير فقط)
+        # إدارة الصلاحيات (للمدير فقط)
         if st.session_state.get("username") == "admin":
             st.markdown("---")
             st.subheader("👥 إدارة الصلاحيات")
@@ -2023,3 +2015,50 @@ with st.sidebar:
                                 st.error("❌ فشل حفظ الصلاحيات")
                 else:
                     st.info("لا يوجد مستخدمون عاديون لإدارة صلاحياتهم")
+
+# ------------------------------- تحميل البيانات الرئيسية -------------------------------
+all_sheets = load_all_sheets()
+sheets_edit = load_sheets_for_edit()
+st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
+user_role = st.session_state.get("user_role", "viewer")
+user_permissions = st.session_state.get("user_permissions", ["view"])
+can_edit = (user_role == "admin" or user_role == "editor" or "edit" in user_permissions)
+tabs_list = ["🔍 بحث متقدم", "📊 تحليل الأعطال", "🔔 الإشعارات"]
+if can_edit:
+    tabs_list.append("🛠 تعديل وإدارة البيانات")
+tabs = st.tabs(tabs_list)
+with tabs[0]:
+    search_across_sheets(all_sheets)
+with tabs[1]:
+    failures_analysis_tab(all_sheets)
+with tabs[2]:
+    st.header("🔔 الإشعارات")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("⚠️ قطع غيار حرجة")
+        critical = get_critical_spare_parts()
+        if critical:
+            for part in critical:
+                threshold = part.get('حد_الإنذار', 1)
+                st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
+        else:
+            st.success("✅ لا توجد قطع غيار حرجة")
+    with col2:
+        st.subheader("🔧 صيانة مستحقة")
+        overdue, upcoming = get_upcoming_maintenance(3)
+        if not overdue.empty:
+            st.warning("🟡 صيانة متأخرة:")
+            for _, row in overdue.iterrows():
+                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (تاريخ مستحق: {row['التاريخ_التالي'].strftime('%Y-%m-%d')})")
+        else:
+            st.info("✅ لا توجد صيانات متأخرة")
+        if not upcoming.empty:
+            st.info("🟢 صيانة قادمة خلال 3 أيام:")
+            for _, row in upcoming.iterrows():
+                days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
+                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
+        else:
+            st.info("✅ لا توجد صيانات قادمة")
+if can_edit and len(tabs) > 3:
+    with tabs[3]:
+        sheets_edit = manage_data_edit(sheets_edit)
