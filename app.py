@@ -621,17 +621,31 @@ def download_users_from_github():
         response = requests.get(GITHUB_USERS_URL, timeout=10)
         response.raise_for_status()
         users_data = response.json()
+        
+        # تحويل هيكل الصلاحيات القديم إلى الجديد
+        for username, user_info in users_data.items():
+            if "permissions" in user_info and isinstance(user_info["permissions"], list):
+                # الهيكل القديم: permissions = ["all"] أو ["view"] ...
+                if "all" in user_info["permissions"]:
+                    user_info["permissions"] = {"all_sections": True}
+                else:
+                    user_info["permissions"] = {"all_sections": False}
+                user_info["sections_permissions"] = {}
+            elif "permissions" not in user_info:
+                # إذا لم يكن هناك صلاحيات على الإطلاق، نعطي صلاحية عرض لكل الأقسام (viewer)
+                user_info["permissions"] = {"all_sections": False}
+                user_info["sections_permissions"] = {}
+        
+        # حفظ النسخة المحلية بعد التحويل
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(users_data, f, indent=4, ensure_ascii=False)
         return users_data
-    except:
+    except Exception as e:
+        st.warning(f"لم نتمكن من تحميل users.json من GitHub: {e}")
         if os.path.exists(USERS_FILE):
-            try:
-                with open(USERS_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except:
-                pass
-        return {"admin": {"password": "admin123", "role": "admin", "created_at": datetime.now().isoformat(), "permissions": ["all"], "active": False}}
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return None
 
 def upload_users_to_github(users_data):
     try:
@@ -656,11 +670,35 @@ def upload_users_to_github(users_data):
 def load_users():
     try:
         users_data = download_users_from_github()
-        if "admin" not in users_data:
-            users_data["admin"] = {"password": "admin123", "role": "admin", "created_at": datetime.now().isoformat(), "permissions": ["all"], "active": False}
+        if not users_data or "admin" not in users_data:
+            # إذا لم يتم تحميل المستخدمين من GitHub أو لم يكن admin موجودًا،
+            # استخدم المستخدمين المحليين أو الافتراضيين
+            if os.path.exists(USERS_FILE):
+                with open(USERS_FILE, "r", encoding="utf-8") as f:
+                    local_users = json.load(f)
+                    if "admin" in local_users:
+                        return local_users
+            # البيانات الافتراضية (متطابقة مع ملف users.json المرفق)
+            default_users = {
+                "admin": {
+                    "password": "1234",
+                    "role": "admin",
+                    "permissions": {"all_sections": True},
+                    "sections_permissions": {}
+                },
+                "مدير_صيانة": {
+                    "password": "12345",
+                    "role": "admin",
+                    "permissions": {"all_sections": True},
+                    "sections_permissions": {}
+                }
+                # يمكن إضافة باقي المستخدمين هنا كنسخة احتياطية
+            }
+            return default_users
         return users_data
-    except:
-        return {"admin": {"password": "admin123", "role": "admin", "created_at": datetime.now().isoformat(), "permissions": ["all"], "active": False}}
+    except Exception as e:
+        st.error(f"خطأ في تحميل المستخدمين: {e}")
+        return {"admin": {"password": "1234", "role": "admin", "permissions": {"all_sections": True}, "sections_permissions": {}}}
 
 def load_state():
     if not os.path.exists(STATE_FILE):
@@ -774,13 +812,27 @@ def get_user_permissions(username):
     if username not in users:
         return {"all_sections": False, "sections_permissions": {}}
     user_data = users[username]
-    if "permissions" not in user_data:
-        old_role = user_data.get("role", "viewer")
-        if old_role == "admin":
-            return {"all_sections": True, "sections_permissions": {}}
+    
+    # التعامل مع الهيكل القديم إن وجد
+    if "permissions" in user_data and isinstance(user_data["permissions"], dict):
+        perms = user_data["permissions"]
+    elif "permissions" in user_data and isinstance(user_data["permissions"], list):
+        # تحويل القائمة القديمة
+        if "all" in user_data["permissions"]:
+            perms = {"all_sections": True}
         else:
-            return {"all_sections": False, "sections_permissions": {}}
-    return user_data.get("permissions", {"all_sections": False, "sections_permissions": {}})
+            perms = {"all_sections": False}
+    else:
+        perms = {"all_sections": False}
+    
+    # التأكد من وجود sections_permissions
+    if "sections_permissions" not in user_data:
+        user_data["sections_permissions"] = {}
+    
+    return {
+        "all_sections": perms.get("all_sections", False),
+        "sections_permissions": user_data.get("sections_permissions", {})
+    }
 
 def has_section_permission(username, section_name, required_permission="view"):
     if username == "admin":
@@ -1463,7 +1515,7 @@ def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
     st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة.")
     username = st.session_state.get("username")
-    allowed_sections = get_allowed_sections(sheets_edit, username, "view")
+    allowed_sections = get_allowed_sections(all_sheets, username, "view")
     if not allowed_sections:
         st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
         return sheets_edit
@@ -1626,7 +1678,7 @@ def preventive_maintenance_tab(sheets_edit):
     st.header("🛠 الصيانة الوقائية")
     st.info("إدارة بنود الصيانة الدورية. يتم حفظ البيانات تلقائياً في ملف Excel.")
     username = st.session_state.get("username")
-    allowed_sections = get_allowed_sections(sheets_edit, username, "view")
+    allowed_sections = get_allowed_sections(all_sheets, username, "view")
     if not allowed_sections:
         st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
         return sheets_edit
@@ -1935,7 +1987,13 @@ with st.sidebar:
                     if selected_user:
                         perms = get_user_permissions(selected_user)
                         all_sections_access = st.checkbox("الوصول إلى جميع الأقسام", value=perms.get("all_sections", False))
-                        existing_sections = ["التفتيح", "التمشيط", "الملفات", "الغزل", "البرم", "الكرد", "سحب اول", "سحب تاني", "التدوير", "المكابس", "المحطات"]
+                        # بدلاً من القائمة الثابتة، نجلب الأقسام من sheets_edit (إذا كانت موجودة)
+                        if sheets_edit:
+                           existing_sections = [name for name in sheets_edit.keys() 
+                                                if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
+                       else:
+                           existing_sections = []  # أو استخدم القائمة الثابتة احتياطيًا
+                        
                         if not all_sections_access:
                             st.markdown("**صلاحيات الأقسام:**")
                             section_perms = perms.get("sections_permissions", {})
