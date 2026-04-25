@@ -1975,7 +1975,7 @@ with st.sidebar:
             st.rerun()
         if st.button("🚪 تسجيل الخروج"):
             logout_action()
-        # إدارة الصلاحيات (للمدير فقط)
+               # إدارة الصلاحيات (للمدير فقط)
         if st.session_state.get("username") == "admin":
             st.markdown("---")
             st.subheader("👥 إدارة الصلاحيات")
@@ -1987,13 +1987,7 @@ with st.sidebar:
                     if selected_user:
                         perms = get_user_permissions(selected_user)
                         all_sections_access = st.checkbox("الوصول إلى جميع الأقسام", value=perms.get("all_sections", False))
-                        # بدلاً من القائمة الثابتة، نجلب الأقسام من sheets_edit (إذا كانت موجودة)
-                        if sheets_edit:
-                           existing_sections = [name for name in sheets_edit.keys() 
-                                                if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
-                       else:
-                           existing_sections = []  # أو استخدم القائمة الثابتة احتياطيًا
-                        
+                        existing_sections = ["التفتيح", "التمشيط", "الملفات", "الغزل", "البرم", "الكرد", "سحب اول", "سحب تاني", "التدوير", "المكابس", "المحطات"]
                         if not all_sections_access:
                             st.markdown("**صلاحيات الأقسام:**")
                             section_perms = perms.get("sections_permissions", {})
@@ -2006,10 +2000,14 @@ with st.sidebar:
                                     can_add = st.checkbox("إضافة حدث", key=f"add_{section}_{selected_user}", value="add_event" in section_perms.get(section, []))
                                     can_manage = st.checkbox("إدارة ماكينات", key=f"manage_{section}_{selected_user}", value="manage_machines" in section_perms.get(section, []))
                                     new_perms_list = []
-                                    if can_view: new_perms_list.append("view")
-                                    if can_edit: new_perms_list.append("edit")
-                                    if can_add: new_perms_list.append("add_event")
-                                    if can_manage: new_perms_list.append("manage_machines")
+                                    if can_view:
+                                        new_perms_list.append("view")
+                                    if can_edit:
+                                        new_perms_list.append("edit")
+                                    if can_add:
+                                        new_perms_list.append("add_event")
+                                    if can_manage:
+                                        new_perms_list.append("manage_machines")
                                     if new_perms_list:
                                         section_perms[section] = new_perms_list
                                     elif section in section_perms:
@@ -2025,49 +2023,3 @@ with st.sidebar:
                                 st.error("❌ فشل حفظ الصلاحيات")
                 else:
                     st.info("لا يوجد مستخدمون عاديون لإدارة صلاحياتهم")
-
-all_sheets = load_all_sheets()
-sheets_edit = load_sheets_for_edit()
-st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
-user_role = st.session_state.get("user_role", "viewer")
-user_permissions = st.session_state.get("user_permissions", ["view"])
-can_edit = (user_role == "admin" or user_role == "editor" or "edit" in user_permissions)
-tabs_list = ["🔍 بحث متقدم", "📊 تحليل الأعطال", "🔔 الإشعارات"]
-if can_edit:
-    tabs_list.append("🛠 تعديل وإدارة البيانات")
-tabs = st.tabs(tabs_list)
-with tabs[0]:
-    search_across_sheets(all_sheets)
-with tabs[1]:
-    failures_analysis_tab(all_sheets)
-with tabs[2]:
-    st.header("🔔 الإشعارات")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("⚠️ قطع غيار حرجة")
-        critical = get_critical_spare_parts()
-        if critical:
-            for part in critical:
-                threshold = part.get('حد_الإنذار', 1)
-                st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
-        else:
-            st.success("✅ لا توجد قطع غيار حرجة")
-    with col2:
-        st.subheader("🔧 صيانة مستحقة")
-        overdue, upcoming = get_upcoming_maintenance(3)
-        if not overdue.empty:
-            st.warning("🟡 صيانة متأخرة:")
-            for _, row in overdue.iterrows():
-                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (تاريخ مستحق: {row['التاريخ_التالي'].strftime('%Y-%m-%d')})")
-        else:
-            st.info("✅ لا توجد صيانات متأخرة")
-        if not upcoming.empty:
-            st.info("🟢 صيانة قادمة خلال 3 أيام:")
-            for _, row in upcoming.iterrows():
-                days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
-                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
-        else:
-            st.info("✅ لا توجد صيانات قادمة")
-if can_edit and len(tabs) > 3:
-    with tabs[3]:
-        sheets_edit = manage_data_edit(sheets_edit)
