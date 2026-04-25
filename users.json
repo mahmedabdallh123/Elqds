@@ -25,7 +25,7 @@
       "التفتيح": ["view", "edit", "add_event"]
     }
   },
-  "مشرف_التمشيط": {
+  "مشرف_تمشيط": {
     "password": "1234567",
     "role": "user",
     "permissions": {
