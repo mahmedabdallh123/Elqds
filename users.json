@@ -32,7 +32,7 @@
       "all_sections": false
     },
     "sections_permissions": {
-      "التمشيط": ["view", "edit", "add_event"]
+      "تمشيط": ["view", "edit", "add_event"]
     }
   },
   "مشرف_الملفات": {
@@ -105,14 +105,14 @@
       "التدوير": ["view", "edit", "add_event"]
     }
   },
-  "مشرف_المكابس": {
+  "مشرف_المكبس": {
     "password": "3333",
     "role": "user",
     "permissions": {
       "all_sections": false
     },
     "sections_permissions": {
-      "المكابس": ["view", "edit", "add_event"]
+      "المكبس": ["view", "edit", "add_event"]
     }
   },
   "مشرف_المحطات": {
