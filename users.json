@@ -66,7 +66,7 @@
       "all_sections": false
     },
     "sections_permissions": {
-      "محطه كرد1": ["view", "edit", "add_event", "manage_machines"],
+      "الكرد": ["view", "edit", "add_event", "manage_machines"],
       "محطه كرد2": ["view", "add_event"],
       "محطه ترطيب الكرد": ["view"]
     }
