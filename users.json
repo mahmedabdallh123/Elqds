@@ -14,7 +14,6 @@
       "all_sections": true
     },
     "sections_permissions": {}
-
   },
   "مشرف_التمشيط": {
     "password": "1234567",
@@ -27,7 +26,6 @@
       "ملفات": ["view", "edit", "add_event"],
       "سحب1": ["view", "edit", "add_event"],
       "سحب2": ["view", "edit", "add_event"]
-     
     }
   },
   "مشرف_البرم": {
@@ -48,10 +46,8 @@
       "all_sections": false
     },
     "sections_permissions": {
-      "الغزل": ["view", "edit", "add_event"],
-     
+      "الغزل": ["view", "edit", "add_event"]
     }
-
   },
   "مشرف_المكابس": {
     "password": "2222",
