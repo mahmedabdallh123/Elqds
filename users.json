@@ -24,8 +24,8 @@
     "sections_permissions": {
       "تمشيط": ["view", "edit", "add_event"],
       "ملفات": ["view", "edit", "add_event"],
-      "سحب1": ["view", "edit", "add_event"],
-      "سحب2": ["view", "edit", "add_event"]
+      "سحب اول": ["view", "edit", "add_event"],
+      "سحب ثاني": ["view", "edit", "add_event"]
     }
   },
   "مشرف_البرم": {
@@ -35,8 +35,7 @@
       "all_sections": false
     },
     "sections_permissions": {
-      "البرم": ["view", "edit", "add_event", "manage_machines"],
-      "محطه البرم": ["view", "add_event"]
+      "البرم": ["view", "edit", "add_event", "manage_machines"]
     }
   },
   "مشرف_الغزل": {
