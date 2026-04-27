@@ -1307,14 +1307,19 @@ def manage_machines(sheets_edit, sheet_name):
     st.markdown(f"### 🔧 إدارة الماكينات في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
     equipment_list = get_equipment_list_from_sheet(df)
+    
+    # عرض قائمة الماكينات الحالية
     if equipment_list:
         st.markdown("#### 📋 قائمة الماكينات في هذا القسم:")
         for eq in equipment_list:
             st.markdown(f"- 🔹 {eq}")
     else:
         st.info("لا توجد ماكينات مسجلة في هذا القسم بعد")
+    
     st.markdown("---")
     col1, col2 = st.columns(2)
+    
+    # إضافة ماكينة جديدة (يبقى كما هو، لمن لديهم صلاحية manage_machines على القسم)
     with col1:
         new_machine = st.text_input("➕ اسم الماكينة الجديدة:", key=f"new_machine_{sheet_name}")
         if st.button("➕ إضافة ماكينة", key=f"add_machine_{sheet_name}"):
@@ -1331,21 +1336,30 @@ def manage_machines(sheets_edit, sheet_name):
                     st.error(msg)
             else:
                 st.warning("يرجى إدخال اسم الماكينة")
+    
+    # حذف ماكينة (للمدير فقط)
     with col2:
         if equipment_list:
-            machine_to_delete = st.selectbox("🗑️ اختر الماكينة للحذف:", equipment_list, key=f"delete_machine_{sheet_name}")
-            st.warning("⚠️ تحذير: حذف الماكينة سيؤدي إلى حذف جميع سجلات الأعطال المرتبطة بها نهائياً!")
-            if st.button("🗑️ حذف الماكينة نهائياً", key=f"delete_machine_btn_{sheet_name}"):
-                success, msg = remove_equipment_from_sheet_data(sheets_edit, sheet_name, machine_to_delete)
-                if success:
-                    if save_and_push_to_github(sheets_edit, f"حذف ماكينة: {machine_to_delete} من قسم {sheet_name}"):
-                        st.success(msg)
-                        st.cache_data.clear()
-                        st.rerun()
+            st.markdown("#### 🗑️ حذف ماكينة")
+            
+            if st.session_state.get("username") == "admin":
+                machine_to_delete = st.selectbox("اختر الماكينة للحذف:", equipment_list, key=f"delete_machine_{sheet_name}")
+                st.warning("⚠️ تحذير: حذف الماكينة سيؤدي إلى حذف جميع سجلات الأعطال المرتبطة بها نهائياً!")
+                if st.button("🗑️ حذف الماكينة نهائياً", key=f"delete_machine_btn_{sheet_name}"):
+                    success, msg = remove_equipment_from_sheet_data(sheets_edit, sheet_name, machine_to_delete)
+                    if success:
+                        if save_and_push_to_github(sheets_edit, f"حذف ماكينة: {machine_to_delete} من قسم {sheet_name}"):
+                            st.success(msg)
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error("فشل الحفظ")
                     else:
-                        st.error("فشل الحفظ")
-                else:
-                    st.error(msg)
+                        st.error(msg)
+            else:
+                st.info("🔒 حذف الماكينات مقيد بصلاحيات المدير (admin). تواصل مع مدير النظام.")
+        else:
+            st.info("لا توجد ماكينات لحذفها")
 
 def add_new_event(sheets_edit, sheet_name):
     st.markdown(f"### 📝 إضافة حدث عطل جديد في قسم: {sheet_name}")
