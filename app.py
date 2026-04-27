@@ -1186,62 +1186,62 @@ def remove_equipment_from_sheet_data(sheets_edit, sheet_name, equipment_name):
     return True, f"تم حذف جميع سجلات الماكينة '{equipment_name}'"
 
 def add_new_department(sheets_edit):
-    st.subheader("➕ إضافة قسم جديد")
-    st.info("سيتم إنشاء قسم جديد (شيت جديد) في ملف Excel لإدارة ماكينات هذا القسم")
-    col1, col2 = st.columns(2)
-    with col1:
-        new_department_name = st.text_input("📝 اسم القسم الجديد:", key="new_department_name", placeholder="مثال: قسم الميكانيكا, قسم الكهرباء, محطة المياه")
-        if new_department_name and new_department_name in sheets_edit:
-            st.error(f"❌ القسم '{new_department_name}' موجود بالفعل!")
-        elif new_department_name:
-            st.success(f"✅ اسم القسم '{new_department_name}' متاح")
-    with col2:
-        st.markdown("#### 📋 إعدادات الأعمدة")
-        use_default = st.checkbox("استخدام الأعمدة الافتراضية", value=True, key="use_default_columns")
-        if use_default:
-            columns_list = APP_CONFIG["DEFAULT_SHEET_COLUMNS"]
-            st.info(f"📊 الأعمدة: {', '.join(columns_list)}")
-        else:
-            columns_text = st.text_area("✏️ الأعمدة (كل عمود في سطر):", value="\n".join(APP_CONFIG["DEFAULT_SHEET_COLUMNS"]), key="custom_columns", height=150)
-            columns_list = [col.strip() for col in columns_text.split("\n") if col.strip()]
-            if not columns_list:
-                columns_list = APP_CONFIG["DEFAULT_SHEET_COLUMNS"]
-    st.markdown("---")
-    st.markdown("### 📋 معاينة القسم الجديد")
-    preview_df = pd.DataFrame(columns=columns_list)
-    st.dataframe(preview_df, use_container_width=True)
-    st.caption(f"📊 عدد الأعمدة: {len(columns_list)} | سيتم إنشاء قسم فارغ بهذه الأعمدة")
-    if st.button("✅ إنشاء وإضافة القسم الجديد", key="create_department_btn", type="primary", use_container_width=True):
-        if not new_department_name:
-            st.error("❌ الرجاء إدخال اسم القسم")
-            return sheets_edit
-        clean_name = re.sub(r'[\\/*?:"<>|]', '_', new_department_name.strip())
-        if clean_name != new_department_name:
-            st.warning(f"⚠ تم تعديل اسم القسم إلى: {clean_name}")
-            new_department_name = clean_name
-        if new_department_name in sheets_edit:
-            st.error(f"❌ القسم '{new_department_name}' موجود بالفعل!")
-            return sheets_edit
-        new_df = pd.DataFrame(columns=columns_list)
-        sheets_edit[new_department_name] = new_df
-        if save_and_push_to_github(sheets_edit, f"إنشاء قسم جديد: {new_department_name}"):
-            st.success(f"✅ تم إنشاء القسم '{new_department_name}' بنجاح!")
-            st.cache_data.clear()
-            st.balloons()
-            st.rerun()
-        else:
-            st.error("❌ فشل حفظ القسم")
-            return sheets_edit
-
-    # ----------------------------------------------------------------------
-    # حذف قسم موجود (للمدير فقط)
-    # ----------------------------------------------------------------------
+    # إضافة قسم جديد (للمدير فقط)
     if st.session_state.get("username") == "admin":
+        st.subheader("➕ إضافة قسم جديد")
+        st.info("سيتم إنشاء قسم جديد (شيت جديد) في ملف Excel لإدارة ماكينات هذا القسم")
+        col1, col2 = st.columns(2)
+        with col1:
+            new_department_name = st.text_input("📝 اسم القسم الجديد:", key="new_department_name", placeholder="مثال: قسم الميكانيكا, قسم الكهرباء, محطة المياه")
+            if new_department_name and new_department_name in sheets_edit:
+                st.error(f"❌ القسم '{new_department_name}' موجود بالفعل!")
+            elif new_department_name:
+                st.success(f"✅ اسم القسم '{new_department_name}' متاح")
+        with col2:
+            st.markdown("#### 📋 إعدادات الأعمدة")
+            use_default = st.checkbox("استخدام الأعمدة الافتراضية", value=True, key="use_default_columns")
+            if use_default:
+                columns_list = APP_CONFIG["DEFAULT_SHEET_COLUMNS"]
+                st.info(f"📊 الأعمدة: {', '.join(columns_list)}")
+            else:
+                columns_text = st.text_area("✏️ الأعمدة (كل عمود في سطر):", value="\n".join(APP_CONFIG["DEFAULT_SHEET_COLUMNS"]), key="custom_columns", height=150)
+                columns_list = [col.strip() for col in columns_text.split("\n") if col.strip()]
+                if not columns_list:
+                    columns_list = APP_CONFIG["DEFAULT_SHEET_COLUMNS"]
+        st.markdown("---")
+        st.markdown("### 📋 معاينة القسم الجديد")
+        preview_df = pd.DataFrame(columns=columns_list)
+        st.dataframe(preview_df, use_container_width=True)
+        st.caption(f"📊 عدد الأعمدة: {len(columns_list)} | سيتم إنشاء قسم فارغ بهذه الأعمدة")
+        if st.button("✅ إنشاء وإضافة القسم الجديد", key="create_department_btn", type="primary", use_container_width=True):
+            if not new_department_name:
+                st.error("❌ الرجاء إدخال اسم القسم")
+                return sheets_edit
+            clean_name = re.sub(r'[\\/*?:"<>|]', '_', new_department_name.strip())
+            if clean_name != new_department_name:
+                st.warning(f"⚠ تم تعديل اسم القسم إلى: {clean_name}")
+                new_department_name = clean_name
+            if new_department_name in sheets_edit:
+                st.error(f"❌ القسم '{new_department_name}' موجود بالفعل!")
+                return sheets_edit
+            new_df = pd.DataFrame(columns=columns_list)
+            sheets_edit[new_department_name] = new_df
+            if save_and_push_to_github(sheets_edit, f"إنشاء قسم جديد: {new_department_name}"):
+                st.success(f"✅ تم إنشاء القسم '{new_department_name}' بنجاح!")
+                st.cache_data.clear()
+                st.balloons()
+                st.rerun()
+            else:
+                st.error("❌ فشل حفظ القسم")
+                return sheets_edit
+
+        # ------------------------------------------------------------------
+        # حذف قسم موجود (للمدير فقط)
+        # ------------------------------------------------------------------
         st.markdown("---")
         st.subheader("🗑️ حذف قسم موجود")
         st.warning("⚠️ انتبه: حذف القسم سيؤدي إلى حذف جميع بياناته بما فيها الماكينات والأعطال وقطع الغيار المرتبطة به نهائياً ولا يمكن استرجاعها.")
         
-        # الحصول على قائمة الأقسام القابلة للحذف (استبعاد شيتات النظام)
         deletable_sections = [name for name in sheets_edit.keys() 
                               if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
         if not deletable_sections:
@@ -1249,14 +1249,11 @@ def add_new_department(sheets_edit):
         else:
             selected_dept = st.selectbox("اختر القسم المراد حذفه:", deletable_sections, key="delete_department_select")
             if selected_dept:
-                # تحذير إضافي
-                st.error(f"🔴 أنت على وشك حذف قسم **'{selected_dept}'** نهائياً. سيتم حذف جميع البيانات المرتبطة به (أعطال، ماكينات، إلخ).")
+                st.error(f"🔴 أنت على وشك حذف قسم **'{selected_dept}'** نهائياً. سيتم حذف جميع البيانات المرتبطة به.")
                 confirm = st.text_input("لتأكيد الحذف، اكتب اسم القسم هنا:", key="delete_confirm")
                 if confirm == selected_dept:
                     if st.button("🗑️ حذف القسم نهائياً", key="delete_department_btn", type="primary"):
-                        # حذف القسم من sheets_edit
                         del sheets_edit[selected_dept]
-                        # حفظ التغييرات ورفعها إلى GitHub
                         if save_and_push_to_github(sheets_edit, f"حذف قسم: {selected_dept}"):
                             st.success(f"✅ تم حذف القسم '{selected_dept}' بنجاح!")
                             st.cache_data.clear()
@@ -1265,6 +1262,9 @@ def add_new_department(sheets_edit):
                             st.error("❌ فشل حفظ التغييرات بعد حذف القسم.")
                 elif confirm:
                     st.warning("الاسم غير متطابق. لن يتم حذف القسم.")
+
+    else:
+        st.info("🔒 فقط المدير (admin) يمكنه إضافة أو حذف الأقسام.")
 
     st.markdown("---")
     st.markdown("### 📋 الأقسام الموجودة حالياً:")
