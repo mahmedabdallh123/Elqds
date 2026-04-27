@@ -1232,6 +1232,40 @@ def add_new_department(sheets_edit):
         else:
             st.error("❌ فشل حفظ القسم")
             return sheets_edit
+
+    # ----------------------------------------------------------------------
+    # حذف قسم موجود (للمدير فقط)
+    # ----------------------------------------------------------------------
+    if st.session_state.get("username") == "admin":
+        st.markdown("---")
+        st.subheader("🗑️ حذف قسم موجود")
+        st.warning("⚠️ انتبه: حذف القسم سيؤدي إلى حذف جميع بياناته بما فيها الماكينات والأعطال وقطع الغيار المرتبطة به نهائياً ولا يمكن استرجاعها.")
+        
+        # الحصول على قائمة الأقسام القابلة للحذف (استبعاد شيتات النظام)
+        deletable_sections = [name for name in sheets_edit.keys() 
+                              if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
+        if not deletable_sections:
+            st.info("لا توجد أقسام قابلة للحذف.")
+        else:
+            selected_dept = st.selectbox("اختر القسم المراد حذفه:", deletable_sections, key="delete_department_select")
+            if selected_dept:
+                # تحذير إضافي
+                st.error(f"🔴 أنت على وشك حذف قسم **'{selected_dept}'** نهائياً. سيتم حذف جميع البيانات المرتبطة به (أعطال، ماكينات، إلخ).")
+                confirm = st.text_input("لتأكيد الحذف، اكتب اسم القسم هنا:", key="delete_confirm")
+                if confirm == selected_dept:
+                    if st.button("🗑️ حذف القسم نهائياً", key="delete_department_btn", type="primary"):
+                        # حذف القسم من sheets_edit
+                        del sheets_edit[selected_dept]
+                        # حفظ التغييرات ورفعها إلى GitHub
+                        if save_and_push_to_github(sheets_edit, f"حذف قسم: {selected_dept}"):
+                            st.success(f"✅ تم حذف القسم '{selected_dept}' بنجاح!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error("❌ فشل حفظ التغييرات بعد حذف القسم.")
+                elif confirm:
+                    st.warning("الاسم غير متطابق. لن يتم حذف القسم.")
+
     st.markdown("---")
     st.markdown("### 📋 الأقسام الموجودة حالياً:")
     if sheets_edit:
@@ -1241,7 +1275,6 @@ def add_new_department(sheets_edit):
     else:
         st.info("لا توجد أقسام بعد")
     return sheets_edit
-
 def add_new_machine(sheets_edit, sheet_name):
     st.markdown(f"### 🔧 إضافة ماكينة جديدة في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
