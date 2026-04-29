@@ -173,7 +173,28 @@ def get_critical_spare_parts():
     critical = df[df["الرصيد الموجود"] < df["حد_الإنذار"]]
     result = critical[["اسم القطعة", "اسم الماكينة", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
     return result
+# ------------------------------- دوال سجل النشاطات -------------------------------
 
+
+# ⬇️ أضف الدالة الجديدة هنا ⬇️
+def load_activity_log():
+    """تحميل سجل النشاطات من الملف المحلي أو GitHub"""
+    if GITHUB_AVAILABLE:
+        try:
+            g = Github(GITHUB_TOKEN)
+            repo = g.get_repo(APP_CONFIG["REPO_NAME"])
+            contents = repo.get_contents(ACTIVITY_LOG_FILE, ref=APP_CONFIG["BRANCH"])
+            import base64
+            content = base64.b64decode(contents.content).decode('utf-8')
+            return json.loads(content)
+        except:
+            pass
+    if os.path.exists(ACTIVITY_LOG_FILE):
+        with open(ACTIVITY_LOG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+# ------------------------------- دوال الصيانة الوقائية -------------------------------
 # ------------------------------- دوال الصيانة الوقائية -------------------------------
 def load_maintenance_tasks():
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
