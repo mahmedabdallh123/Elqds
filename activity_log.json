@@ -4,5 +4,11 @@
     "username": "مدير_صيانة",
     "action_type": "execute_maintenance",
     "details": "تم تنفيذ صيانة 'تغير زيت جير بوكس درفيل العوادم' للماكينة CLX-2 بواسطة س"
+  },
+  {
+    "timestamp": "2026-04-29T19:01:18.411350",
+    "username": "مدير_صيانة",
+    "action_type": "execute_maintenance",
+    "details": "تم تنفيذ صيانة 'تغير زيت جير بوكس درفيل العوادم' للماكينة CLX-2 بواسطة س"
   }
 ]
