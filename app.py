@@ -1839,22 +1839,26 @@ def preventive_maintenance_tab(sheets_edit):
                     new_notes = st.text_area("ملاحظات", value=task_row["ملاحظات"] if pd.notna(task_row["ملاحظات"]) else "", key="edit_task_notes")
                     if st.button("💾 حفظ التغييرات", key="save_task_edit"):
                         new_period_days = new_period_hours / 24.0
-                        tasks_df.loc[original_idx, "اسم_البند"] = new_name
-                        tasks_df.loc[original_idx, "الفترة_بالأيام"] = new_period_days
-                        tasks_df.loc[original_idx, "نوع_الصيانة"] = f"{new_period_hours} ساعة"
-                        tasks_df.loc[original_idx, "ملاحظات"] = new_notes
-                        last_exec = tasks_df.loc[original_idx, "آخر_تنفيذ"]
+                        # تعديل DataFrame الأصلي
+                        main_df = sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]]
+                        main_df.loc[original_idx, "اسم_البند"] = new_name
+                        main_df.loc[original_idx, "الفترة_بالأيام"] = new_period_days
+                        main_df.loc[original_idx, "نوع_الصيانة"] = f"{new_period_hours} ساعة"
+                        main_df.loc[original_idx, "ملاحظات"] = new_notes
+                        last_exec = main_df.loc[original_idx, "آخر_تنفيذ"]
                         if pd.notna(last_exec) and hasattr(last_exec, 'date'):
-                            tasks_df.loc[original_idx, "التاريخ_التالي"] = last_exec + timedelta(days=new_period_days)
+                            main_df.loc[original_idx, "التاريخ_التالي"] = last_exec + timedelta(days=new_period_days)
                         else:
-                            tasks_df.loc[original_idx, "التاريخ_التالي"] = datetime.now().date() + timedelta(days=new_period_days)
-                        sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = tasks_df
+                            main_df.loc[original_idx, "التاريخ_التالي"] = datetime.now().date() + timedelta(days=new_period_days)
+                        sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = main_df
                         if save_and_push_to_github(sheets_edit, f"تعديل بند صيانة: {selected_task_name}"):
                             st.success("تم التعديل")
                             st.rerun()
                 if st.button("🗑️ حذف هذا البند", key="delete_task_btn"):
-                    tasks_df = tasks_df.drop(index=original_idx)
-                    sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = tasks_df
+                    # حذف من DataFrame الأصلي
+                    main_df = sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]]
+                    main_df = main_df.drop(index=original_idx)
+                    sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = main_df
                     if save_and_push_to_github(sheets_edit, f"حذف بند صيانة: {selected_task_name}"):
                         st.success("تم الحذف")
                         st.rerun()
@@ -1899,8 +1903,10 @@ def preventive_maintenance_tab(sheets_edit):
                                         st.session_state[f"edit_task_mode_{original_idx}"] = True
                                 with col_btn2:
                                     if st.button("🗑️ حذف", key=f"delete_task_card_{original_idx}"):
-                                        tasks_df = tasks_df.drop(index=original_idx)
-                                        sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = tasks_df
+                                        # حذف من DataFrame الأصلي
+                                        main_df = sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]]
+                                        main_df = main_df.drop(index=original_idx)
+                                        sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = main_df
                                         if save_and_push_to_github(sheets_edit, f"حذف بند صيانة: {row['اسم_البند']}"):
                                             st.success("تم الحذف")
                                             st.rerun()
@@ -1911,16 +1917,17 @@ def preventive_maintenance_tab(sheets_edit):
                                         new_notes = st.text_area("ملاحظات", value=row['ملاحظات'] if pd.notna(row['ملاحظات']) else "")
                                         if st.form_submit_button("💾 حفظ"):
                                             new_period_days = new_period_hours / 24.0
-                                            tasks_df.loc[original_idx, "اسم_البند"] = new_name
-                                            tasks_df.loc[original_idx, "الفترة_بالأيام"] = new_period_days
-                                            tasks_df.loc[original_idx, "نوع_الصيانة"] = f"{new_period_hours} ساعة"
-                                            tasks_df.loc[original_idx, "ملاحظات"] = new_notes
-                                            last_exec = tasks_df.loc[original_idx, "آخر_تنفيذ"]
+                                            main_df = sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]]
+                                            main_df.loc[original_idx, "اسم_البند"] = new_name
+                                            main_df.loc[original_idx, "الفترة_بالأيام"] = new_period_days
+                                            main_df.loc[original_idx, "نوع_الصيانة"] = f"{new_period_hours} ساعة"
+                                            main_df.loc[original_idx, "ملاحظات"] = new_notes
+                                            last_exec = main_df.loc[original_idx, "آخر_تنفيذ"]
                                             if pd.notna(last_exec) and hasattr(last_exec, 'date'):
-                                                tasks_df.loc[original_idx, "التاريخ_التالي"] = last_exec + timedelta(days=new_period_days)
+                                                main_df.loc[original_idx, "التاريخ_التالي"] = last_exec + timedelta(days=new_period_days)
                                             else:
-                                                tasks_df.loc[original_idx, "التاريخ_التالي"] = datetime.now().date() + timedelta(days=new_period_days)
-                                            sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = tasks_df
+                                                main_df.loc[original_idx, "التاريخ_التالي"] = datetime.now().date() + timedelta(days=new_period_days)
+                                            sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = main_df
                                             if save_and_push_to_github(sheets_edit, f"تعديل بند صيانة: {row['اسم_البند']}"):
                                                 st.success("تم التعديل")
                                                 del st.session_state[f"edit_task_mode_{original_idx}"]
