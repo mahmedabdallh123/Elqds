@@ -266,6 +266,57 @@ def get_upcoming_maintenance(days_ahead=3):
 # ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
 # (تم اختصارها لتوفير المساحة، ولكن يجب أن تكون موجودة كما في الكود الأصلي)
 def analyze_time_between_failures(df):
+    """تحليل المدة الزمنية بين الأعطال لكل معدة، مع إظهار الأحداث السابقة والتالية وإمكانية البحث"""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    data = df.copy()
+    if "التاريخ" not in data.columns or "المعدة" not in data.columns or "الحدث/العطل" not in data.columns:
+        st.warning("بيانات غير مكتملة: يجب وجود أعمدة 'التاريخ', 'المعدة', 'الحدث/العطل'")
+        return pd.DataFrame()
+    
+    data["التاريخ"] = pd.to_datetime(data["التاريخ"], errors='coerce')
+    data = data.dropna(subset=["التاريخ"]).sort_values(["المعدة", "التاريخ"])
+    
+    results = []
+    for equipment in data["المعدة"].unique():
+        eq_data = data[data["المعدة"] == equipment].copy()
+        if len(eq_data) < 2:
+            continue
+        
+        # حساب الفجوات (بين الصف الحالي والتالي)
+        time_diffs = eq_data["التاريخ"].diff().shift(-1).dt.total_seconds() / (24 * 3600)  # الفرق بالايام بين الحالي والتالي
+        # ملاحظة: diff().shift(-1) تعطي الفرق بين الصف الحالي والصف التالي
+        
+        # جمع النتائج
+        for i in range(len(eq_data) - 1):
+            current = eq_data.iloc[i]
+            next_row = eq_data.iloc[i+1]
+            gap_days = (next_row["التاريخ"] - current["التاريخ"]).total_seconds() / (24 * 3600)
+            
+            # الحدث السابق (للحدث الحالي) والحدث التالي
+            prev_event = eq_data.iloc[i-1]["الحدث/العطل"] if i > 0 else None
+            prev_date = eq_data.iloc[i-1]["التاريخ"] if i > 0 else None
+            next_event = next_row["الحدث/العطل"] if i+1 < len(eq_data) else None
+            next_date = next_row["التاريخ"] if i+1 < len(eq_data) else None
+            
+            results.append({
+                "المعدة": equipment,
+                "الحدث الحالي": current["الحدث/العطل"],
+                "تاريخ الحدث الحالي": current["التاريخ"].strftime("%Y-%m-%d"),
+                "الحدث السابق": prev_event if prev_event else "---",
+                "تاريخ الحدث السابق": prev_date.strftime("%Y-%m-%d") if prev_date else "---",
+                "الحدث التالي": next_event,
+                "تاريخ الحدث التالي": next_date.strftime("%Y-%m-%d") if next_date else "---",
+                "الفجوة إلى التالي (أيام)": round(gap_days, 1)
+            })
+    
+    result_df = pd.DataFrame(results)
+    if result_df.empty:
+        return pd.DataFrame()
+    
+    # إضافة عمود تسلسلي للعرض
+    result_df.reset_index(drop=True, inplace=True)
+    return result_df
     # ... كود الدالة كما هو (لم يتغير)
     pass
 
@@ -285,7 +336,160 @@ def create_failure_charts_plotly(analysis):
     # ... كود الدالة كما هو
     pass
 
+def analyze_time_between_failures(df):
+    """تحليل المدة الزمنية بين الأعطال لكل معدة، مع إظهار الأحداث السابقة والتالية وإمكانية البحث"""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    data = df.copy()
+    if "التاريخ" not in data.columns or "المعدة" not in data.columns or "الحدث/العطل" not in data.columns:
+        st.warning("بيانات غير مكتملة: يجب وجود أعمدة 'التاريخ', 'المعدة', 'الحدث/العطل'")
+        return pd.DataFrame()
+    
+    data["التاريخ"] = pd.to_datetime(data["التاريخ"], errors='coerce')
+    data = data.dropna(subset=["التاريخ"]).sort_values(["المعدة", "التاريخ"])
+    
+    results = []
+    for equipment in data["المعدة"].unique():
+        eq_data = data[data["المعدة"] == equipment].copy()
+        if len(eq_data) < 2:
+            continue
+        
+        for i in range(len(eq_data)-1):
+            current = eq_data.iloc[i]
+            next_row = eq_data.iloc[i+1]
+            gap_days = (next_row["التاريخ"] - current["التاريخ"]).total_seconds() / (24 * 3600)
+            prev_event = eq_data.iloc[i-1]["الحدث/العطل"] if i > 0 else None
+            prev_date = eq_data.iloc[i-1]["التاريخ"] if i > 0 else None
+            results.append({
+                "المعدة": equipment,
+                "الحدث الحالي": current["الحدث/العطل"],
+                "تاريخ الحدث الحالي": current["التاريخ"].strftime("%Y-%m-%d"),
+                "الحدث السابق": prev_event if prev_event else "---",
+                "تاريخ الحدث السابق": prev_date.strftime("%Y-%m-%d") if prev_date else "---",
+                "الحدث التالي": next_row["الحدث/العطل"],
+                "تاريخ الحدث التالي": next_row["التاريخ"].strftime("%Y-%m-%d"),
+                "الفجوة إلى التالي (أيام)": round(gap_days, 1)
+            })
+    
+    result_df = pd.DataFrame(results)
+    if result_df.empty:
+        return pd.DataFrame()
+    result_df.reset_index(drop=True, inplace=True)
+    return result_df
+
 def failures_analysis_tab(all_sheets):
+    st.header("📊 تحليل الأعطال والإجراءات التصحيحية")
+    if not all_sheets:
+        st.warning("لا توجد بيانات للتحليل")
+        return
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        sheet_options = list(all_sheets.keys())
+        selected_sheet = st.selectbox("اختر القسم للتحليل:", sheet_options, key="analysis_sheet")
+    with col2:
+        df = all_sheets[selected_sheet]
+        equipment_list = get_equipment_list_from_sheet(df)
+        equipment_options = ["جميع الماكينات"] + equipment_list
+        selected_equipment = st.selectbox("اختر الماكينة للتحليل:", equipment_options, key="analysis_equipment")
+    
+    if st.button("🔄 تشغيل التحليل", key="run_analysis", type="primary"):
+        with st.spinner("جاري تحليل البيانات..."):
+            analysis = analyze_failures(df, selected_equipment if selected_equipment != "جميع الماكينات" else None)
+            if analysis is None:
+                st.error("❌ لا توجد بيانات كافية للتحليل.")
+                return
+            
+            st.subheader("📈 ملخص التحليل")
+            col_a, col_b, col_c, col_d = st.columns(4)
+            with col_a: st.metric("إجمالي الأعطال", analysis["total_failures"])
+            with col_b: st.metric("عدد الماكينات", analysis["unique_equipment"])
+            with col_c: st.metric("من تاريخ", analysis["date_range"]["from"])
+            with col_d: st.metric("إلى تاريخ", analysis["date_range"]["to"])
+            if analysis["avg_repair_time"] is not None:
+                st.subheader("⏱️ إحصائيات مدة الإصلاح")
+                col_r1, col_r2 = st.columns(2)
+                with col_r1: st.metric("متوسط مدة الإصلاح (ساعات)", f"{analysis['avg_repair_time']:.1f}")
+                with col_r2: st.metric("الوسيط", f"{analysis['median_repair_time']:.1f}")
+            
+            st.subheader("📊 الرسوم البيانية")
+            if PLOTLY_AVAILABLE:
+                charts = create_failure_charts_plotly(analysis)
+                for chart in charts: st.plotly_chart(chart, use_container_width=True)
+            else:
+                st.warning("مكتبات الرسم غير متوفرة")
+            
+            st.subheader("📋 الجداول التفصيلية")
+            tabs_list = ["معدل تكرار الأعطال", "أكثر الأعطال تكراراً", "أنواع الأعطال", "MTBF", "الفجوات الزمنية (الكلية)", "التحليل الشهري", "الإجراءات التصحيحية", "متوسط مدة الإصلاح", "تحليل أداء الفنيين", "الفجوات الزمنية التفصيلية"]
+            tabs_analysis = st.tabs(tabs_list)
+            
+            with tabs_analysis[0]:
+                if not analysis["failure_rate"].empty: st.dataframe(analysis["failure_rate"])
+                else: st.info("لا توجد بيانات")
+            with tabs_analysis[1]:
+                if not analysis["issue_counts"].empty: st.dataframe(analysis["issue_counts"])
+                else: st.info("لا توجد بيانات")
+            with tabs_analysis[2]:
+                if not analysis["fault_types"].empty: st.dataframe(analysis["fault_types"])
+                else: st.info("لا توجد بيانات عن أنواع الأعطال")
+            with tabs_analysis[3]:
+                if not analysis["mtbf"].empty: st.dataframe(analysis["mtbf"])
+                else: st.info("لا توجد بيانات كافية لحساب MTBF")
+            with tabs_analysis[4]:
+                # الفجوات الزمنية الكلية (المتوسط لكل معدة)
+                if not analysis["time_between_failures"].empty:
+                    st.dataframe(analysis["time_between_failures"])
+                else:
+                    st.info("لا توجد بيانات كافية لتحليل الفجوات الزمنية الكلية")
+            with tabs_analysis[5]:
+                if not analysis["monthly"].empty:
+                    st.dataframe(analysis["monthly"].pivot(index="الشهر", columns="المعدة", values="عدد الأعطال").fillna(0))
+                else:
+                    st.info("لا توجد بيانات")
+            with tabs_analysis[6]:
+                if not analysis["correction_counts"].empty:
+                    st.dataframe(analysis["correction_counts"])
+                else:
+                    st.info("لا توجد بيانات")
+            with tabs_analysis[7]:
+                if not analysis["repair_by_equipment"].empty:
+                    st.dataframe(analysis["repair_by_equipment"])
+                else:
+                    st.info("لا توجد بيانات")
+            with tabs_analysis[8]:
+                st.subheader("👨‍🔧 تحليل أداء الفنيين")
+                # ... (الكود الموجود سابقاً لتحليل الفنيين – يتم وضعه كما هو دون تغيير)
+                if analysis["technician_summary"] is not None and not analysis["technician_summary"].empty:
+                    # ... (الكود الكامل لتحليل الفنيين)
+                    pass
+                else:
+                    st.info("لا توجد بيانات كافية لتحليل أداء الفنيين")
+            with tabs_analysis[9]:
+                st.subheader("📋 الفجوات الزمنية التفصيلية بين الأحداث المتعاقبة")
+                # حساب الفجوات التفصيلية
+                details_gaps = analyze_time_between_failures(df)
+                if details_gaps.empty:
+                    st.info("لا توجد بيانات كافية لحساب الفجوات التفصيلية (يلزم على الأقل حدثان لنفس المعدة)")
+                else:
+                    # فلتر حسب المعدة
+                    eq_list = ["جميع المعدات"] + sorted(details_gaps["المعدة"].unique())
+                    selected_eq_filter = st.selectbox("فلتر حسب المعدة (للفجوات التفصيلية):", eq_list, key="gap_eq_filter")
+                    # فلتر بحث في وصف الحدث
+                    search_gap = st.text_input("بحث في وصف الحدث الحالي:", placeholder="مثال: سير700", key="gap_search")
+                    filtered_details = details_gaps.copy()
+                    if selected_eq_filter != "جميع المعدات":
+                        filtered_details = filtered_details[filtered_details["المعدة"] == selected_eq_filter]
+                    if search_gap:
+                        filtered_details = filtered_details[filtered_details["الحدث الحالي"].str.contains(search_gap, case=False, na=False)]
+                    st.dataframe(filtered_details, use_container_width=True, height=500)
+                    # زر تحميل
+                    csv = filtered_details.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 تحميل الفجوات التفصيلية CSV", csv, "detailed_time_between_failures.csv", "text/csv")
+            
+            st.markdown("---")
+            st.subheader("📥 تصدير التقرير")
+            excel_report = generate_excel_report(analysis, selected_sheet, selected_equipment)
+            st.download_button("📊 تحميل تقرير التحليل كملف Excel", excel_report, f"failure_analysis_{selected_sheet}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_analysis_report")
     # ... كود الدالة كما هو (غير معدل)
     pass
 
