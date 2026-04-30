@@ -315,10 +315,22 @@ def failures_analysis_tab(all_sheets):
         return
     
     selected_section = st.selectbox("🏭 اختر القسم:", all_section_names, key="analysis_section")
-    df = all_sheets[selected_section]
+    df = all_sheets[selected_section].copy()
+    
+    # التأكد من وجود عمود المعدة
+    if "المعدة" not in df.columns:
+        st.error(f"⚠️ القسم '{selected_section}' لا يحتوي على عمود 'المعدة'")
+        return
+    
+    # تنظيف أسماء الماكينات من المسافات الزائدة
+    df["المعدة"] = df["المعدة"].astype(str).str.strip()
     
     # اختيار الماكينة
     equipment_list = get_equipment_list_from_sheet(df)
+    if not equipment_list:
+        st.warning(f"⚠️ لا توجد ماكينات مسجلة في قسم '{selected_section}'")
+        return
+    
     equipment_options = ["جميع الماكينات"] + equipment_list
     selected_equipment = st.selectbox("🔧 اختر الماكينة:", equipment_options, key="analysis_equipment")
     
@@ -333,34 +345,50 @@ def failures_analysis_tab(all_sheets):
     search_text = st.text_input("🔍 كلمة البحث في وصف العطل (اختياري):", placeholder="مثال: سير700, توقف, اهتزاز", key="search_text_analysis")
     
     if st.button("🔄 تشغيل التحليل", key="run_analysis", type="primary"):
-        # تصفية البيانات
+        # نسخة للتصفية
         filtered_df = df.copy()
         
-        # فلتر الماكينة
+        # ------ فلتر الماكينة ------
         if selected_equipment != "جميع الماكينات":
             filtered_df = filtered_df[filtered_df["المعدة"] == selected_equipment]
         
-        # فلتر التاريخ
+        # ------ فلتر التاريخ ------
         if "التاريخ" in filtered_df.columns:
             filtered_df["التاريخ"] = pd.to_datetime(filtered_df["التاريخ"], errors='coerce')
+            # حذف التواريخ غير الصالحة
             filtered_df = filtered_df.dropna(subset=["التاريخ"])
             if start_date:
                 filtered_df = filtered_df[filtered_df["التاريخ"] >= pd.to_datetime(start_date)]
             if end_date:
-                filtered_df = filtered_df[filtered_df["التاريخ"] <= pd.to_datetime(end_date)]
+                # إضافة يوم واحد ليشمل نهاية اليوم
+                end_date_plus = pd.to_datetime(end_date) + timedelta(days=1)
+                filtered_df = filtered_df[filtered_df["التاريخ"] <= end_date_plus]
         
-        # فلتر النص
+        # ------ فلتر النص ------
         if search_text and "الحدث/العطل" in filtered_df.columns:
+            # التأكد من عدم وجود قيم فارغة
+            filtered_df["الحدث/العطل"] = filtered_df["الحدث/العطل"].fillna("").astype(str)
             filtered_df = filtered_df[filtered_df["الحدث/العطل"].str.contains(search_text, case=False, na=False)]
         
+        # ------ التحقق من وجود بيانات ------
         if filtered_df.empty:
             st.warning("⚠️ لا توجد بيانات تطابق معايير التصفية")
+            # عرض معلومات إضافية للمساعدة في التصحيح (للمطور)
+            with st.expander("🔍 معلومات التصحيح (لمساعدة المطور)"):
+                st.write(f"إجمالي البيانات في القسم '{selected_section}': {len(df)}")
+                st.write(f"بعد فلتر الماكينة (اختيار '{selected_equipment}'): {len(filtered_df)}")
+                st.write(f"نطاق التاريخ: {start_date} إلى {end_date}")
+                st.write(f"نص البحث: '{search_text}'")
+                # عرض عينة من البيانات لمعرفة ما إذا كانت التواريخ موجودة
+                if "التاريخ" in df.columns:
+                    sample_dates = df["التاريخ"].dropna().head(5).tolist()
+                    st.write(f"عينة من التواريخ في البيانات: {sample_dates}")
             return
         
-        # 1. حساب الفجوات التفصيلية
+        # ------ حساب الفجوات التفصيلية ------
         details_gaps = analyze_time_between_failures(filtered_df)
         
-        # 2. الأعطال الأكثر تكراراً
+        # ------ الأعطال الأكثر تكراراً ------
         if "الحدث/العطل" in filtered_df.columns:
             top_failures = filtered_df["الحدث/العطل"].value_counts().reset_index()
             top_failures.columns = ["الحدث/العطل", "عدد المرات"]
@@ -368,7 +396,7 @@ def failures_analysis_tab(all_sheets):
         else:
             top_failures = pd.DataFrame()
         
-        # 3. الماكينات الأكثر أعطالاً (إذا كان التحليل على جميع الماكينات)
+        # ------ الماكينات الأكثر أعطالاً (إذا كان التحليل على جميع الماكينات) ------
         if selected_equipment == "جميع الماكينات" and "المعدة" in filtered_df.columns:
             top_equipment = filtered_df["المعدة"].value_counts().reset_index()
             top_equipment.columns = ["المعدة", "عدد الأعطال"]
