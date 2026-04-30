@@ -264,135 +264,388 @@ def get_upcoming_maintenance(days_ahead=3):
     return overdue, upcoming
 
 # ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
+# ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
+def analyze_time_between_failures(df):
+    """تحليل المدة الزمنية بين الأعطال لكل معدة، مع إظهار الأحداث السابقة والتالية وإمكانية البحث"""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    data = df.copy()
+    if "التاريخ" not in data.columns or "المعدة" not in data.columns or "الحدث/العطل" not in data.columns:
+        return pd.DataFrame()
+    
+    data["التاريخ"] = pd.to_datetime(data["التاريخ"], errors='coerce')
+    data = data.dropna(subset=["التاريخ"]).sort_values(["المعدة", "التاريخ"])
+    
+    results = []
+    for equipment in data["المعدة"].unique():
+        eq_data = data[data["المعدة"] == equipment].copy()
+        if len(eq_data) < 2:
+            continue
+        for i in range(len(eq_data)-1):
+            current = eq_data.iloc[i]
+            next_row = eq_data.iloc[i+1]
+            gap_days = (next_row["التاريخ"] - current["التاريخ"]).total_seconds() / (24 * 3600)
+            prev_event = eq_data.iloc[i-1]["الحدث/العطل"] if i > 0 else None
+            prev_date = eq_data.iloc[i-1]["التاريخ"] if i > 0 else None
+            results.append({
+                "المعدة": equipment,
+                "الحدث الحالي": current["الحدث/العطل"],
+                "تاريخ الحدث الحالي": current["التاريخ"].strftime("%Y-%m-%d"),
+                "الحدث السابق": prev_event if prev_event else "---",
+                "تاريخ الحدث السابق": prev_date.strftime("%Y-%m-%d") if prev_date else "---",
+                "الحدث التالي": next_row["الحدث/العطل"],
+                "تاريخ الحدث التالي": next_row["التاريخ"].strftime("%Y-%m-%d"),
+                "الفجوة إلى التالي (أيام)": round(gap_days, 1)
+            })
+    result_df = pd.DataFrame(results)
+    if result_df.empty:
+        return pd.DataFrame()
+    result_df.reset_index(drop=True, inplace=True)
+    return result_df
+
+def analyze_technician_performance(df):
+    """تحليل أداء الفنيين: مدة الإصلاح، القدرة، الالتزام بالسلامة، وتحليل حسب نوع العطل"""
+    if df is None or df.empty:
+        return None, None, None
+    data = df.copy()
+    required_cols = ["تم بواسطة", "مده الاصلاح", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "نوع العطل"]
+    for col in required_cols:
+        if col not in data.columns:
+            return None, None, None
+    data["مده الاصلاح"] = pd.to_numeric(data["مده الاصلاح"], errors='coerce').fillna(0)
+    data["قدرة الفني"] = pd.to_numeric(data["قدرة الفني (حل/تفكير/مبادرة/قرار)"], errors='coerce').fillna(0)
+    data["نوع العطل"] = data["نوع العطل"].fillna("غير محدد").astype(str)
+    data["الالتزام"] = data["الالتزام بتعليمات السلامة"].fillna("غير مطبق").astype(str)
+    
+    tech_summary = data.groupby("تم بواسطة").agg({
+        "مده الاصلاح": ["mean", "count", "std"],
+        "قدرة الفني": "mean",
+        "الالتزام": lambda x: x.value_counts().to_dict() if not x.empty else {}
+    }).round(2)
+    tech_summary.columns = ["متوسط_مدة_الاصلاح", "عدد_الأعطال", "انحراف_مدة_الاصلاح", "متوسط_القدرة", "توزيع_الالتزام"]
+    tech_summary = tech_summary.reset_index()
+    tech_summary["متوسط_مدة_الاصلاح"] = tech_summary["متوسط_مدة_الاصلاح"].round(1)
+    
+    tech_by_fault = data.groupby(["تم بواسطة", "نوع العطل"]).agg({
+        "قدرة الفني": "mean",
+        "مده الاصلاح": "mean"
+    }).round(2).reset_index()
+    tech_by_fault.columns = ["تم بواسطة", "نوع العطل", "متوسط_القدرة_لهذا_النوع", "متوسط_مدة_اصلاح_لهذا_النوع"]
+    
+    fault_avg = data.groupby("نوع العطل")["قدرة الفني"].mean().reset_index()
+    fault_avg.columns = ["نوع العطل", "متوسط_القدرة_العام"]
+    tech_by_fault = tech_by_fault.merge(fault_avg, on="نوع العطل", how="left")
+    tech_by_fault["مقارنة_بالمتوسط"] = tech_by_fault["متوسط_القدرة_لهذا_النوع"] - tech_by_fault["متوسط_القدرة_العام"]
+    tech_by_fault["الأداء"] = tech_by_fault["مقارنة_بالمتوسط"].apply(
+        lambda x: "🟢 قوي" if x > 0.3 else ("🟡 متوسط" if abs(x) <= 0.3 else "🔴 ضعيف")
+    )
+    
+    strengths = {}
+    weaknesses = {}
+    for tech in tech_summary["تم بواسطة"].unique():
+        tech_data = tech_by_fault[tech_by_fault["تم بواسطة"] == tech]
+        strengths[tech] = tech_data[tech_data["الأداء"] == "🟢 قوي"]["نوع العطل"].tolist()
+        weaknesses[tech] = tech_data[tech_data["الأداء"] == "🔴 ضعيف"]["نوع العطل"].tolist()
+    
+    return tech_summary, tech_by_fault, {"strengths": strengths, "weaknesses": weaknesses}
+
+def analyze_failures(df, equipment_name=None):
+    if df is None or df.empty:
+        return None
+    data = df.copy()
+    if "التاريخ" not in data.columns or "المعدة" not in data.columns:
+        return None
+    data["التاريخ"] = pd.to_datetime(data["التاريخ"], errors='coerce')
+    data = data.dropna(subset=["التاريخ"])
+    if data.empty:
+        return None
+    if equipment_name and equipment_name != "جميع المعدات":
+        data = data[data["المعدة"] == equipment_name]
+    if data.empty:
+        return None
+    data = data.sort_values("التاريخ")
+    total_failures = len(data)
+    unique_equipment = data["المعدة"].nunique()
+    failure_rate = data["المعدة"].value_counts().reset_index()
+    failure_rate.columns = ["المعدة", "عدد الأعطال"]
+    failure_rate["النسبة المئوية"] = (failure_rate["عدد الأعطال"] / total_failures * 100).round(2)
+
+    if "الحدث/العطل" in data.columns:
+        all_issues = data["الحدث/العطل"].dropna().astype(str)
+        issue_counts = all_issues.value_counts().head(10).reset_index()
+        issue_counts.columns = ["الحدث/العطل", "عدد المرات"]
+    else:
+        issue_counts = pd.DataFrame()
+
+    if "نوع العطل" in data.columns:
+        fault_types = data["نوع العطل"].dropna().astype(str).value_counts().reset_index()
+        fault_types.columns = ["نوع العطل", "عدد المرات"]
+    else:
+        fault_types = pd.DataFrame()
+
+    mtbf_results = []
+    for equipment in data["المعدة"].unique():
+        eq_data = data[data["المعدة"] == equipment].sort_values("التاريخ")
+        if len(eq_data) >= 2:
+            time_diffs = eq_data["التاريخ"].diff().dropna()
+            days_diff = time_diffs.dt.total_seconds() / (24 * 3600)
+            avg_mtbf = days_diff.mean()
+            mtbf_results.append({
+                "المعدة": equipment,
+                "عدد الأعطال": len(eq_data),
+                "متوسط MTBF (أيام)": round(avg_mtbf, 1),
+                "أول عطل": eq_data["التاريخ"].min().strftime("%Y-%m-%d"),
+                "آخر عطل": eq_data["التاريخ"].max().strftime("%Y-%m-%d")
+            })
+    mtbf_df = pd.DataFrame(mtbf_results) if mtbf_results else pd.DataFrame()
+
+    time_between_df = []
+    for equipment in data["المعدة"].unique():
+        eq_data = data[data["المعدة"] == equipment].sort_values("التاريخ")
+        if len(eq_data) >= 2:
+            diffs = eq_data["التاريخ"].diff().dropna()
+            days_diffs = diffs.dt.total_seconds() / (24 * 3600)
+            time_between_df.append({
+                "المعدة": equipment,
+                "عدد الأعطال": len(eq_data),
+                "متوسط الفجوة (أيام)": round(days_diffs.mean(), 1),
+                "أقل فجوة (أيام)": round(days_diffs.min(), 1),
+                "أكبر فجوة (أيام)": round(days_diffs.max(), 1),
+                "انحراف معياري": round(days_diffs.std(), 1) if len(days_diffs) > 1 else 0
+            })
+    time_between_df = pd.DataFrame(time_between_df) if time_between_df else pd.DataFrame()
+
+    tech_summary, tech_by_fault, tech_strengths_weaknesses = analyze_technician_performance(data)
+
+    data["الشهر"] = data["التاريخ"].dt.to_period("M").astype(str)
+    monthly_failures = data.groupby(["الشهر", "المعدة"]).size().reset_index(name="عدد الأعطال")
+
+    weekday_names = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
+    data["يوم_الأسبوع"] = data["التاريخ"].dt.dayofweek.map({
+        0: "الاثنين", 1: "الثلاثاء", 2: "الأربعاء", 3: "الخميس",
+        4: "الجمعة", 5: "السبت", 6: "الأحد"
+    })
+    weekday_failures = data["يوم_الأسبوع"].value_counts().reindex(weekday_names).fillna(0).reset_index()
+    weekday_failures.columns = ["اليوم", "عدد الأعطال"]
+
+    if "الإجراء التصحيحي" in data.columns:
+        corrections = data["الإجراء التصحيحي"].dropna().astype(str)
+        correction_counts = corrections.value_counts().head(10).reset_index()
+        correction_counts.columns = ["الإجراء التصحيحي", "عدد المرات"]
+    else:
+        correction_counts = pd.DataFrame()
+
+    if "مده الاصلاح" in data.columns:
+        data["مده الاصلاح"] = pd.to_numeric(data["مده الاصلاح"], errors='coerce')
+        avg_repair_time = data["مده الاصلاح"].mean()
+        median_repair_time = data["مده الاصلاح"].median()
+        repair_by_equipment = data.groupby("المعدة")["مده الاصلاح"].mean().reset_index()
+        repair_by_equipment.columns = ["المعدة", "متوسط مدة الإصلاح (ساعات)"]
+    else:
+        avg_repair_time = None
+        median_repair_time = None
+        repair_by_equipment = pd.DataFrame()
+
+    return {
+        "total_failures": total_failures,
+        "unique_equipment": unique_equipment,
+        "date_range": {"from": data["التاريخ"].min().strftime("%Y-%m-%d"), "to": data["التاريخ"].max().strftime("%Y-%m-%d")},
+        "failure_rate": failure_rate,
+        "issue_counts": issue_counts,
+        "fault_types": fault_types,
+        "mtbf": mtbf_df,
+        "time_between_failures": time_between_df,
+        "monthly": monthly_failures,
+        "weekday": weekday_failures,
+        "correction_counts": correction_counts,
+        "avg_repair_time": avg_repair_time,
+        "median_repair_time": median_repair_time,
+        "repair_by_equipment": repair_by_equipment,
+        "technician_summary": tech_summary,
+        "technician_by_fault": tech_by_fault,
+        "technician_strengths_weaknesses": tech_strengths_weaknesses,
+        "raw_data": data
+    }
+
+def generate_excel_report(analysis, sheet_name, equipment_filter):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        summary_data = {
+            "المعيار": ["إجمالي الأعطال", "عدد المعدات", "فترة التحليل من", "فترة التحليل إلى", "المعدة المفلترة"],
+            "القيمة": [analysis["total_failures"], analysis["unique_equipment"], analysis["date_range"]["from"], analysis["date_range"]["to"], equipment_filter if equipment_filter else "جميع المعدات"]
+        }
+        summary_df = pd.DataFrame(summary_data)
+        summary_df.to_excel(writer, sheet_name="الملخص", index=False)
+        if not analysis["failure_rate"].empty:
+            analysis["failure_rate"].to_excel(writer, sheet_name="معدل تكرار الأعطال", index=False)
+        if not analysis["issue_counts"].empty:
+            analysis["issue_counts"].to_excel(writer, sheet_name="أكثر الأعطال تكراراً", index=False)
+        if not analysis["fault_types"].empty:
+            analysis["fault_types"].to_excel(writer, sheet_name="أنواع الأعطال", index=False)
+        if not analysis["mtbf"].empty:
+            analysis["mtbf"].to_excel(writer, sheet_name="متوسط الوقت بين الأعطال (MTBF)", index=False)
+        if not analysis["time_between_failures"].empty:
+            analysis["time_between_failures"].to_excel(writer, sheet_name="الفجوات الزمنية بين الأعطال", index=False)
+        if not analysis["monthly"].empty:
+            pivot_monthly = analysis["monthly"].pivot(index="الشهر", columns="المعدة", values="عدد الأعطال").fillna(0)
+            pivot_monthly.to_excel(writer, sheet_name="التحليل الشهري")
+        if not analysis["weekday"].empty:
+            analysis["weekday"].to_excel(writer, sheet_name="تحليل أيام الأسبوع", index=False)
+        if not analysis["correction_counts"].empty:
+            analysis["correction_counts"].to_excel(writer, sheet_name="الإجراءات التصحيحية", index=False)
+        if not analysis["repair_by_equipment"].empty:
+            analysis["repair_by_equipment"].to_excel(writer, sheet_name="متوسط مدة الإصلاح", index=False)
+        if analysis["technician_summary"] is not None and not analysis["technician_summary"].empty:
+            analysis["technician_summary"].to_excel(writer, sheet_name="ملخص أداء الفنيين", index=False)
+        if analysis["technician_by_fault"] is not None and not analysis["technician_by_fault"].empty:
+            analysis["technician_by_fault"].to_excel(writer, sheet_name="أداء الفنيين حسب نوع العطل", index=False)
+        
+        desired_cols = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "رابط الصورة"]
+        if "مده الاصلاح" in analysis["raw_data"].columns:
+            desired_cols.insert(0, "مده الاصلاح")
+        existing_cols = [col for col in desired_cols if col in analysis["raw_data"].columns]
+        raw_export = analysis["raw_data"][existing_cols].copy()
+        raw_export.to_excel(writer, sheet_name="البيانات الخام", index=False)
+    output.seek(0)
+    return output
+
+def create_failure_charts_plotly(analysis):
+    charts = []
+    if not PLOTLY_AVAILABLE:
+        return charts
+    if not analysis["failure_rate"].empty:
+        fig = px.bar(analysis["failure_rate"].head(10), x="المعدة", y="عدد الأعطال", title="أكثر الماكينات تعطلاً", text="عدد الأعطال", color="عدد الأعطال", color_continuous_scale="Reds")
+        fig.update_traces(textposition='outside')
+        fig.update_layout(showlegend=False)
+        charts.append(fig)
+    if not analysis["failure_rate"].empty:
+        fig = px.pie(analysis["failure_rate"].head(8), values="عدد الأعطال", names="المعدة", title="نسب الأعطال حسب الماكينة", hole=0.3)
+        charts.append(fig)
+    if not analysis["fault_types"].empty:
+        fig = px.bar(analysis["fault_types"], x="نوع العطل", y="عدد المرات", title="توزيع أنواع الأعطال", text="عدد المرات", color="عدد المرات", color_continuous_scale="Teal")
+        fig.update_traces(textposition='outside')
+        charts.append(fig)
+    if not analysis["monthly"].empty:
+        fig = px.line(analysis["monthly"], x="الشهر", y="عدد الأعطال", color="المعدة", title="تطور الأعطال شهرياً", markers=True)
+        charts.append(fig)
+    if not analysis["weekday"].empty:
+        fig = px.bar(analysis["weekday"], x="اليوم", y="عدد الأعطال", title="توزيع الأعطال حسب أيام الأسبوع", text="عدد الأعطال", color="عدد الأعطال", color_continuous_scale="Blues")
+        fig.update_traces(textposition='outside')
+        charts.append(fig)
+    if not analysis["mtbf"].empty:
+        fig = px.bar(analysis["mtbf"], x="المعدة", y="متوسط MTBF (أيام)", title="متوسط الوقت بين الأعطال (MTBF) - أيام", text="متوسط MTBF (أيام)", color="متوسط MTBF (أيام)", color_continuous_scale="Greens")
+        fig.update_traces(textposition='outside')
+        charts.append(fig)
+    if not analysis["time_between_failures"].empty:
+        fig = px.bar(analysis["time_between_failures"], x="المعدة", y="متوسط الفجوة (أيام)", title="متوسط الفجوة الزمنية بين الأعطال (أيام)", text="متوسط الفجوة (أيام)", color="متوسط الفجوة (أيام)", color_continuous_scale="Purples")
+        fig.update_traces(textposition='outside')
+        charts.append(fig)
+    if not analysis["issue_counts"].empty:
+        fig = px.bar(analysis["issue_counts"].head(10), x="عدد المرات", y="الحدث/العطل", title="أكثر الأعطال تكراراً", text="عدد المرات", orientation='h', color="عدد المرات", color_continuous_scale="Purples")
+        fig.update_traces(textposition='outside')
+        charts.append(fig)
+    if not analysis["repair_by_equipment"].empty:
+        fig = px.bar(analysis["repair_by_equipment"], x="المعدة", y="متوسط مدة الإصلاح (ساعات)", title="متوسط مدة الإصلاح حسب الماكينة", text="متوسط مدة الإصلاح (ساعات)", color="متوسط مدة الإصلاح (ساعات)", color_continuous_scale="Oranges")
+        fig.update_traces(textposition='outside')
+        charts.append(fig)
+    return charts
+
 def failures_analysis_tab(all_sheets):
     st.header("📊 تحليل الأعطال والإجراءات التصحيحية")
     if not all_sheets:
         st.warning("لا توجد بيانات للتحليل")
         return
-
-    # اختيار الأقسام (متعدد)
-    sheet_options = list(all_sheets.keys())
-    selected_sections = st.multiselect("اختر الأقسام للتحليل:", sheet_options, default=sheet_options[:1] if sheet_options else [])
-
+    
+    # اختيار الأقسام أولاً
+    all_section_names = [name for name in all_sheets.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
+    selected_sections = st.multiselect("اختر الأقسام للتحليل:", all_section_names, default=all_section_names[:1] if all_section_names else [])
     if not selected_sections:
         st.warning("يرجى اختيار قسم واحد على الأقل")
         return
-
-    # تجميع الماكينات من الأقسام المختارة
-    all_equipment = set()
-    for sec in selected_sections:
-        df_temp = all_sheets[sec]
-        all_equipment.update(get_equipment_list_from_sheet(df_temp))
-    equipment_list = sorted(all_equipment)
-    selected_equipment_list = st.multiselect("اختر الماكينات للتحليل (يمكنك اختيار عدة ماكينات):", equipment_list, default=equipment_list[:1] if equipment_list else [])
-
-    if not selected_equipment_list:
-        st.warning("يرجى اختيار ماكينة واحدة على الأقل")
+    
+    # دمج البيانات من جميع الأقسام المختارة
+    dfs = [all_sheets[sec] for sec in selected_sections]
+    combined_df = pd.concat(dfs, ignore_index=True)
+    
+    # الحصول على قائمة الماكينات من البيانات المدمجة
+    all_equipment = get_equipment_list_from_sheet(combined_df)
+    selected_equipment_list = st.multiselect("اختر الماكينات للتحليل (اختياري، اترك فارغاً للكل):", all_equipment, default=[])
+    
+    # فلترة البيانات حسب الماكينات المختارة (إن وجدت)
+    if selected_equipment_list:
+        filtered_df = combined_df[combined_df["المعدة"].isin(selected_equipment_list)]
+    else:
+        filtered_df = combined_df
+    
+    if filtered_df.empty:
+        st.warning("لا توجد بيانات للتحليل بعد التصفية")
         return
-
-    # تجميع البيانات من الأقسام المختارة
-    combined_df = pd.DataFrame()
-    for sec in selected_sections:
-        df_sec = all_sheets[sec].copy()
-        if "المعدة" in df_sec.columns:
-            df_sec = df_sec[df_sec["المعدة"].isin(selected_equipment_list)]
-        combined_df = pd.concat([combined_df, df_sec], ignore_index=True)
-
-    if combined_df.empty:
-        st.warning("لا توجد بيانات للأقسام والماكينات المختارة")
-        return
-
+    
     if st.button("🔄 تشغيل التحليل", key="run_analysis", type="primary"):
         with st.spinner("جاري تحليل البيانات..."):
-            # 1. تحليل الأعطال الأساسي (اختياري لبعض الإحصائيات)
-            analysis = analyze_failures(combined_df, None)  # تعطى كل البيانات معاً لبعض الإحصائيات (MTBF الخ)
+            analysis = analyze_failures(filtered_df, None)  # تعطى كل البيانات معاً لبعض الإحصائيات (MTBF الخ)
             if analysis is None:
                 st.error("❌ لا توجد بيانات كافية للتحليل.")
                 return
-
-            # عرض ملخص
+            
             st.subheader("📈 ملخص التحليل")
             col_a, col_b, col_c, col_d = st.columns(4)
             with col_a: st.metric("إجمالي الأعطال", analysis["total_failures"])
-            with col_b: st.metric("عدد الماكينات", len(selected_equipment_list))
+            with col_b: st.metric("عدد الماكينات", analysis["unique_equipment"])
             with col_c: st.metric("من تاريخ", analysis["date_range"]["from"])
             with col_d: st.metric("إلى تاريخ", analysis["date_range"]["to"])
-
-            # إحصائيات مدة الإصلاح
             if analysis["avg_repair_time"] is not None:
                 st.subheader("⏱️ إحصائيات مدة الإصلاح")
                 col_r1, col_r2 = st.columns(2)
                 with col_r1: st.metric("متوسط مدة الإصلاح (ساعات)", f"{analysis['avg_repair_time']:.1f}")
                 with col_r2: st.metric("الوسيط", f"{analysis['median_repair_time']:.1f}")
-
-            # 2. الرسوم البيانية (ستعمل على كامل البيانات)
+            
             st.subheader("📊 الرسوم البيانية")
             if PLOTLY_AVAILABLE:
                 charts = create_failure_charts_plotly(analysis)
-                for chart in charts:
-                    st.plotly_chart(chart, use_container_width=True)
+                for chart in charts: st.plotly_chart(chart, use_container_width=True)
             else:
                 st.warning("مكتبات الرسم غير متوفرة")
-
-            # 3. الجداول التفصيلية (بما فيها الفجوات الزمنية التفصيلية وتحليل الفنيين)
+            
             st.subheader("📋 الجداول التفصيلية")
             tabs_list = ["معدل تكرار الأعطال", "أكثر الأعطال تكراراً", "أنواع الأعطال", "MTBF", "الفجوات الزمنية (الكلية)", "التحليل الشهري", "الإجراءات التصحيحية", "متوسط مدة الإصلاح", "تحليل أداء الفنيين", "الفجوات الزمنية التفصيلية"]
             tabs_analysis = st.tabs(tabs_list)
-
+            
             with tabs_analysis[0]:
-                if not analysis["failure_rate"].empty:
-                    st.dataframe(analysis["failure_rate"])
-                else:
-                    st.info("لا توجد بيانات")
-
+                if not analysis["failure_rate"].empty: st.dataframe(analysis["failure_rate"])
+                else: st.info("لا توجد بيانات")
             with tabs_analysis[1]:
-                if not analysis["issue_counts"].empty:
-                    st.dataframe(analysis["issue_counts"])
-                else:
-                    st.info("لا توجد بيانات")
-
+                if not analysis["issue_counts"].empty: st.dataframe(analysis["issue_counts"])
+                else: st.info("لا توجد بيانات")
             with tabs_analysis[2]:
-                if not analysis["fault_types"].empty:
-                    st.dataframe(analysis["fault_types"])
-                else:
-                    st.info("لا توجد بيانات عن أنواع الأعطال")
-
+                if not analysis["fault_types"].empty: st.dataframe(analysis["fault_types"])
+                else: st.info("لا توجد بيانات عن أنواع الأعطال")
             with tabs_analysis[3]:
-                if not analysis["mtbf"].empty:
-                    st.dataframe(analysis["mtbf"])
-                else:
-                    st.info("لا توجد بيانات كافية لحساب MTBF")
-
+                if not analysis["mtbf"].empty: st.dataframe(analysis["mtbf"])
+                else: st.info("لا توجد بيانات كافية لحساب MTBF")
             with tabs_analysis[4]:
-                # الفجوات الزمنية الكلية (المتوسط لكل معدة)
                 if not analysis["time_between_failures"].empty:
                     st.dataframe(analysis["time_between_failures"])
                 else:
                     st.info("لا توجد بيانات كافية لتحليل الفجوات الزمنية الكلية")
-
             with tabs_analysis[5]:
                 if not analysis["monthly"].empty:
-                    pivot = analysis["monthly"].pivot(index="الشهر", columns="المعدة", values="عدد الأعطال").fillna(0)
-                    st.dataframe(pivot)
+                    st.dataframe(analysis["monthly"].pivot(index="الشهر", columns="المعدة", values="عدد الأعطال").fillna(0))
                 else:
                     st.info("لا توجد بيانات")
-
             with tabs_analysis[6]:
                 if not analysis["correction_counts"].empty:
                     st.dataframe(analysis["correction_counts"])
                 else:
                     st.info("لا توجد بيانات")
-
             with tabs_analysis[7]:
                 if not analysis["repair_by_equipment"].empty:
                     st.dataframe(analysis["repair_by_equipment"])
                 else:
                     st.info("لا توجد بيانات")
-
             with tabs_analysis[8]:
                 st.subheader("👨‍🔧 تحليل أداء الفنيين")
                 if analysis["technician_summary"] is not None and not analysis["technician_summary"].empty:
-                    # كود تحليل الفنيين (كما هو موجود سابقاً)
                     st.markdown("#### ملخص أداء الفنيين")
                     tech_cols = st.columns(min(3, len(analysis["technician_summary"])))
                     for i, row in analysis["technician_summary"].iterrows():
@@ -406,7 +659,7 @@ def failures_analysis_tab(all_sheets):
                                 if isinstance(compliance, dict):
                                     compliant_pct = compliance.get("ملتزم بالكامل", 0) / row['عدد_الأعطال'] * 100 if row['عدد_الأعطال'] > 0 else 0
                                     st.progress(compliant_pct/100, text=f"الالتزام الكامل: {compliant_pct:.0f}%")
-
+                    
                     st.markdown("#### أداء الفنيين حسب نوع العطل")
                     if analysis["technician_by_fault"] is not None and not analysis["technician_by_fault"].empty:
                         display_df = analysis["technician_by_fault"].copy()
@@ -423,7 +676,7 @@ def failures_analysis_tab(all_sheets):
                             st.dataframe(display_df, use_container_width=True)
                     else:
                         st.info("لا توجد بيانات كافية عن أداء الفنيين حسب نوع العطل")
-
+                    
                     st.markdown("#### نقاط القوة والضعف")
                     strengths_weak = analysis["technician_strengths_weaknesses"]
                     if strengths_weak:
@@ -443,17 +696,16 @@ def failures_analysis_tab(all_sheets):
                         st.info("لا توجد بيانات كافية لتحليل نقاط القوة والضعف")
                 else:
                     st.info("لا توجد بيانات كافية لتحليل أداء الفنيين")
-
             with tabs_analysis[9]:
                 st.subheader("📋 الفجوات الزمنية التفصيلية بين الأحداث المتعاقبة")
-                # استخدام الدالة الجديدة analyze_time_between_failures
-                details_gaps = analyze_time_between_failures(combined_df)
+                details_gaps = analyze_time_between_failures(filtered_df)
                 if details_gaps.empty:
                     st.info("لا توجد بيانات كافية لحساب الفجوات التفصيلية (يلزم على الأقل حدثان لنفس المعدة)")
                 else:
-                    # إضافة فلاتر إضافية
+                    # فلتر حسب المعدة
                     eq_list = ["جميع المعدات"] + sorted(details_gaps["المعدة"].unique())
                     selected_eq_filter = st.selectbox("فلتر حسب المعدة (للفجوات التفصيلية):", eq_list, key="gap_eq_filter")
+                    # فلتر بحث في وصف الحدث
                     search_gap = st.text_input("بحث في وصف الحدث الحالي:", placeholder="مثال: سير700", key="gap_search")
                     filtered_details = details_gaps.copy()
                     if selected_eq_filter != "جميع المعدات":
@@ -463,12 +715,11 @@ def failures_analysis_tab(all_sheets):
                     st.dataframe(filtered_details, use_container_width=True, height=500)
                     csv = filtered_details.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 تحميل الفجوات التفصيلية CSV", csv, "detailed_time_between_failures.csv", "text/csv")
-
+            
             st.markdown("---")
             st.subheader("📥 تصدير التقرير")
-            excel_report = generate_excel_report(analysis, "الأقسام المختارة", str(selected_equipment_list))
+            excel_report = generate_excel_report(analysis, ", ".join(selected_sections), ", ".join(selected_equipment_list) if selected_equipment_list else "جميع الماكينات")
             st.download_button("📊 تحميل تقرير التحليل كملف Excel", excel_report, f"failure_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_analysis_report")
-
 # ------------------------------- دوال المستخدمين والجلسات -------------------------------
 def download_users_from_github():
     try:
