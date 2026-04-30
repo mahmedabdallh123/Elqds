@@ -304,37 +304,53 @@ def analyze_time_between_failures(df):
     return result_df
 
 def flexible_date_parser(date_series):
-    """تحويل سلسلة من التواريخ بتنسيقات متعددة إلى datetime، مع تجاهل الأخطاء."""
+    """تحويل سلسلة من التواريخ بتنسيقات متعددة إلى datetime، مع تجاهل الأخطاء.
+    يدعم التنسيقات: DD/MM/YYYY, DD\MM\YYYY, YYYY-MM-DD, DD-MM-YYYY, DD.MM.YYYY"""
     def parse_single(val):
         if pd.isna(val) or val == "":
             return pd.NaT
         if isinstance(val, (pd.Timestamp, datetime)):
             return val
         val_str = str(val).strip()
-        # تنسيق YYYY-MM-DD
-        try:
-            return pd.to_datetime(val_str, format='%Y-%m-%d', errors='raise')
-        except:
-            pass
+        
+        # استبدال الشرطة المائلة للخلف بشرطة مائلة للأمام لتوحيد التنسيق
+        val_str = val_str.replace('\\', '/')
+        
         # تنسيق DD/MM/YYYY
-        try:
-            return pd.to_datetime(val_str, format='%d/%m/%Y', errors='raise')
-        except:
-            pass
+        if re.match(r'^\d{1,2}/\d{1,2}/\d{4}$', val_str):
+            try:
+                return pd.to_datetime(val_str, format='%d/%m/%Y', errors='raise')
+            except:
+                pass
+        
+        # تنسيق YYYY-MM-DD
+        if re.match(r'^\d{4}-\d{1,2}-\d{1,2}$', val_str):
+            try:
+                return pd.to_datetime(val_str, format='%Y-%m-%d', errors='raise')
+            except:
+                pass
+        
         # تنسيق DD-MM-YYYY
-        try:
-            return pd.to_datetime(val_str, format='%d-%m-%Y', errors='raise')
-        except:
-            pass
+        if re.match(r'^\d{1,2}-\d{1,2}-\d{4}$', val_str):
+            try:
+                return pd.to_datetime(val_str, format='%d-%m-%Y', errors='raise')
+            except:
+                pass
+        
         # تنسيق DD.MM.YYYY
+        if re.match(r'^\d{1,2}\.\d{1,2}\.\d{4}$', val_str):
+            try:
+                return pd.to_datetime(val_str, format='%d.%m.%Y', errors='raise')
+            except:
+                pass
+        
+        # محاولة عامة أخيرة
         try:
-            return pd.to_datetime(val_str, format='%d.%m.%Y', errors='raise')
+            return pd.to_datetime(val_str, errors='coerce')
         except:
-            pass
-        # أخيراً، ترك pandas يحاول
-        return pd.to_datetime(val_str, errors='coerce')
-    return date_series.apply(parse_single)
+            return pd.NaT
     
+    return date_series.apply(parse_single)
 def failures_analysis_tab(all_sheets):
     st.header("📊 تحليل الأعطال والإجراءات التصحيحية")
     if not all_sheets:
@@ -418,7 +434,12 @@ def failures_analysis_tab(all_sheets):
                     # عرض عدد التواريخ الصالحة بعد التحويل
                     temp_dates = flexible_date_parser(df["التاريخ"])
                     valid_count = temp_dates.notna().sum()
+                    # بعد سطر valid_count = temp_dates.notna().sum()
                     st.write(f"عدد التواريخ الصالحة بعد التحويل: {valid_count} من {len(df)}")
+# إضافة عينة من التواريخ غير الصالحة لمساعدتك في تنظيف البيانات
+                    invalid_dates = df[temp_dates.isna()]["التاريخ"].dropna().unique()[:10]
+                    if len(invalid_dates) > 0:
+                    st.write(f"عينة من التواريخ غير الصالحة (أول 10): {list(invalid_dates)}")
             return
         
         # ------ حساب الفجوات التفصيلية ------
