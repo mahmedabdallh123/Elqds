@@ -30,6 +30,7 @@ APP_CONFIG = {
     "SPARE_PARTS_COLUMNS": ["اسم القطعة","المقاس","قوه الشد", "الرصيد الموجود", "مدة التوريد", "ضرورية", "اسم الماكينة", "رابط_الصورة"],
     "MAINTENANCE_SHEET": "صيانة_وقائية",
     "MAINTENANCE_COLUMNS": ["المعدة", "نوع_الصيانة", "اسم_البند", "الفترة_بالأيام", "آخر_تنفيذ", "التاريخ_التالي", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية", "رابط_الصورة"]
+    "GENERAL_SECTION": "عام",
 }
 
 # ------------------------------- إعداد الصفحة -------------------------------
@@ -137,13 +138,13 @@ def load_spare_parts():
     except Exception:
         return pd.DataFrame(columns=APP_CONFIG["SPARE_PARTS_COLUMNS"])
 
-def get_spare_parts_for_equipment(equipment_name):
+def get_spare_parts_for_section(section_name):
     df = load_spare_parts()
     if df.empty:
         return []
-    filtered = df[df["اسم الماكينة"] == equipment_name]
+    # جلب قطع القسم المحدد + قطع القسم العام
+    filtered = df[(df["القسم"] == section_name) | (df["القسم"] == "عام")]
     return list(zip(filtered["اسم القطعة"], filtered["الرصيد الموجود"]))
-
 def consume_spare_part(part_name, quantity=1):
     df = load_spare_parts()
     if df.empty:
@@ -172,7 +173,7 @@ def get_critical_spare_parts():
     else:
         df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
     critical = df[df["الرصيد الموجود"] < df["حد_الإنذار"]]
-    result = critical[["اسم القطعة", "اسم الماكينة", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
+    result = critical[["اسم القطعة", "القسم", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
     return result
 
 # ------------------------------- دوال سجل النشاطات -------------------------------
@@ -900,8 +901,11 @@ def get_allowed_sections(all_sheets, username, required_permission="view"):
             continue
         if has_section_permission(username, sheet_name, required_permission):
             allowed.append(sheet_name)
+    # إضافة القسم العام إذا كان المستخدم لديه صلاحية الوصول لأي قسم (أو إذا كان admin)
+    if allowed or username == "admin":
+        if "عام" not in allowed:
+            allowed.insert(0, "عام")  # يظهر في أول القائمة
     return allowed
-
 # ------------------------------- دوال الملفات -------------------------------
 def fetch_from_github_requests():
     try:
@@ -1621,20 +1625,21 @@ def add_maintenance_as_event(sheets_edit, equipment_name, task_name, execution_d
 # ------------------------------- تبويب قطع الغيار والصيانة الوقائية -------------------------------
 def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
-    st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل ماكينة.")
+    st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل قسم. القطع المضافة للقسم 'عام' تكون متاحة لجميع الأقسام.")
     username = st.session_state.get("username")
     all_sheets = load_all_sheets()
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
-    if not allowed_sections:
+    
+    # إضافة القسم العام كخيار للمستخدمين الذين لديهم أي قسم مسموح (أو للجميع)
+    if allowed_sections or username == "admin":
+        if "عام" not in allowed_sections:
+            allowed_sections = ["عام"] + allowed_sections
+    else:
         st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
         return sheets_edit
+
     selected_section = st.selectbox("🏭 اختر القسم:", allowed_sections, key="spare_section")
-    df_section = sheets_edit[selected_section]
-    equipment_list = get_equipment_list_from_sheet(df_section)
-    if not equipment_list:
-        st.warning(f"⚠️ لا توجد ماكينات في قسم '{selected_section}'.")
-        return sheets_edit
-    selected_equipment = st.selectbox("🔧 اختر الماكينة:", equipment_list, key="spare_equipment")
+    # ... باقي الكود كما هو (مع تغيير عمود `القسم` بدلاً من `اسم الماكينة`)
     spare_df = load_spare_parts()
     view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="spare_view_mode")
     st.subheader("📋 قائمة قطع الغيار")
@@ -2145,7 +2150,7 @@ with tabs[2]:
         if critical:
             for part in critical:
                 threshold = part.get('حد_الإنذار', 1)
-                st.error(f"🔴 **{part['اسم القطعة']}** (ماكينة: {part['اسم الماكينة']}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
+                st.error(f"🔴 **{part['اسم القطعة']}** (قسم: {part.get('القسم', 'غير محدد')}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
         else:
             st.success("✅ لا توجد قطع غيار حرجة")
     with col2:
