@@ -489,15 +489,13 @@ def has_section_permission(username, section_name, required_permission="view"):
     return required_permission in section_perms
 
 def get_allowed_sections(all_sheets, username, required_permission="view"):
+    """إرجاع قائمة الأقسام الحقيقية التي يسمح للمستخدم بالوصول إليها (بدون إضافة 'عام')"""
     allowed = []
     for sheet_name in all_sheets.keys():
         if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
             continue
         if has_section_permission(username, sheet_name, required_permission):
             allowed.append(sheet_name)
-    if allowed or username == "admin":
-        if APP_CONFIG["GENERAL_SECTION"] not in allowed:
-            allowed.insert(0, APP_CONFIG["GENERAL_SECTION"])
     return allowed
 
 # ------------------------------- دوال الملفات -------------------------------
@@ -678,13 +676,12 @@ def search_across_sheets(all_sheets):
         st.warning("لا توجد بيانات للبحث")
         return
     username = st.session_state.get("username")
-    allowed_sections = get_allowed_sections(all_sheets, username, "view")
+    allowed_sections = get_allowed_sections(all_sheets, username, "view")   # بدون عام
     if not allowed_sections:
         st.warning("⚠️ لا توجد أقسام مسموح لك بالبحث فيها.")
         return
-    col1, col2 = st.columns(2)
-    with col1:
-        sheet_options = ["جميع الأقسام"] + allowed_sections
+    sheet_options = ["جميع الأقسام"] + allowed_sections
+    # ... باقي الكود
         selected_sheet = st.selectbox("اختر القسم للبحث:", sheet_options, key="search_sheet")
         if selected_sheet != "جميع الأقسام":
             df_temp = all_sheets[selected_sheet]
@@ -1173,14 +1170,18 @@ def manage_spare_parts_tab(sheets_edit):
     st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل قسم. القطع المضافة للقسم 'عام' تكون متاحة لجميع الأقسام.")
     username = st.session_state.get("username")
     all_sheets = load_all_sheets()
-    allowed_sections = get_allowed_sections(all_sheets, username, "view")
-    if allowed_sections:
+    # جلب الأقسام الحقيقية (بدون عام)
+    real_sections = get_allowed_sections(all_sheets, username, "view")
+    # إضافة القسم العام إذا كان المستخدم لديه أي صلاحية (أو هو admin)
+    allowed_sections = real_sections.copy()
+    if real_sections or username == "admin":
         if APP_CONFIG["GENERAL_SECTION"] not in allowed_sections:
             allowed_sections = [APP_CONFIG["GENERAL_SECTION"]] + allowed_sections
     else:
         st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
         return sheets_edit
     selected_section = st.selectbox("🏭 اختر القسم:", allowed_sections, key="spare_section")
+    # ... باقي الكود (بدون تغيير)
     spare_df = load_spare_parts()
     view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="spare_view_mode")
     st.subheader("📋 قائمة قطع الغيار")
@@ -1332,17 +1333,19 @@ def preventive_maintenance_tab(sheets_edit):
     st.info("إدارة بنود الصيانة الدورية. يتم حفظ البيانات تلقائياً في ملف Excel.")
     username = st.session_state.get("username")
     all_sheets = load_all_sheets()
+    # نستخدم الأقسام الحقيقية فقط (بدون عام)
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
     if not allowed_sections:
         st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
         return sheets_edit
     selected_section = st.selectbox("🏭 اختر القسم:", allowed_sections, key="pm_section")
-    df_section = sheets_edit[selected_section]
+    df_section = sheets_edit[selected_section]   # الآن selected_section حقيقي دائماً
     equipment_list = get_equipment_list_from_sheet(df_section)
     if not equipment_list:
         st.warning(f"⚠️ لا توجد ماكينات في قسم '{selected_section}'.")
         return sheets_edit
     selected_equipment = st.selectbox("🔧 اختر المعدة:", equipment_list, key="pm_equipment")
+    # باقي الكود كما هو...
     if APP_CONFIG["MAINTENANCE_SHEET"] in sheets_edit:
         tasks_df = sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]].copy()
     else:
