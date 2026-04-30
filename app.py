@@ -675,13 +675,18 @@ def search_across_sheets(all_sheets):
     if not all_sheets:
         st.warning("لا توجد بيانات للبحث")
         return
+
     username = st.session_state.get("username")
-    allowed_sections = get_allowed_sections(all_sheets, username, "view")   # بدون عام
+
+    # الحصول على الأقسام المسموح للمستخدم بالوصول إليها (صلاحية view) - بدون قسم "عام"
+    allowed_sections = get_allowed_sections(all_sheets, username, "view")
     if not allowed_sections:
         st.warning("⚠️ لا توجد أقسام مسموح لك بالبحث فيها.")
         return
-    sheet_options = ["جميع الأقسام"] + allowed_sections
-    # ... باقي الكود
+
+    col1, col2 = st.columns(2)
+    with col1:
+        sheet_options = ["جميع الأقسام"] + allowed_sections
         selected_sheet = st.selectbox("اختر القسم للبحث:", sheet_options, key="search_sheet")
         if selected_sheet != "جميع الأقسام":
             df_temp = all_sheets[selected_sheet]
@@ -689,10 +694,8 @@ def search_across_sheets(all_sheets):
         else:
             all_eq = set()
             for sh_name in allowed_sections:
-                if sh_name != APP_CONFIG["GENERAL_SECTION"]:
-                    df_temp = all_sheets.get(sh_name)
-                    if df_temp is not None:
-                        all_eq.update(get_equipment_list_from_sheet(df_temp))
+                df_temp = all_sheets[sh_name]
+                all_eq.update(get_equipment_list_from_sheet(df_temp))
             equipment_list = sorted(all_eq)
         filter_equipment = st.selectbox("فلتر حسب الماكينة:", ["الكل"] + equipment_list, key="search_eq")
         search_term = st.text_input("كلمة البحث:", placeholder="أدخل نصاً للبحث...", key="search_term")
@@ -708,7 +711,9 @@ def search_across_sheets(all_sheets):
         else:
             start_date = None
             end_date = None
+
     view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="search_view_mode")
+
     if st.button("بحث", key="search_btn", type="primary"):
         results = []
         sheets_to_search = []
@@ -716,8 +721,8 @@ def search_across_sheets(all_sheets):
             sheets_to_search = [(selected_sheet, all_sheets[selected_sheet])]
         else:
             for sheet_name in allowed_sections:
-                if sheet_name != APP_CONFIG["GENERAL_SECTION"]:
-                    sheets_to_search.append((sheet_name, all_sheets[sheet_name]))
+                sheets_to_search.append((sheet_name, all_sheets[sheet_name]))
+
         for sheet_name, df in sheets_to_search:
             df_filtered = df.copy()
             if filter_equipment != "الكل" and "المعدة" in df_filtered.columns:
@@ -741,9 +746,11 @@ def search_across_sheets(all_sheets):
             if not df_filtered.empty:
                 df_filtered["القسم"] = sheet_name
                 results.append(df_filtered)
+
         if results:
             combined_results = pd.concat(results, ignore_index=True)
             st.success(f"تم العثور على {len(combined_results)} نتيجة")
+
             if view_mode == "جدول":
                 display_cols = [c for c in combined_results.columns if c != "رابط الصورة"]
                 st.dataframe(combined_results[display_cols], use_container_width=True, height=500)
@@ -770,6 +777,7 @@ def search_across_sheets(all_sheets):
                             st.markdown(f"**🔧 الإجراء:** {correction_str[:150]}")
                             if img_url:
                                 st.caption(f"[🔗 رابط الصورة]({img_url})")
+
             excel_file = export_filtered_results_to_excel(combined_results, "نتائج_البحث")
             st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
         else:
