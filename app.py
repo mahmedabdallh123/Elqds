@@ -410,8 +410,13 @@ def failures_analysis_tab(all_sheets):
                 top_equipment.to_excel(writer, sheet_name="الماكينات الأكثر تعطلاً", index=False)
             if not details_gaps.empty:
                 details_gaps.to_excel(writer, sheet_name="الفجوات التفصيلية", index=False)
-        st.download_button("📥 تحميل التقرير (Excel)", excel_buffer, f"failure_analysis_{selected_section}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")nt.spreadsheetml.sheet", key="download_analysis_report")
-# ------------------------------- دوال المستخدمين والجلسات -------------------------------
+        excel_buffer.seek(0)
+        st.download_button(
+            "📥 تحميل التقرير (Excel)",
+            excel_buffer,
+            f"failure_analysis_{selected_section}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 def download_users_from_github():
     try:
         response = requests.get(GITHUB_USERS_URL, timeout=10)
