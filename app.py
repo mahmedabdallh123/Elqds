@@ -302,6 +302,39 @@ def analyze_time_between_failures(df):
         return pd.DataFrame()
     result_df.reset_index(drop=True, inplace=True)
     return result_df
+
+def flexible_date_parser(date_series):
+    """تحويل سلسلة من التواريخ بتنسيقات متعددة إلى datetime، مع تجاهل الأخطاء."""
+    def parse_single(val):
+        if pd.isna(val) or val == "":
+            return pd.NaT
+        if isinstance(val, (pd.Timestamp, datetime)):
+            return val
+        val_str = str(val).strip()
+        # تنسيق YYYY-MM-DD
+        try:
+            return pd.to_datetime(val_str, format='%Y-%m-%d', errors='raise')
+        except:
+            pass
+        # تنسيق DD/MM/YYYY
+        try:
+            return pd.to_datetime(val_str, format='%d/%m/%Y', errors='raise')
+        except:
+            pass
+        # تنسيق DD-MM-YYYY
+        try:
+            return pd.to_datetime(val_str, format='%d-%m-%Y', errors='raise')
+        except:
+            pass
+        # تنسيق DD.MM.YYYY
+        try:
+            return pd.to_datetime(val_str, format='%d.%m.%Y', errors='raise')
+        except:
+            pass
+        # أخيراً، ترك pandas يحاول
+        return pd.to_datetime(val_str, errors='coerce')
+    return date_series.apply(parse_single)
+    
 def failures_analysis_tab(all_sheets):
     st.header("📊 تحليل الأعطال والإجراءات التصحيحية")
     if not all_sheets:
@@ -322,7 +355,7 @@ def failures_analysis_tab(all_sheets):
         st.error(f"⚠️ القسم '{selected_section}' لا يحتوي على عمود 'المعدة'")
         return
     
-    # تنظيف أسماء الماكينات من المسافات الزائدة
+    # تنظيف أسماء الماكينات
     df["المعدة"] = df["المعدة"].astype(str).str.strip()
     
     # اختيار الماكينة
@@ -345,44 +378,47 @@ def failures_analysis_tab(all_sheets):
     search_text = st.text_input("🔍 كلمة البحث في وصف العطل (اختياري):", placeholder="مثال: سير700, توقف, اهتزاز", key="search_text_analysis")
     
     if st.button("🔄 تشغيل التحليل", key="run_analysis", type="primary"):
-        # نسخة للتصفية
         filtered_df = df.copy()
         
         # ------ فلتر الماكينة ------
         if selected_equipment != "جميع الماكينات":
             filtered_df = filtered_df[filtered_df["المعدة"] == selected_equipment]
         
-        # ------ فلتر التاريخ ------
+        # ------ فلتر التاريخ (مع دعم تنسيقات متعددة) ------
         if "التاريخ" in filtered_df.columns:
-            filtered_df["التاريخ"] = pd.to_datetime(filtered_df["التاريخ"], errors='coerce')
+            # استخدام الدالة المرنة لتحويل التواريخ
+            filtered_df["التاريخ"] = flexible_date_parser(filtered_df["التاريخ"])
             # حذف التواريخ غير الصالحة
+            initial_count = len(filtered_df)
             filtered_df = filtered_df.dropna(subset=["التاريخ"])
+            if initial_count != len(filtered_df) and selected_equipment == "جميع الماكينات":
+                st.info(f"ℹ️ تم تجاهل {initial_count - len(filtered_df)} سطراً بسبب تنسيق تاريخ غير صالح.")
+            
             if start_date:
                 filtered_df = filtered_df[filtered_df["التاريخ"] >= pd.to_datetime(start_date)]
             if end_date:
-                # إضافة يوم واحد ليشمل نهاية اليوم
-                end_date_plus = pd.to_datetime(end_date) + timedelta(days=1)
-                filtered_df = filtered_df[filtered_df["التاريخ"] <= end_date_plus]
+                filtered_df = filtered_df[filtered_df["التاريخ"] <= pd.to_datetime(end_date) + timedelta(days=1)]
         
         # ------ فلتر النص ------
         if search_text and "الحدث/العطل" in filtered_df.columns:
-            # التأكد من عدم وجود قيم فارغة
             filtered_df["الحدث/العطل"] = filtered_df["الحدث/العطل"].fillna("").astype(str)
             filtered_df = filtered_df[filtered_df["الحدث/العطل"].str.contains(search_text, case=False, na=False)]
         
         # ------ التحقق من وجود بيانات ------
         if filtered_df.empty:
             st.warning("⚠️ لا توجد بيانات تطابق معايير التصفية")
-            # عرض معلومات إضافية للمساعدة في التصحيح (للمطور)
-            with st.expander("🔍 معلومات التصحيح (لمساعدة المطور)"):
+            with st.expander("🔍 معلومات التصحيح"):
                 st.write(f"إجمالي البيانات في القسم '{selected_section}': {len(df)}")
                 st.write(f"بعد فلتر الماكينة (اختيار '{selected_equipment}'): {len(filtered_df)}")
                 st.write(f"نطاق التاريخ: {start_date} إلى {end_date}")
                 st.write(f"نص البحث: '{search_text}'")
-                # عرض عينة من البيانات لمعرفة ما إذا كانت التواريخ موجودة
                 if "التاريخ" in df.columns:
                     sample_dates = df["التاريخ"].dropna().head(5).tolist()
-                    st.write(f"عينة من التواريخ في البيانات: {sample_dates}")
+                    st.write(f"عينة من التواريخ في البيانات الأصلية: {sample_dates}")
+                    # عرض عدد التواريخ الصالحة بعد التحويل
+                    temp_dates = flexible_date_parser(df["التاريخ"])
+                    valid_count = temp_dates.notna().sum()
+                    st.write(f"عدد التواريخ الصالحة بعد التحويل: {valid_count} من {len(df)}")
             return
         
         # ------ حساب الفجوات التفصيلية ------
@@ -396,7 +432,7 @@ def failures_analysis_tab(all_sheets):
         else:
             top_failures = pd.DataFrame()
         
-        # ------ الماكينات الأكثر أعطالاً (إذا كان التحليل على جميع الماكينات) ------
+        # ------ الماكينات الأكثر أعطالاً ------
         if selected_equipment == "جميع الماكينات" and "المعدة" in filtered_df.columns:
             top_equipment = filtered_df["المعدة"].value_counts().reset_index()
             top_equipment.columns = ["المعدة", "عدد الأعطال"]
@@ -407,17 +443,14 @@ def failures_analysis_tab(all_sheets):
         # عرض النتائج
         st.success(f"✅ تم العثور على {len(filtered_df)} عطل")
         
-        # عرض الأعطال الأكثر تكراراً
         if not top_failures.empty:
             st.subheader("🔝 أكثر الأعطال تكراراً")
             st.dataframe(top_failures, use_container_width=True)
         
-        # عرض الماكينات الأكثر أعطالاً
         if not top_equipment.empty:
             st.subheader("🏭 أكثر الماكينات تعطلاً")
             st.dataframe(top_equipment, use_container_width=True)
         
-        # عرض الفجوات التفصيلية
         st.subheader("📋 الفجوات الزمنية التفصيلية بين الأعطال المتعاقبة")
         if details_gaps.empty:
             st.info("ℹ️ لا توجد بيانات كافية لحساب الفجوات (يلزم على الأقل حدثان لنفس المعدة)")
