@@ -156,6 +156,8 @@ def get_critical_spare_parts():
         df["حد_الإنذار"] = 1
     else:
         df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
+    # استبعاد القطع التي ليس لها قسم
+    df = df[df["القسم"].notna() & (df["القسم"] != "")]
     critical = df[df["الرصيد الموجود"] < df["حد_الإنذار"]]
     result = critical[["اسم القطعة", "القسم", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
     return result
@@ -1174,6 +1176,7 @@ def add_new_department(sheets_edit):
             else:
                 st.error("❌ فشل حفظ القسم")
                 return sheets_edit
+
         st.markdown("---")
         st.subheader("🗑️ حذف قسم موجود")
         st.warning("⚠️ انتبه: حذف القسم سيؤدي إلى حذف جميع بياناته بما فيها الماكينات والأعطال وقطع الغيار المرتبطة به نهائياً ولا يمكن استرجاعها.")
@@ -1187,8 +1190,17 @@ def add_new_department(sheets_edit):
                 confirm = st.text_input("لتأكيد الحذف، اكتب اسم القسم هنا:", key="delete_confirm")
                 if confirm == selected_dept:
                     if st.button("🗑️ حذف القسم نهائياً", key="delete_department_btn", type="primary"):
+                        # ========== إضافة: حذف قطع الغيار المرتبطة بهذا القسم ==========
+                        spare_df = load_spare_parts()
+                        if not spare_df.empty:
+                            # حذف الصفوف التي تحمل نفس اسم القسم
+                            spare_df = spare_df[spare_df["القسم"] != selected_dept]
+                            sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = spare_df
+                            st.info(f"🗑️ تم حذف قطع الغيار المرتبطة بالقسم '{selected_dept}'.")
+                        # ========== نهاية الإضافة ==========
                         del sheets_edit[selected_dept]
                         if save_and_push_to_github(sheets_edit, f"حذف قسم: {selected_dept}"):
+                            log_activity("delete_section", f"تم حذف القسم '{selected_dept}' وقطع الغيار التابعة له")
                             st.success(f"✅ تم حذف القسم '{selected_dept}' بنجاح!")
                             st.cache_data.clear()
                             st.rerun()
