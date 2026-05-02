@@ -466,72 +466,33 @@ def failures_analysis_tab(all_sheets):
             st.subheader("🏭 أكثر الماكينات تعطلاً")
             st.dataframe(top_equipment, use_container_width=True)
         
-               # عرض الفجوات التفصيلية مع تلوين
         st.subheader("📋 الفجوات الزمنية التفصيلية بين الأعطال المتعاقبة")
         if details_gaps.empty:
             st.info("ℹ️ لا توجد بيانات كافية لحساب الفجوات (يلزم على الأقل حدثان لنفس المعدة)")
         else:
-            # إضافة عمود الحالة للتلوين
-            def get_gap_status(gap):
-                if pd.isna(gap) or gap == "---":
-                    return "لا توجد"
-                try:
-                    val = float(gap)
-                    if val <= 7:
-                        return "قصيرة"
-                    elif val <= 30:
-                        return "متوسطة"
-                    elif val <= 90:
-                        return "طويلة"
-                    else:
-                        return "طويلة جداً"
-                except:
-                    return "غير معروف"
-            details_gaps["حالة الفجوة"] = details_gaps["الفجوة إلى التالي (أيام)"].apply(get_gap_status)
-            
-            def color_gap(val):
-                if pd.isna(val) or val == "---":
-                    return ''
-                try:
-                    gap = float(val)
-                    if gap <= 7:
-                        return 'background-color: #d4edda; color: #155724;'
-                    elif gap <= 30:
-                        return 'background-color: #fff3cd; color: #856404;'
-                    elif gap <= 90:
-                        return 'background-color: #ffe0b3; color: #cc7a00;'
-                    else:
-                        return 'background-color: #f8d7da; color: #721c24;'
-                except:
-                    return ''
-            
-            def color_status(val):
-                if val == "قصيرة":
-                    return 'background-color: #d4edda; color: #155724;'
-                elif val == "متوسطة":
-                    return 'background-color: #fff3cd; color: #856404;'
-                elif val == "طويلة":
-                    return 'background-color: #ffe0b3; color: #cc7a00;'
-                elif val == "طويلة جداً":
-                    return 'background-color: #f8d7da; color: #721c24;'
-                else:
-                    return ''
-            
-            # استخدام .map بدلاً من .applymap (الطريقة الجديدة)
-            styled = details_gaps.style.map(color_gap, subset=["الفجوة إلى التالي (أيام)"])
-            styled = styled.map(color_status, subset=["حالة الفجوة"])
-            styled.set_table_styles([
-                {'selector': 'thead th', 'props': [('background-color', '#343a40'), ('color', 'white'), ('text-align', 'center')]},
-                {'selector': 'tbody td', 'props': [('text-align', 'center')]},
-                {'selector': 'table', 'props': [('width', '100%'), ('border-collapse', 'collapse')]},
-                {'selector': 'th, td', 'props': [('border', '1px solid #ddd'), ('padding', '8px')]}
-            ], overwrite=False)
-            html = styled.to_html(escape=False)
-            st.markdown(html, unsafe_allow_html=True)
-            
-            csv = details_gaps.drop(columns=["حالة الفجوة"]).to_csv(index=False).encode('utf-8')
+            st.dataframe(details_gaps, use_container_width=True, height=500)
+            csv = details_gaps.to_csv(index=False).encode('utf-8')
             st.download_button("📥 تحميل الفجوات التفصيلية CSV", csv, "detailed_time_between_failures.csv", "text/csv")
-            
+        
+        # تصدير كامل
+        st.markdown("---")
+        st.subheader("📥 تصدير التقرير كامل (Excel)")
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            filtered_df.to_excel(writer, sheet_name="البيانات الأصلية", index=False)
+            if not top_failures.empty:
+                top_failures.to_excel(writer, sheet_name="الأعطال الأكثر تكراراً", index=False)
+            if not top_equipment.empty:
+                top_equipment.to_excel(writer, sheet_name="الماكينات الأكثر تعطلاً", index=False)
+            if not details_gaps.empty:
+                details_gaps.to_excel(writer, sheet_name="الفجوات التفصيلية", index=False)
+        excel_buffer.seek(0)
+        st.download_button(
+            "📥 تحميل التقرير (Excel)",
+            excel_buffer,
+            f"failure_analysis_{selected_section}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 def download_users_from_github():
     try:
         response = requests.get(GITHUB_USERS_URL, timeout=10)
