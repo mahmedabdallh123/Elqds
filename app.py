@@ -266,7 +266,7 @@ def get_upcoming_maintenance(days_ahead=3):
 # ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
 # ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
 def analyze_time_between_failures(df):
-    """تحليل المدة الزمنية بين الأعطال (الحدث السابق وتاريخه، الحدث التالي وتاريخه، المدة)"""
+    """تحليل المدة الزمنية بين الأعطال (المعدة، الحدث السابق وتاريخه، الحدث التالي وتاريخه، المدة)"""
     if df is None or df.empty:
         return pd.DataFrame()
     data = df.copy()
@@ -289,6 +289,7 @@ def analyze_time_between_failures(df):
             prev_date = eq_data.iloc[i-1]["التاريخ"] if i > 0 else None
             
             results.append({
+                "المعدة": equipment,
                 "الحدث السابق": prev_event if prev_event else "---",
                 "تاريخ الحدث السابق": prev_date.strftime("%Y-%m-%d") if prev_date else "---",
                 "الحدث التالي": next_row["الحدث/العطل"],
@@ -300,51 +301,6 @@ def analyze_time_between_failures(df):
         return pd.DataFrame()
     result_df.reset_index(drop=True, inplace=True)
     return result_df
-
-def flexible_date_parser(date_series):
-    """تحويل سلسلة من التواريخ بتنسيقات متعددة إلى datetime، مع تجاهل الأخطاء."""
-    def parse_single(val):
-        if pd.isna(val) or val == "":
-            return pd.NaT
-        if isinstance(val, (pd.Timestamp, datetime)):
-            return val
-        val_str = str(val).strip()
-        # استبدال الشرطات المائلة العكسية بشرطات عادية
-        val_str = val_str.replace('\\', '/')
-        
-        # تنسيق YYYY-MM-DD
-        try:
-            return pd.to_datetime(val_str, format='%Y-%m-%d', errors='raise')
-        except:
-            pass
-        # تنسيق DD/MM/YYYY
-        try:
-            return pd.to_datetime(val_str, format='%d/%m/%Y', errors='raise')
-        except:
-            pass
-        # تنسيق D/M/YYYY (بدون أصفار بادئة)
-        try:
-            return pd.to_datetime(val_str, format='%-d/%-m/%Y', errors='raise')
-        except:
-            pass
-        # تنسيق DD-MM-YYYY
-        try:
-            return pd.to_datetime(val_str, format='%d-%m-%Y', errors='raise')
-        except:
-            pass
-        # تنسيق DD.MM.YYYY
-        try:
-            return pd.to_datetime(val_str, format='%d.%m.%Y', errors='raise')
-        except:
-            pass
-        # تنسيق YYYY/MM/DD
-        try:
-            return pd.to_datetime(val_str, format='%Y/%m/%d', errors='raise')
-        except:
-            pass
-        # أخيراً، ترك pandas يحاول
-        return pd.to_datetime(val_str, errors='coerce')
-    return date_series.apply(parse_single)
     
 def failures_analysis_tab(all_sheets):
     st.header("📊 تحليل الأعطال والإجراءات التصحيحية")
