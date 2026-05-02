@@ -517,8 +517,9 @@ def failures_analysis_tab(all_sheets):
                 else:
                     return ''
             
-            styled = details_gaps.style.applymap(color_gap, subset=["الفجوة إلى التالي (أيام)"])
-            styled = styled.applymap(color_status, subset=["حالة الفجوة"])
+            # استخدام .map بدلاً من .applymap (الطريقة الجديدة)
+            styled = details_gaps.style.map(color_gap, subset=["الفجوة إلى التالي (أيام)"])
+            styled = styled.map(color_status, subset=["حالة الفجوة"])
             styled.set_table_styles([
                 {'selector': 'thead th', 'props': [('background-color', '#343a40'), ('color', 'white'), ('text-align', 'center')]},
                 {'selector': 'tbody td', 'props': [('text-align', 'center')]},
@@ -530,6 +531,7 @@ def failures_analysis_tab(all_sheets):
             
             csv = details_gaps.drop(columns=["حالة الفجوة"]).to_csv(index=False).encode('utf-8')
             st.download_button("📥 تحميل الفجوات التفصيلية CSV", csv, "detailed_time_between_failures.csv", "text/csv")
+            
 def download_users_from_github():
     try:
         response = requests.get(GITHUB_USERS_URL, timeout=10)
