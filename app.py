@@ -382,10 +382,12 @@ def failures_analysis_tab(all_sheets):
     with col2:
         end_date = st.date_input("📅 إلى تاريخ (اختياري):", value=None, key="end_date_filter")
     
-    # نص البحث
-    search_text = st.text_input("🔍 كلمة البحث في وصف العطل (اختياري):", placeholder="مثال: سير700, توقف, اهتزاز", key="search_text_analysis")
+    # نص البحث (سيتم استخدامه لتصفية الأحداث)
+    search_text = st.text_input("🔍 كلمة البحث في وصف العطل (سيتم حساب الفجوات فقط بين الأحداث التي تحتوي هذه الكلمة):", 
+                                placeholder="مثال: سير, 900, توقف", key="search_text_analysis")
     
     if st.button("🔄 تشغيل التحليل", key="run_analysis", type="primary"):
+        # نسخة للتصفية
         filtered_df = df.copy()
         
         # ------ فلتر الماكينة ------
@@ -394,64 +396,51 @@ def failures_analysis_tab(all_sheets):
         
         # ------ فلتر التاريخ ------
         if "التاريخ" in filtered_df.columns:
-            original_count = len(filtered_df)
             filtered_df["التاريخ"] = flexible_date_parser(filtered_df["التاريخ"])
-            valid_mask = filtered_df["التاريخ"].notna()
-            invalid_count = (~valid_mask).sum()
-            filtered_df = filtered_df[valid_mask]
-            if invalid_count > 0:
-                st.info(f"ℹ️ تم تجاهل {invalid_count} سطراً بسبب تنسيق تاريخ غير صالح.")
-            
+            filtered_df = filtered_df.dropna(subset=["التاريخ"])
             if start_date:
                 filtered_df = filtered_df[filtered_df["التاريخ"] >= pd.to_datetime(start_date)]
             if end_date:
                 filtered_df = filtered_df[filtered_df["التاريخ"] <= pd.to_datetime(end_date) + timedelta(days=1)]
         
-        # ------ فلتر النص ------
-        if search_text and "الحدث/العطل" in filtered_df.columns:
-            filtered_df["الحدث/العطل"] = filtered_df["الحدث/العطل"].fillna("").astype(str)
-            filtered_df = filtered_df[filtered_df["الحدث/العطل"].str.contains(search_text, case=False, na=False)]
+        # ------ تطبيق فلتر النص على الأحداث (لحساب الفجوات فقط بين الأحداث التي تحتوي النص) ------
+        if search_text:
+            # تصفية الأحداث التي تحتوي على كلمة البحث
+            text_filtered_df = filtered_df[filtered_df["الحدث/العطل"].astype(str).str.contains(search_text, case=False, na=False)]
+            if text_filtered_df.empty:
+                st.warning(f"⚠️ لا توجد أحداث تحتوي على كلمة '{search_text}' بعد تطبيق الفلاتر الأخرى.")
+                return
+            # حساب الفجوات على هذه الأحداث فقط
+            details_gaps = analyze_time_between_failures(text_filtered_df)
+            # ملاحظة: الأعطال الأكثر تكراراً والماكينات الأكثر أعطالاً ستحسب على كل البيانات (أو يمكن حسابها على البيانات المفلترة حسب رغبتك)
+            top_failures_data = filtered_df  # نستخدم كل البيانات لهذه الإحصائيات
+            top_equipment_data = filtered_df
+        else:
+            # إذا لم يوجد نص بحث، نحسب الفجوات على كل البيانات
+            details_gaps = analyze_time_between_failures(filtered_df)
+            top_failures_data = filtered_df
+            top_equipment_data = filtered_df
         
-        # ------ التحقق من وجود بيانات ------
-        if filtered_df.empty:
-            st.warning("⚠️ لا توجد بيانات تطابق معايير التصفية")
-            with st.expander("🔍 معلومات التصحيح"):
-                st.write(f"إجمالي البيانات في القسم '{selected_section}': {len(df)}")
-                st.write(f"بعد فلتر الماكينة (اختيار '{selected_equipment}'): {len(filtered_df)}")
-                st.write(f"نطاق التاريخ: {start_date} إلى {end_date}")
-                st.write(f"نص البحث: '{search_text}'")
-                if "التاريخ" in df.columns:
-                    sample_dates = df["التاريخ"].head(10).tolist()
-                    st.write(f"عينة من التواريخ الأصلية: {sample_dates}")
-                    temp_dates = flexible_date_parser(df["التاريخ"])
-                    valid_count = temp_dates.notna().sum()
-                    st.write(f"عدد التواريخ الصالحة بعد التحويل: {valid_count} من {len(df)}")
-                    if valid_count < len(df):
-                        invalid_examples = df[~temp_dates.notna()]["التاريخ"].head(10).tolist()
-                        st.write(f"أمثلة على تواريخ غير صالحة: {invalid_examples}")
-            return
-        
-        # ------ حساب الفجوات التفصيلية ------
-        details_gaps = analyze_time_between_failures(filtered_df)
-        
-        # ------ الأعطال الأكثر تكراراً ------
-        if "الحدث/العطل" in filtered_df.columns:
-            top_failures = filtered_df["الحدث/العطل"].value_counts().reset_index()
+        # ------ الأعطال الأكثر تكراراً (على كل البيانات أو البيانات المفلترة) ------
+        if "الحدث/العطل" in top_failures_data.columns:
+            top_failures = top_failures_data["الحدث/العطل"].value_counts().reset_index()
             top_failures.columns = ["الحدث/العطل", "عدد المرات"]
             top_failures = top_failures.head(10)
         else:
             top_failures = pd.DataFrame()
         
         # ------ الماكينات الأكثر أعطالاً ------
-        if selected_equipment == "جميع الماكينات" and "المعدة" in filtered_df.columns:
-            top_equipment = filtered_df["المعدة"].value_counts().reset_index()
+        if selected_equipment == "جميع الماكينات" and "المعدة" in top_equipment_data.columns:
+            top_equipment = top_equipment_data["المعدة"].value_counts().reset_index()
             top_equipment.columns = ["المعدة", "عدد الأعطال"]
             top_equipment = top_equipment.head(10)
         else:
             top_equipment = pd.DataFrame()
         
         # عرض النتائج
-        st.success(f"✅ تم العثور على {len(filtered_df)} عطل")
+        st.success(f"✅ تم العثور على {len(filtered_df)} عطل (بعد تطبيق الفلاتر) - {len(details_gaps)} فجوة زمنية محسوبة")
+        if search_text:
+            st.info(f"ℹ️ تم حساب الفجوات فقط بين الأحداث التي تحتوي على كلمة '{search_text}'")
         
         if not top_failures.empty:
             st.subheader("🔝 أكثر الأعطال تكراراً")
@@ -463,7 +452,10 @@ def failures_analysis_tab(all_sheets):
         
         st.subheader("📋 الفجوات الزمنية التفصيلية بين الأعطال المتعاقبة")
         if details_gaps.empty:
-            st.info("ℹ️ لا توجد بيانات كافية لحساب الفجوات (يلزم على الأقل حدثان لنفس المعدة)")
+            if search_text:
+                st.info(f"ℹ️ لا توجد فجوات زمنية محسوبة للأحداث التي تحتوي على '{search_text}' (يلزم على الأقل حدثان متتاليان يحتويان على كلمة البحث)")
+            else:
+                st.info("ℹ️ لا توجد بيانات كافية لحساب الفجوات (يلزم على الأقل حدثان لنفس المعدة)")
         else:
             st.dataframe(details_gaps, use_container_width=True, height=500)
             csv = details_gaps.to_csv(index=False).encode('utf-8')
@@ -474,7 +466,7 @@ def failures_analysis_tab(all_sheets):
         st.subheader("📥 تصدير التقرير كامل (Excel)")
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            filtered_df.to_excel(writer, sheet_name="البيانات الأصلية", index=False)
+            filtered_df.to_excel(writer, sheet_name="البيانات المفلترة", index=False)
             if not top_failures.empty:
                 top_failures.to_excel(writer, sheet_name="الأعطال الأكثر تكراراً", index=False)
             if not top_equipment.empty:
