@@ -266,7 +266,7 @@ def get_upcoming_maintenance(days_ahead=3):
 # ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
 # ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
 def analyze_time_between_failures(df):
-    """تحليل المدة الزمنية بين الأعطال لكل معدة، مع إظهار الأحداث السابقة والتالية"""
+    """تحليل المدة الزمنية بين الأعطال (الحدث السابق وتاريخه، الحدث التالي وتاريخه، المدة)"""
     if df is None or df.empty:
         return pd.DataFrame()
     data = df.copy()
@@ -287,15 +287,13 @@ def analyze_time_between_failures(df):
             gap_days = (next_row["التاريخ"] - current["التاريخ"]).total_seconds() / (24 * 3600)
             prev_event = eq_data.iloc[i-1]["الحدث/العطل"] if i > 0 else None
             prev_date = eq_data.iloc[i-1]["التاريخ"] if i > 0 else None
+            
             results.append({
-                "المعدة": equipment,
-                "الحدث الحالي": current["الحدث/العطل"],
-                "تاريخ الحدث الحالي": current["التاريخ"].strftime("%Y-%m-%d"),
                 "الحدث السابق": prev_event if prev_event else "---",
                 "تاريخ الحدث السابق": prev_date.strftime("%Y-%m-%d") if prev_date else "---",
                 "الحدث التالي": next_row["الحدث/العطل"],
                 "تاريخ الحدث التالي": next_row["التاريخ"].strftime("%Y-%m-%d"),
-                "الفجوة إلى التالي (أيام)": round(gap_days, 1)
+                "المدة الزمنية (أيام)": round(gap_days, 1)
             })
     result_df = pd.DataFrame(results)
     if result_df.empty:
