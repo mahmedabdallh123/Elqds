@@ -306,21 +306,21 @@ def flexible_date_parser(date_series):
         return pd.to_datetime(val_str, errors='coerce')
     return date_series.apply(parse_single)
 
-def analyze_time_between_failures(df, filter_text=None):
-    """تحليل المدة الزمنية بين الأعطال حسب كلمة البحث (تحتسب الفجوات بين الأحداث التي تحتوي على النص فقط)"""
+def analyze_time_between_corrections(df, filter_text=None):
+    """تحليل المدة الزمنية بين الإجراءات التصحيحية المتكررة (حسب كلمة البحث)"""
     if df is None or df.empty:
         return pd.DataFrame()
     data = df.copy()
-    if "التاريخ" not in data.columns or "المعدة" not in data.columns or "الحدث/العطل" not in data.columns:
+    if "التاريخ" not in data.columns or "المعدة" not in data.columns or "الإجراء التصحيحي" not in data.columns:
         return pd.DataFrame()
     
     data["التاريخ"] = flexible_date_parser(data["التاريخ"])
     data = data.dropna(subset=["التاريخ"]).sort_values(["المعدة", "التاريخ"])
     
-    # إذا كان هناك نص بحث، نقوم بتصفية الأحداث التي تحتوي عليه
+    # إذا كان هناك نص بحث، نصفي الإجراءات التصحيحية التي تحتوي عليه
     if filter_text:
-        data["الحدث/العطل"] = data["الحدث/العطل"].fillna("").astype(str)
-        data = data[data["الحدث/العطل"].str.contains(filter_text, case=False, na=False)]
+        data["الإجراء التصحيحي"] = data["الإجراء التصحيحي"].fillna("").astype(str)
+        data = data[data["الإجراء التصحيحي"].str.contains(filter_text, case=False, na=False)]
     
     results = []
     for equipment in data["المعدة"].unique():
@@ -331,16 +331,15 @@ def analyze_time_between_failures(df, filter_text=None):
             current = eq_data.iloc[i]
             next_row = eq_data.iloc[i+1]
             gap_days = (next_row["التاريخ"] - current["التاريخ"]).total_seconds() / (24 * 3600)
-            # الحدث السابق (إذا وجد) يكون ضمن نفس الفلترة، لكن يمكن الاحتفاظ بالحدث السابق الحقيقي من البيانات المفلترة
-            prev_event = eq_data.iloc[i-1]["الحدث/العطل"] if i > 0 else None
+            prev_correction = eq_data.iloc[i-1]["الإجراء التصحيحي"] if i > 0 else None
             prev_date = eq_data.iloc[i-1]["التاريخ"] if i > 0 else None
             
             results.append({
                 "المعدة": equipment,
-                "الحدث السابق": prev_event if prev_event else "---",
-                "تاريخ الحدث السابق": prev_date.strftime("%Y-%m-%d") if prev_date else "---",
-                "الحدث التالي": next_row["الحدث/العطل"],
-                "تاريخ الحدث التالي": next_row["التاريخ"].strftime("%Y-%m-%d"),
+                "الإجراء السابق": prev_correction if prev_correction else "---",
+                "تاريخ الإجراء السابق": prev_date.strftime("%Y-%m-%d") if prev_date else "---",
+                "الإجراء التالي": next_row["الإجراء التصحيحي"],
+                "تاريخ الإجراء التالي": next_row["التاريخ"].strftime("%Y-%m-%d"),
                 "المدة الزمنية (أيام)": round(gap_days, 1)
             })
     result_df = pd.DataFrame(results)
