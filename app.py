@@ -952,6 +952,16 @@ def search_across_sheets(all_sheets):
             combined_results = pd.concat(results, ignore_index=True)
             st.success(f"تم العثور على {len(combined_results)} نتيجة")
 
+            # ------ ترتيب النتائج: المعدة تصاعدياً، التاريخ تنازلياً ------
+            if "التاريخ" in combined_results.columns:
+                # تحويل التاريخ إلى datetime إذا لم يكن كذلك
+                combined_results["التاريخ"] = pd.to_datetime(combined_results["التاريخ"], errors='coerce')
+                # الترتيب: المعدة (تصاعدي) ثم التاريخ (تنازلي)
+                combined_results = combined_results.sort_values(by=["المعدة", "التاريخ"], ascending=[True, False])
+            else:
+                # إذا لم يوجد عمود تاريخ، نرتب حسب المعدة فقط
+                combined_results = combined_results.sort_values(by=["المعدة"], ascending=True)
+
             if view_mode == "جدول":
                 display_cols = [c for c in combined_results.columns if c != "رابط الصورة"]
                 st.dataframe(combined_results[display_cols], use_container_width=True, height=500)
@@ -983,7 +993,6 @@ def search_across_sheets(all_sheets):
             st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
         else:
             st.warning("لا توجد نتائج مطابقة للبحث")
-
 # ------------------------------- دوال إدارة المعدات والأقسام -------------------------------
 def load_equipment_config():
     if not os.path.exists(EQUIPMENT_CONFIG_FILE):
