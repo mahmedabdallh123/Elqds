@@ -306,6 +306,39 @@ def flexible_date_parser(date_series):
         return pd.to_datetime(val_str, errors='coerce')
     return date_series.apply(parse_single)
 
+# ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
+def flexible_date_parser(date_series):
+    """تحويل سلسلة من التواريخ بتنسيقات متعددة إلى datetime، مع تجاهل الأخطاء."""
+    def parse_single(val):
+        if pd.isna(val) or val == "":
+            return pd.NaT
+        if isinstance(val, (pd.Timestamp, datetime)):
+            return val
+        val_str = str(val).strip()
+        val_str = val_str.replace('\\', '/')
+        try:
+            return pd.to_datetime(val_str, format='%Y-%m-%d', errors='raise')
+        except:
+            pass
+        try:
+            return pd.to_datetime(val_str, format='%d/%m/%Y', errors='raise')
+        except:
+            pass
+        try:
+            return pd.to_datetime(val_str, format='%d-%m-%Y', errors='raise')
+        except:
+            pass
+        try:
+            return pd.to_datetime(val_str, format='%d.%m.%Y', errors='raise')
+        except:
+            pass
+        try:
+            return pd.to_datetime(val_str, format='%Y/%m/%d', errors='raise')
+        except:
+            pass
+        return pd.to_datetime(val_str, errors='coerce')
+    return date_series.apply(parse_single)
+
 def analyze_time_between_corrections(df, filter_text=None):
     """تحليل المدة الزمنية بين الإجراءات التصحيحية المتكررة (حسب كلمة البحث)"""
     if df is None or df.empty:
@@ -347,8 +380,9 @@ def analyze_time_between_corrections(df, filter_text=None):
         return pd.DataFrame()
     result_df.reset_index(drop=True, inplace=True)
     return result_df
+
 def failures_analysis_tab(all_sheets):
-    st.header("📊 تحليل الأعطال والإجراءات التصحيحية")
+    st.header("📊 تحليل الإجراءات التصحيحية المتكررة")
     if not all_sheets:
         st.warning("لا توجد بيانات للتحليل")
         return
@@ -362,15 +396,12 @@ def failures_analysis_tab(all_sheets):
     selected_section = st.selectbox("🏭 اختر القسم:", all_section_names, key="analysis_section")
     df = all_sheets[selected_section].copy()
     
-    # التأكد من وجود عمود المعدة
     if "المعدة" not in df.columns:
         st.error(f"⚠️ القسم '{selected_section}' لا يحتوي على عمود 'المعدة'")
         return
     
-    # تنظيف أسماء الماكينات
     df["المعدة"] = df["المعدة"].astype(str).str.strip()
     
-    # اختيار الماكينة
     equipment_list = get_equipment_list_from_sheet(df)
     if not equipment_list:
         st.warning(f"⚠️ لا توجد ماكينات مسجلة في قسم '{selected_section}'")
@@ -379,26 +410,20 @@ def failures_analysis_tab(all_sheets):
     equipment_options = ["جميع الماكينات"] + equipment_list
     selected_equipment = st.selectbox("🔧 اختر الماكينة:", equipment_options, key="analysis_equipment")
     
-    # نطاق التاريخ
     col1, col2 = st.columns(2)
     with col1:
         start_date = st.date_input("📅 من تاريخ (اختياري):", value=None, key="start_date_filter")
     with col2:
         end_date = st.date_input("📅 إلى تاريخ (اختياري):", value=None, key="end_date_filter")
     
-    # نص البحث (سيتم استخدامه لتصفية الأحداث)
-    search_text = st.text_input("🔍 كلمة البحث في وصف العطل (سيتم حساب الفجوات فقط بين الأحداث التي تحتوي هذه الكلمة):", 
-                                placeholder="مثال: سير, 900, توقف", key="search_text_analysis")
+    search_text = st.text_input("🔍 كلمة البحث في الإجراء التصحيحي (اختياري):", placeholder="مثال: سير, كويلر, 1270", key="search_text_analysis")
     
     if st.button("🔄 تشغيل التحليل", key="run_analysis", type="primary"):
-        # نسخة للتصفية
         filtered_df = df.copy()
         
-        # ------ فلتر الماكينة ------
         if selected_equipment != "جميع الماكينات":
             filtered_df = filtered_df[filtered_df["المعدة"] == selected_equipment]
         
-        # ------ فلتر التاريخ ------
         if "التاريخ" in filtered_df.columns:
             filtered_df["التاريخ"] = flexible_date_parser(filtered_df["التاريخ"])
             filtered_df = filtered_df.dropna(subset=["التاريخ"])
@@ -407,81 +432,63 @@ def failures_analysis_tab(all_sheets):
             if end_date:
                 filtered_df = filtered_df[filtered_df["التاريخ"] <= pd.to_datetime(end_date) + timedelta(days=1)]
         
-        # ------ تطبيق فلتر النص على الأحداث (لحساب الفجوات فقط بين الأحداث التي تحتوي النص) ------
-        if search_text:
-            # تصفية الأحداث التي تحتوي على كلمة البحث
-            text_filtered_df = filtered_df[filtered_df["الحدث/العطل"].astype(str).str.contains(search_text, case=False, na=False)]
-            if text_filtered_df.empty:
-                st.warning(f"⚠️ لا توجد أحداث تحتوي على كلمة '{search_text}' بعد تطبيق الفلاتر الأخرى.")
-                return
-            # حساب الفجوات على هذه الأحداث فقط
-            details_gaps = analyze_time_between_failures(text_filtered_df)
-            # ملاحظة: الأعطال الأكثر تكراراً والماكينات الأكثر أعطالاً ستحسب على كل البيانات (أو يمكن حسابها على البيانات المفلترة حسب رغبتك)
-            top_failures_data = filtered_df  # نستخدم كل البيانات لهذه الإحصائيات
-            top_equipment_data = filtered_df
-        else:
-            # إذا لم يوجد نص بحث، نحسب الفجوات على كل البيانات
-            details_gaps = analyze_time_between_failures(filtered_df)
-            top_failures_data = filtered_df
-            top_equipment_data = filtered_df
+        if filtered_df.empty:
+            st.warning("⚠️ لا توجد بيانات تطابق معايير التصفية")
+            return
         
-        # ------ الأعطال الأكثر تكراراً (على كل البيانات أو البيانات المفلترة) ------
-        if "الحدث/العطل" in top_failures_data.columns:
-            top_failures = top_failures_data["الحدث/العطل"].value_counts().reset_index()
-            top_failures.columns = ["الحدث/العطل", "عدد المرات"]
-            top_failures = top_failures.head(10)
-        else:
-            top_failures = pd.DataFrame()
+        details_gaps = analyze_time_between_corrections(filtered_df, search_text if search_text else None)
         
-        # ------ الماكينات الأكثر أعطالاً ------
-        if selected_equipment == "جميع الماكينات" and "المعدة" in top_equipment_data.columns:
-            top_equipment = top_equipment_data["المعدة"].value_counts().reset_index()
+        # الأعطال الأكثر تكراراً (اختياري: يمكن إزالته إذا لم ترغب فيه)
+        if "الإجراء التصحيحي" in filtered_df.columns:
+            top_corrections = filtered_df["الإجراء التصحيحي"].value_counts().reset_index().head(10)
+            top_corrections.columns = ["الإجراء التصحيحي", "عدد المرات"]
+        else:
+            top_corrections = pd.DataFrame()
+        
+        if selected_equipment == "جميع الماكينات" and "المعدة" in filtered_df.columns:
+            top_equipment = filtered_df["المعدة"].value_counts().reset_index().head(10)
             top_equipment.columns = ["المعدة", "عدد الأعطال"]
-            top_equipment = top_equipment.head(10)
         else:
             top_equipment = pd.DataFrame()
         
-        # عرض النتائج
-        st.success(f"✅ تم العثور على {len(filtered_df)} عطل (بعد تطبيق الفلاتر) - {len(details_gaps)} فجوة زمنية محسوبة")
-        if search_text:
-            st.info(f"ℹ️ تم حساب الفجوات فقط بين الأحداث التي تحتوي على كلمة '{search_text}'")
+        st.success(f"✅ تم العثور على {len(filtered_df)} إجراء تصحيحي")
         
-        if not top_failures.empty:
-            st.subheader("🔝 أكثر الأعطال تكراراً")
-            st.dataframe(top_failures, use_container_width=True)
+        if not top_corrections.empty:
+            st.subheader("🔝 أكثر الإجراءات التصحيحية تكراراً")
+            st.dataframe(top_corrections, use_container_width=True)
         
         if not top_equipment.empty:
-            st.subheader("🏭 أكثر الماكينات تعطلاً")
+            st.subheader("🏭 أكثر الماكينات التي تحتاج إجراءات تصحيحية")
             st.dataframe(top_equipment, use_container_width=True)
         
-        st.subheader("📋 الفجوات الزمنية التفصيلية بين الأعطال المتعاقبة")
+        st.subheader("📋 الفجوات الزمنية التفصيلية بين الإجراءات التصحيحية المتكررة")
+        if search_text:
+            st.info(f"ℹ️ يتم حساب الفجوات فقط بين الإجراءات التي تحتوي على النص: **'{search_text}'**")
+        
         if details_gaps.empty:
-            if search_text:
-                st.info(f"ℹ️ لا توجد فجوات زمنية محسوبة للأحداث التي تحتوي على '{search_text}' (يلزم على الأقل حدثان متتاليان يحتويان على كلمة البحث)")
-            else:
-                st.info("ℹ️ لا توجد بيانات كافية لحساب الفجوات (يلزم على الأقل حدثان لنفس المعدة)")
+            st.info("ℹ️ لا توجد بيانات كافية لحساب الفجوات (يلزم على الأقل إجراءان لنفس الماكينة ويحتويان على كلمة البحث إن وجدت)")
         else:
             st.dataframe(details_gaps, use_container_width=True, height=500)
             csv = details_gaps.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 تحميل الفجوات التفصيلية CSV", csv, "detailed_time_between_failures.csv", "text/csv")
+            st.download_button("📥 تحميل الفجوات التفصيلية CSV", csv, "detailed_corrections_gaps.csv", "text/csv")
         
         # تصدير كامل
         st.markdown("---")
         st.subheader("📥 تصدير التقرير كامل (Excel)")
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            filtered_df.to_excel(writer, sheet_name="البيانات المفلترة", index=False)
-            if not top_failures.empty:
-                top_failures.to_excel(writer, sheet_name="الأعطال الأكثر تكراراً", index=False)
+            filtered_df.to_excel(writer, sheet_name="البيانات الأصلية", index=False)
+            if not top_corrections.empty:
+                top_corrections.to_excel(writer, sheet_name="الإجراءات الأكثر تكراراً", index=False)
             if not top_equipment.empty:
-                top_equipment.to_excel(writer, sheet_name="الماكينات الأكثر تعطلاً", index=False)
+                top_equipment.to_excel(writer, sheet_name="الماكينات الأكثر احتياجاً", index=False)
             if not details_gaps.empty:
                 details_gaps.to_excel(writer, sheet_name="الفجوات التفصيلية", index=False)
         excel_buffer.seek(0)
         st.download_button(
             "📥 تحميل التقرير (Excel)",
             excel_buffer,
-            f"failure_analysis_{selected_section}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            f"corrections_analysis_{selected_section}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 def download_users_from_github():
