@@ -906,9 +906,9 @@ def search_across_sheets(all_sheets):
         if use_date_filter:
             col_date1, col_date2 = st.columns(2)
             with col_date1:
-                start_date = st.date_input("من تاريخ:", value=datetime.now() - timedelta(days=30), key="start_date")
+                start_date = st.date_input("من تاريخ:", value=None, key="start_date")
             with col_date2:
-                end_date = st.date_input("إلى تاريخ:", value=datetime.now(), key="end_date")
+                end_date = st.date_input("إلى تاريخ:", value=None, key="end_date")
         else:
             start_date = None
             end_date = None
@@ -928,13 +928,16 @@ def search_across_sheets(all_sheets):
             df_filtered = df.copy()
             if filter_equipment != "الكل" and "المعدة" in df_filtered.columns:
                 df_filtered = df_filtered[df_filtered["المعدة"] == filter_equipment]
-            if use_date_filter and start_date and end_date and "التاريخ" in df_filtered.columns:
-                try:
-                    df_filtered["التاريخ"] = pd.to_datetime(df_filtered["التاريخ"], errors='coerce')
-                    mask = (df_filtered["التاريخ"].dt.date >= start_date) & (df_filtered["التاريخ"].dt.date <= end_date)
-                    df_filtered = df_filtered[mask]
-                except:
-                    pass
+            
+            # معالجة التاريخ باستخدام flexible_date_parser
+            if "التاريخ" in df_filtered.columns:
+                df_filtered["التاريخ"] = flexible_date_parser(df_filtered["التاريخ"])
+                df_filtered = df_filtered.dropna(subset=["التاريخ"])
+            
+            if use_date_filter and start_date and end_date:
+                mask = (df_filtered["التاريخ"] >= pd.to_datetime(start_date)) & (df_filtered["التاريخ"] <= pd.to_datetime(end_date) + timedelta(days=1))
+                df_filtered = df_filtered[mask]
+            
             if search_term:
                 search_columns = ["الحدث/العطل", "الإجراء التصحيحي", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "رابط الصورة"]
                 if "مده الاصلاح" in df_filtered.columns:
@@ -944,6 +947,7 @@ def search_across_sheets(all_sheets):
                     if col in df_filtered.columns:
                         mask = mask | df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
                 df_filtered = df_filtered[mask]
+            
             if not df_filtered.empty:
                 df_filtered["القسم"] = sheet_name
                 results.append(df_filtered)
@@ -954,12 +958,10 @@ def search_across_sheets(all_sheets):
 
             # ------ ترتيب النتائج: المعدة تصاعدياً، التاريخ تنازلياً ------
             if "التاريخ" in combined_results.columns:
-                # تحويل التاريخ إلى datetime إذا لم يكن كذلك
                 combined_results["التاريخ"] = pd.to_datetime(combined_results["التاريخ"], errors='coerce')
-                # الترتيب: المعدة (تصاعدي) ثم التاريخ (تنازلي)
+                combined_results = combined_results.dropna(subset=["التاريخ"])
                 combined_results = combined_results.sort_values(by=["المعدة", "التاريخ"], ascending=[True, False])
             else:
-                # إذا لم يوجد عمود تاريخ، نرتب حسب المعدة فقط
                 combined_results = combined_results.sort_values(by=["المعدة"], ascending=True)
 
             if view_mode == "جدول":
