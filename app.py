@@ -306,8 +306,8 @@ def flexible_date_parser(date_series):
         return pd.to_datetime(val_str, errors='coerce')
     return date_series.apply(parse_single)
 
-def analyze_time_between_failures(df):
-    """تحليل المدة الزمنية بين الأعطال (المعدة، الحدث السابق وتاريخه، الحدث التالي وتاريخه، المدة)"""
+def analyze_time_between_failures(df, filter_text=None):
+    """تحليل المدة الزمنية بين الأعطال حسب كلمة البحث (تحتسب الفجوات بين الأحداث التي تحتوي على النص فقط)"""
     if df is None or df.empty:
         return pd.DataFrame()
     data = df.copy()
@@ -316,6 +316,11 @@ def analyze_time_between_failures(df):
     
     data["التاريخ"] = flexible_date_parser(data["التاريخ"])
     data = data.dropna(subset=["التاريخ"]).sort_values(["المعدة", "التاريخ"])
+    
+    # إذا كان هناك نص بحث، نقوم بتصفية الأحداث التي تحتوي عليه
+    if filter_text:
+        data["الحدث/العطل"] = data["الحدث/العطل"].fillna("").astype(str)
+        data = data[data["الحدث/العطل"].str.contains(filter_text, case=False, na=False)]
     
     results = []
     for equipment in data["المعدة"].unique():
@@ -326,6 +331,7 @@ def analyze_time_between_failures(df):
             current = eq_data.iloc[i]
             next_row = eq_data.iloc[i+1]
             gap_days = (next_row["التاريخ"] - current["التاريخ"]).total_seconds() / (24 * 3600)
+            # الحدث السابق (إذا وجد) يكون ضمن نفس الفلترة، لكن يمكن الاحتفاظ بالحدث السابق الحقيقي من البيانات المفلترة
             prev_event = eq_data.iloc[i-1]["الحدث/العطل"] if i > 0 else None
             prev_date = eq_data.iloc[i-1]["التاريخ"] if i > 0 else None
             
@@ -342,7 +348,6 @@ def analyze_time_between_failures(df):
         return pd.DataFrame()
     result_df.reset_index(drop=True, inplace=True)
     return result_df
-
 def failures_analysis_tab(all_sheets):
     st.header("📊 تحليل الأعطال والإجراءات التصحيحية")
     if not all_sheets:
