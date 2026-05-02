@@ -265,6 +265,47 @@ def get_upcoming_maintenance(days_ahead=3):
 
 # ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
 # ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
+# ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
+def flexible_date_parser(date_series):
+    """تحويل سلسلة من التواريخ بتنسيقات متعددة إلى datetime، مع تجاهل الأخطاء."""
+    def parse_single(val):
+        if pd.isna(val) or val == "":
+            return pd.NaT
+        if isinstance(val, (pd.Timestamp, datetime)):
+            return val
+        val_str = str(val).strip()
+        # استبدال الشرطات المائلة العكسية بشرطات عادية
+        val_str = val_str.replace('\\', '/')
+        
+        # تنسيق YYYY-MM-DD
+        try:
+            return pd.to_datetime(val_str, format='%Y-%m-%d', errors='raise')
+        except:
+            pass
+        # تنسيق DD/MM/YYYY
+        try:
+            return pd.to_datetime(val_str, format='%d/%m/%Y', errors='raise')
+        except:
+            pass
+        # تنسيق DD-MM-YYYY
+        try:
+            return pd.to_datetime(val_str, format='%d-%m-%Y', errors='raise')
+        except:
+            pass
+        # تنسيق DD.MM.YYYY
+        try:
+            return pd.to_datetime(val_str, format='%d.%m.%Y', errors='raise')
+        except:
+            pass
+        # تنسيق YYYY/MM/DD
+        try:
+            return pd.to_datetime(val_str, format='%Y/%m/%d', errors='raise')
+        except:
+            pass
+        # أخيراً، ترك pandas يحاول
+        return pd.to_datetime(val_str, errors='coerce')
+    return date_series.apply(parse_single)
+
 def analyze_time_between_failures(df):
     """تحليل المدة الزمنية بين الأعطال (المعدة، الحدث السابق وتاريخه، الحدث التالي وتاريخه، المدة)"""
     if df is None or df.empty:
@@ -273,7 +314,7 @@ def analyze_time_between_failures(df):
     if "التاريخ" not in data.columns or "المعدة" not in data.columns or "الحدث/العطل" not in data.columns:
         return pd.DataFrame()
     
-    data["التاريخ"] = pd.to_datetime(data["التاريخ"], errors='coerce')
+    data["التاريخ"] = flexible_date_parser(data["التاريخ"])
     data = data.dropna(subset=["التاريخ"]).sort_values(["المعدة", "التاريخ"])
     
     results = []
@@ -301,7 +342,7 @@ def analyze_time_between_failures(df):
         return pd.DataFrame()
     result_df.reset_index(drop=True, inplace=True)
     return result_df
-    
+
 def failures_analysis_tab(all_sheets):
     st.header("📊 تحليل الأعطال والإجراءات التصحيحية")
     if not all_sheets:
