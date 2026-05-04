@@ -896,12 +896,19 @@ def search_across_sheets(all_sheets):
     # خيار نوع البحث
     search_type = st.selectbox("نوع البيانات المراد البحث فيها:", ["الأقسام (الأعطال)", "قطع الغيار", "الصيانة الوقائية"], key="search_type")
 
-    # الحصول على الأقسام المسموحة (للبحث في الأقسام فقط)
-    allowed_sections = get_allowed_sections(all_sheets, username, "view") if search_type == "الأقسام (الأعطال)" else []
+    # الأقسام المسموحة للمستخدم (لجميع أنواع البحث)
+    allowed_sections = get_allowed_sections(all_sheets, username, "view")
+    
+    # متغير لتخزين القسم المختار (لقطع الغيار والصيانة)
+    selected_section_filter = "جميع الأقسام"
+    if search_type in ["قطع الغيار", "الصيانة الوقائية"] and allowed_sections:
+        section_options = ["جميع الأقسام"] + allowed_sections
+        selected_section_filter = st.selectbox("🏭 القسم:", section_options, key="section_filter")
 
     col1, col2 = st.columns(2)
     with col1:
         if search_type == "الأقسام (الأعطال)":
+            # قائمة الأقسام للبحث في الأعطال
             sheet_options = ["جميع الأقسام"] + allowed_sections
             selected_sheet = st.selectbox("اختر القسم للبحث:", sheet_options, key="search_sheet")
             if selected_sheet != "جميع الأقسام":
@@ -915,7 +922,8 @@ def search_across_sheets(all_sheets):
                 equipment_list = sorted(all_eq)
             filter_equipment = st.selectbox("فلتر حسب الماكينة:", ["الكل"] + equipment_list, key="search_eq")
         else:
-            filter_equipment = "الكل"  # لا نطبق فلتر ماكينة لقطع الغيار أو الصيانة
+            # لقطع الغيار والصيانة، لا نحتاج فلتر ماكينة هنا (سيتم من خلال القسم)
+            filter_equipment = "الكل"
         search_term = st.text_input("كلمة البحث:", placeholder="أدخل نصاً للبحث...", key="search_term")
         
     with col2:
@@ -936,6 +944,7 @@ def search_across_sheets(all_sheets):
     if st.button("بحث", key="search_btn", type="primary"):
         results = []
         
+        # ---------- البحث في الأقسام (الأعطال) ----------
         if search_type == "الأقسام (الأعطال)":
             sheets_to_search = []
             if selected_sheet != "جميع الأقسام":
@@ -968,13 +977,18 @@ def search_across_sheets(all_sheets):
                 if not df_filtered.empty:
                     df_filtered["القسم"] = sheet_name
                     results.append(df_filtered)
-                    
+        
+        # ---------- البحث في قطع الغيار ----------
         elif search_type == "قطع الغيار":
             spare_df = load_spare_parts()
             if spare_df.empty:
                 st.warning("لا توجد بيانات في قطع الغيار")
                 return
             df_filtered = spare_df.copy()
+            # فلتر القسم
+            if selected_section_filter != "جميع الأقسام":
+                df_filtered = df_filtered[df_filtered["القسم"] == selected_section_filter]
+            # فلتر النص
             if search_term:
                 search_columns = ["اسم القطعة", "المقاس", "قوه الشد", "مدة التوريد", "القسم", "رابط_الصورة"]
                 mask = pd.Series([False] * len(df_filtered))
@@ -984,23 +998,42 @@ def search_across_sheets(all_sheets):
                 df_filtered = df_filtered[mask]
             if not df_filtered.empty:
                 results.append(df_filtered)
-                
+        
+        # ---------- البحث في الصيانة الوقائية ----------
         else:  # الصيانة الوقائية
+            # بناء علاقة الماكينة -> القسم من الأقسام المسموحة
+            equipment_to_section = {}
+            for sheet_name in allowed_sections:
+                df_sheet = all_sheets[sheet_name]
+                if "المعدة" in df_sheet.columns:
+                    for eq in df_sheet["المعدة"].dropna().unique():
+                        equipment_to_section[str(eq).strip()] = sheet_name
+            
             maint_df = load_maintenance_tasks()
             if maint_df.empty:
                 st.warning("لا توجد بيانات في الصيانة الوقائية")
                 return
             df_filtered = maint_df.copy()
+            # فلتر القسم (بناءً على الماكينة)
+            if selected_section_filter != "جميع الأقسام":
+                # الاحتفاظ فقط بالمهام التي تنتمي ماكينتها للقسم المختار
+                allowed_equipment = [eq for eq, sec in equipment_to_section.items() if sec == selected_section_filter]
+                df_filtered = df_filtered[df_filtered["المعدة"].isin(allowed_equipment)]
+            
+            # فلتر التاريخ
             if use_date_filter and start_date and end_date:
+                date_col = None
                 if "آخر_تنفيذ" in df_filtered.columns:
-                    df_filtered["آخر_تنفيذ"] = flexible_date_parser(df_filtered["آخر_تنفيذ"])
-                    mask = (df_filtered["آخر_تنفيذ"] >= pd.to_datetime(start_date)) & (df_filtered["آخر_تنفيذ"] <= pd.to_datetime(end_date) + timedelta(days=1))
-                    df_filtered = df_filtered[mask]
+                    date_col = "آخر_تنفيذ"
                 elif "التاريخ_التالي" in df_filtered.columns:
-                    df_filtered["التاريخ_التالي"] = flexible_date_parser(df_filtered["التاريخ_التالي"])
-                    mask = (df_filtered["التاريخ_التالي"] >= pd.to_datetime(start_date)) & (df_filtered["التاريخ_التالي"] <= pd.to_datetime(end_date) + timedelta(days=1))
+                    date_col = "التاريخ_التالي"
+                if date_col:
+                    df_filtered[date_col] = flexible_date_parser(df_filtered[date_col])
+                    df_filtered = df_filtered.dropna(subset=[date_col])
+                    mask = (df_filtered[date_col] >= pd.to_datetime(start_date)) & (df_filtered[date_col] <= pd.to_datetime(end_date) + timedelta(days=1))
                     df_filtered = df_filtered[mask]
             
+            # فلتر النص
             if search_term:
                 search_columns = ["المعدة", "نوع_الصيانة", "اسم_البند", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية", "رابط_الصورة"]
                 mask = pd.Series([False] * len(df_filtered))
@@ -1008,14 +1041,17 @@ def search_across_sheets(all_sheets):
                     if col in df_filtered.columns:
                         mask = mask | df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
                 df_filtered = df_filtered[mask]
+            
             if not df_filtered.empty:
+                # إضافة عمود القسم (من العلاقة) للعرض
+                df_filtered["القسم"] = df_filtered["المعدة"].map(equipment_to_section).fillna("غير محدد")
                 results.append(df_filtered)
         
+        # ---------- معالجة النتائج وعرضها ----------
         if results:
             combined_results = pd.concat(results, ignore_index=True)
             
-            # ========== توحيد اسم عمود الصورة ==========
-            # التحقق من وجود عمود الصورة بأي من الاسمين وإنشاء عمود موحد
+            # توحيد اسم عمود الصورة
             if "رابط الصورة" in combined_results.columns:
                 combined_results["رابط_الصورة_موحد"] = combined_results["رابط الصورة"]
                 combined_results = combined_results.drop(columns=["رابط الصورة"])
@@ -1027,32 +1063,30 @@ def search_across_sheets(all_sheets):
             
             st.success(f"تم العثور على {len(combined_results)} نتيجة")
             
-            # ترتيب النتائج حسب الاقتضاء
+            # ترتيب النتائج (للأعطال فقط)
             if search_type == "الأقسام (الأعطال)" and "التاريخ" in combined_results.columns:
                 combined_results["التاريخ"] = pd.to_datetime(combined_results["التاريخ"], errors='coerce')
                 combined_results = combined_results.dropna(subset=["التاريخ"])
                 combined_results = combined_results.sort_values(by=["المعدة", "التاريخ"], ascending=[True, False])
             
             if view_mode == "جدول":
-                # إخفاء عمود رابط الصورة الموحد لتجنب النص الطويل
                 display_cols = [c for c in combined_results.columns if c != "رابط_الصورة_موحد"]
                 st.dataframe(combined_results[display_cols], use_container_width=True, height=500)
             else:
-                # عرض بطاقات مع الصور (باستخدام العمود الموحد)
+                # عرض بطاقات مع الصور
                 for idx, row in combined_results.iterrows():
                     with st.container(border=True):
                         col_img, col_info = st.columns([1, 3])
                         img_url = row.get("رابط_الصورة_موحد", "")
                         with col_img:
-                            if img_url and isinstance(img_url, str) and img_url.strip() != "":
+                            if img_url and isinstance(img_url, str) and img_url.strip():
                                 try:
                                     st.image(img_url, use_container_width=True)
-                                except Exception as e:
+                                except:
                                     st.write("🖼️ (تعذر عرض الصورة)")
                             else:
                                 st.write("📄 لا توجد صورة")
                         with col_info:
-                            # عرض الأعمدة الأساسية حسب نوع البحث
                             if search_type == "الأقسام (الأعطال)":
                                 st.markdown(f"**📁 القسم:** {row.get('القسم', '')}")
                                 st.markdown(f"**📅 التاريخ:** {row.get('التاريخ', '')}")
@@ -1074,10 +1108,11 @@ def search_across_sheets(all_sheets):
                                 st.markdown(f"**📅 آخر تنفيذ:** {row.get('آخر_تنفيذ', '')}")
                                 st.markdown(f"**📅 التاريخ التالي:** {row.get('التاريخ_التالي', '')}")
                                 st.markdown(f"**📝 ملاحظات:** {str(row.get('ملاحظات', ''))[:150]}")
+                                st.markdown(f"**🏭 القسم:** {row.get('القسم', '')}")
                             if img_url:
                                 st.caption(f"[🔗 رابط الصورة]({img_url})")
             
-            # تصدير النتائج (نزيل العمود الموحد قبل التصدير)
+            # تصدير Excel (بدون العمود الموحد)
             export_df = combined_results.drop(columns=["رابط_الصورة_موحد"])
             excel_file = export_filtered_results_to_excel(export_df, "نتائج_البحث")
             st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
