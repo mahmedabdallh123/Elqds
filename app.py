@@ -29,6 +29,7 @@ APP_CONFIG = {
     "SPARE_PARTS_SHEET": "قطع_الغيار",
     "SPARE_PARTS_COLUMNS": ["اسم القطعة", "المقاس", "قوه الشد", "الرصيد الموجود", "مدة التوريد", "ضرورية", "القسم", "رابط_الصورة"],
     "MAINTENANCE_SHEET": "صيانة_وقائية",
+    "SPARE_PARTS_COLUMNS": ["اسم القطعة", "المقاس", "قوه الشد", "الرصيد الموجود", "مدة التوريد", "ضرورية", "القسم", "رابط_الصورة", "حد_الإنذار"],
     "MAINTENANCE_COLUMNS": ["المعدة", "نوع_الصيانة", "اسم_البند", "الفترة_بالأيام", "آخر_تنفيذ", "التاريخ_التالي", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية", "رابط_الصورة"],
     "GENERAL_SECTION": "عام"
 }
@@ -156,9 +157,10 @@ def get_critical_spare_parts():
         df["حد_الإنذار"] = 1
     else:
         df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
-    # استبعاد القطع التي ليس لها قسم
-    df = df[df["القسم"].notna() & (df["القسم"] != "")]
-    critical = df[df["الرصيد الموجود"] < df["حد_الإنذار"]]
+    # التأكد من أن "ضرورية" نصية
+    df["ضرورية"] = df["ضرورية"].astype(str).str.strip()
+    # تصفية: فقط القطع التي ضرورية = "نعم" والرصيد أقل من حد الإنذار
+    critical = df[(df["ضرورية"] == "نعم") & (df["الرصيد الموجود"] < df["حد_الإنذار"])]
     result = critical[["اسم القطعة", "القسم", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
     return result
 
@@ -1507,6 +1509,7 @@ def manage_spare_parts_tab(sheets_edit):
                     new_qty = st.number_input("الرصيد", value=int(part_row["الرصيد الموجود"]), step=1, key="edit_qty")
                     new_lead = st.text_input("مدة التوريد", value=part_row["مدة التوريد"], key="edit_lead")
                     new_critical = st.checkbox("قطعة ضرورية", value=(part_row["ضرورية"] == "نعم"), key="edit_critical")
+                    new_threshold = st.number_input("حد الإنذار", value=int(part_row.get("حد_الإنذار", 1)), step=1, key="edit_threshold")
                     if st.button("💾 حفظ التغييرات", key="save_edit_part"):
                         original_idx = part_row["original_index"]
                         spare_df.loc[original_idx, "اسم القطعة"] = new_name
@@ -1514,6 +1517,7 @@ def manage_spare_parts_tab(sheets_edit):
                         spare_df.loc[original_idx, "الرصيد الموجود"] = new_qty
                         spare_df.loc[original_idx, "مدة التوريد"] = new_lead
                         spare_df.loc[original_idx, "ضرورية"] = "نعم" if new_critical else "لا"
+                        spare_df.loc[original_idx, "حد_الإنذار"] = new_threshold
                         sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = spare_df
                         if save_and_push_to_github(sheets_edit, f"تعديل قطعة: {selected_part_name}"):
                             log_activity("add_spare_part", f"تم تعديل قطعة غيار '{selected_part_name}' للقسم {selected_section}")
@@ -1583,7 +1587,7 @@ def manage_spare_parts_tab(sheets_edit):
                                                 st.rerun()
                                             else:
                                                 st.error("فشل الحفظ")
-    st.subheader("➕ إضافة قطعة غيار جديدة")
+        st.subheader("➕ إضافة قطعة غيار جديدة")
     with st.form(key="add_spare_part_form"):
         col1, col2 = st.columns(2)
         with col1:
@@ -1593,7 +1597,8 @@ def manage_spare_parts_tab(sheets_edit):
         with col2:
             initial_qty = st.number_input("📦 الرصيد الموجود:", min_value=0, step=1, value=0)
             lead_time = st.text_input("⏱️ مدة التوريد (أيام أو نص):")
-            is_critical = st.checkbox("⚠️ قطعة ضرورية")
+            is_critical = st.checkbox("⚠️ قطعة ضرورية (ستظهر في الإشعارات حال نقص الرصيد)")
+            critical_threshold = st.number_input("⚠️ حد الإنذار (عند نقص الرصيد عن هذا الرقم):", min_value=1, step=1, value=1, help="مثال: 2 يعني إذا أصبح الرصيد 1 أو أقل تصبح حرجة")
         submitted = st.form_submit_button("✅ إضافة قطعة")
         if submitted:
             if not part_name:
@@ -1612,9 +1617,14 @@ def manage_spare_parts_tab(sheets_edit):
                         else:
                             st.warning("⚠️ فشل رفع الصورة")
                     new_row = pd.DataFrame([{
-                        "اسم القطعة": part_name, "المقاس": part_size, "الرصيد الموجود": initial_qty,
-                        "مدة التوريد": lead_time, "ضرورية": "نعم" if is_critical else "لا",
-                        "القسم": selected_section, "رابط_الصورة": image_url or ""
+                        "اسم القطعة": part_name,
+                        "المقاس": part_size,
+                        "الرصيد الموجود": initial_qty,
+                        "مدة التوريد": lead_time,
+                        "ضرورية": "نعم" if is_critical else "لا",
+                        "القسم": selected_section,
+                        "رابط_الصورة": image_url or "",
+                        "حد_الإنذار": critical_threshold
                     }])
                     new_spare_df = pd.concat([spare_df, new_row], ignore_index=True)
                     sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = new_spare_df
