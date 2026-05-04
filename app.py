@@ -119,6 +119,10 @@ def load_spare_parts():
                 df[col] = ""
         df = df.fillna("")
         df["الرصيد الموجود"] = pd.to_numeric(df["الرصيد الموجود"], errors='coerce').fillna(0)
+        if "حد_الإنذار" not in df.columns:
+            df["حد_الإنذار"] = 1
+        else:
+            df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
         return df
     except Exception:
         return pd.DataFrame(columns=APP_CONFIG["SPARE_PARTS_COLUMNS"])
@@ -152,18 +156,24 @@ def get_critical_spare_parts():
     df = load_spare_parts()
     if df.empty:
         return []
+    # تنظيف البيانات
     df["الرصيد الموجود"] = pd.to_numeric(df["الرصيد الموجود"], errors='coerce').fillna(0)
     if "حد_الإنذار" not in df.columns:
         df["حد_الإنذار"] = 1
     else:
         df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
-    # التأكد من أن "ضرورية" نصية
+    # التأكد من أن عمود "القسم" موجود وليس فارغاً
+    if "القسم" not in df.columns:
+        return []
+    df["القسم"] = df["القسم"].fillna("").astype(str)
+    # فقط القطع التي لها قسم صالح (غير فارغ)
+    df = df[df["القسم"].str.strip() != ""]
+    # فقط القطع الضرورية
     df["ضرورية"] = df["ضرورية"].astype(str).str.strip()
-    # تصفية: فقط القطع التي ضرورية = "نعم" والرصيد أقل من حد الإنذار
     critical = df[(df["ضرورية"] == "نعم") & (df["الرصيد الموجود"] < df["حد_الإنذار"])]
     result = critical[["اسم القطعة", "القسم", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
     return result
-
+    
 # ------------------------------- دوال سجل النشاطات -------------------------------
 ACTIVITY_LOG_FILE = "activity_log.json"
 
@@ -1181,25 +1191,24 @@ def add_new_department(sheets_edit):
 
         st.markdown("---")
         st.subheader("🗑️ حذف قسم موجود")
-        st.warning("⚠️ انتبه: حذف القسم سيؤدي إلى حذف جميع بياناته بما فيها الماكينات والأعطال وقطع الغيار المرتبطة به نهائياً ولا يمكن استرجاعها.")
+        st.warning("⚠️ انتبه: حذف القسم سيؤدي إلى حذف جميع بياناته (ماكينات، أعطال، قطع غيار) نهائياً ولا يمكن استرجاعها.")
         deletable_sections = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
         if not deletable_sections:
             st.info("لا توجد أقسام قابلة للحذف.")
         else:
             selected_dept = st.selectbox("اختر القسم المراد حذفه:", deletable_sections, key="delete_department_select")
             if selected_dept:
-                st.error(f"🔴 أنت على وشك حذف قسم **'{selected_dept}'** نهائياً. سيتم حذف جميع البيانات المرتبطة به.")
+                st.error(f"🔴 أنت على وشك حذف قسم **'{selected_dept}'** نهائياً.")
                 confirm = st.text_input("لتأكيد الحذف، اكتب اسم القسم هنا:", key="delete_confirm")
                 if confirm == selected_dept:
                     if st.button("🗑️ حذف القسم نهائياً", key="delete_department_btn", type="primary"):
-                        # ========== إضافة: حذف قطع الغيار المرتبطة بهذا القسم ==========
+                        # 1. حذف قطع الغيار المرتبطة بهذا القسم
                         spare_df = load_spare_parts()
                         if not spare_df.empty:
-                            # حذف الصفوف التي تحمل نفس اسم القسم
                             spare_df = spare_df[spare_df["القسم"] != selected_dept]
                             sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = spare_df
-                            st.info(f"🗑️ تم حذف قطع الغيار المرتبطة بالقسم '{selected_dept}'.")
-                        # ========== نهاية الإضافة ==========
+                            st.info(f"🗑️ تم حذف قطع الغيار التابعة للقسم '{selected_dept}'.")
+                        # 2. حذف القسم نفسه (الشيت)
                         del sheets_edit[selected_dept]
                         if save_and_push_to_github(sheets_edit, f"حذف قسم: {selected_dept}"):
                             log_activity("delete_section", f"تم حذف القسم '{selected_dept}' وقطع الغيار التابعة له")
@@ -1221,7 +1230,7 @@ def add_new_department(sheets_edit):
     else:
         st.info("لا توجد أقسام بعد")
     return sheets_edit
-
+    
 def add_new_machine(sheets_edit, sheet_name):
     st.markdown(f"### 🔧 إضافة ماكينة جديدة في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
