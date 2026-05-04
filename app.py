@@ -937,7 +937,6 @@ def search_across_sheets(all_sheets):
         results = []
         
         if search_type == "الأقسام (الأعطال)":
-            # البحث في الأقسام (نفس الكود القديم ولكن مع تحسين التواريخ)
             sheets_to_search = []
             if selected_sheet != "جميع الأقسام":
                 sheets_to_search = [(selected_sheet, all_sheets[selected_sheet])]
@@ -971,13 +970,11 @@ def search_across_sheets(all_sheets):
                     results.append(df_filtered)
                     
         elif search_type == "قطع الغيار":
-            # البحث في شيت قطع الغيار
             spare_df = load_spare_parts()
             if spare_df.empty:
                 st.warning("لا توجد بيانات في قطع الغيار")
                 return
             df_filtered = spare_df.copy()
-            # تحويل التواريخ إذا وجدت (مدة التوريد قد تكون نص)
             if search_term:
                 search_columns = ["اسم القطعة", "المقاس", "قوه الشد", "مدة التوريد", "القسم", "رابط_الصورة"]
                 mask = pd.Series([False] * len(df_filtered))
@@ -989,13 +986,11 @@ def search_across_sheets(all_sheets):
                 results.append(df_filtered)
                 
         else:  # الصيانة الوقائية
-            # البحث في شيت الصيانة الوقائية
             maint_df = load_maintenance_tasks()
             if maint_df.empty:
                 st.warning("لا توجد بيانات في الصيانة الوقائية")
                 return
             df_filtered = maint_df.copy()
-            # فلترة حسب التاريخ (آخر_تنفيذ أو التاريخ_التالي)
             if use_date_filter and start_date and end_date:
                 if "آخر_تنفيذ" in df_filtered.columns:
                     df_filtered["آخر_تنفيذ"] = flexible_date_parser(df_filtered["آخر_تنفيذ"])
@@ -1018,6 +1013,18 @@ def search_across_sheets(all_sheets):
         
         if results:
             combined_results = pd.concat(results, ignore_index=True)
+            
+            # ========== توحيد اسم عمود الصورة ==========
+            # التحقق من وجود عمود الصورة بأي من الاسمين وإنشاء عمود موحد
+            if "رابط الصورة" in combined_results.columns:
+                combined_results["رابط_الصورة_موحد"] = combined_results["رابط الصورة"]
+                combined_results = combined_results.drop(columns=["رابط الصورة"])
+            elif "رابط_الصورة" in combined_results.columns:
+                combined_results["رابط_الصورة_موحد"] = combined_results["رابط_الصورة"]
+                combined_results = combined_results.drop(columns=["رابط_الصورة"])
+            else:
+                combined_results["رابط_الصورة_موحد"] = ""
+            
             st.success(f"تم العثور على {len(combined_results)} نتيجة")
             
             # ترتيب النتائج حسب الاقتضاء
@@ -1027,20 +1034,20 @@ def search_across_sheets(all_sheets):
                 combined_results = combined_results.sort_values(by=["المعدة", "التاريخ"], ascending=[True, False])
             
             if view_mode == "جدول":
-                # إخفاء عمود رابط الصورة إن وجد لتجنب النص الطويل
-                display_cols = [c for c in combined_results.columns if c != "رابط_الصورة"]
+                # إخفاء عمود رابط الصورة الموحد لتجنب النص الطويل
+                display_cols = [c for c in combined_results.columns if c != "رابط_الصورة_موحد"]
                 st.dataframe(combined_results[display_cols], use_container_width=True, height=500)
             else:
-                # عرض بطاقات مع الصور
+                # عرض بطاقات مع الصور (باستخدام العمود الموحد)
                 for idx, row in combined_results.iterrows():
                     with st.container(border=True):
                         col_img, col_info = st.columns([1, 3])
-                        img_url = row.get("رابط_الصورة", "")
+                        img_url = row.get("رابط_الصورة_موحد", "")
                         with col_img:
-                            if img_url and isinstance(img_url, str) and img_url.strip():
+                            if img_url and isinstance(img_url, str) and img_url.strip() != "":
                                 try:
                                     st.image(img_url, use_container_width=True)
-                                except:
+                                except Exception as e:
                                     st.write("🖼️ (تعذر عرض الصورة)")
                             else:
                                 st.write("📄 لا توجد صورة")
@@ -1070,8 +1077,9 @@ def search_across_sheets(all_sheets):
                             if img_url:
                                 st.caption(f"[🔗 رابط الصورة]({img_url})")
             
-            # تصدير النتائج
-            excel_file = export_filtered_results_to_excel(combined_results, "نتائج_البحث")
+            # تصدير النتائج (نزيل العمود الموحد قبل التصدير)
+            export_df = combined_results.drop(columns=["رابط_الصورة_موحد"])
+            excel_file = export_filtered_results_to_excel(export_df, "نتائج_البحث")
             st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
         else:
             st.warning("لا توجد نتائج مطابقة للبحث")
