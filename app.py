@@ -896,7 +896,7 @@ def search_across_sheets(all_sheets):
     # خيار نوع البحث
     search_type = st.selectbox("نوع البيانات المراد البحث فيها:", ["الأقسام (الأعطال)", "قطع الغيار", "الصيانة الوقائية"], key="search_type")
 
-    # الأقسام المسموحة للمستخدم (لجميع أنواع البحث)
+    # الأقسام المسموحة للمستخدم
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
     
     # متغير لتخزين القسم المختار (لقطع الغيار والصيانة)
@@ -905,28 +905,30 @@ def search_across_sheets(all_sheets):
         section_options = ["جميع الأقسام"] + allowed_sections
         selected_section_filter = st.selectbox("🏭 القسم:", section_options, key="section_filter")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if search_type == "الأقسام (الأعطال)":
-            # قائمة الأقسام للبحث في الأعطال
-            sheet_options = ["جميع الأقسام"] + allowed_sections
-            selected_sheet = st.selectbox("اختر القسم للبحث:", sheet_options, key="search_sheet")
-            if selected_sheet != "جميع الأقسام":
-                df_temp = all_sheets[selected_sheet]
-                equipment_list = get_equipment_list_from_sheet(df_temp)
-            else:
-                all_eq = set()
-                for sh_name in allowed_sections:
-                    df_temp = all_sheets[sh_name]
-                    all_eq.update(get_equipment_list_from_sheet(df_temp))
-                equipment_list = sorted(all_eq)
-            filter_equipment = st.selectbox("فلتر حسب الماكينة:", ["الكل"] + equipment_list, key="search_eq")
-        else:
-            # لقطع الغيار والصيانة، لا نحتاج فلتر ماكينة هنا (سيتم من خلال القسم)
-            filter_equipment = "الكل"
-        search_term = st.text_input("كلمة البحث:", placeholder="أدخل نصاً للبحث...", key="search_term")
+    # ---------- البحث في الأقسام (الأعطال) ----------
+    if search_type == "الأقسام (الأعطال)":
+        # قائمة الأقسام للبحث في الأعطال
+        sheet_options = ["جميع الأقسام"] + allowed_sections
+        selected_sheet = st.selectbox("اختر القسم للبحث:", sheet_options, key="search_sheet")
         
-    with col2:
+        if selected_sheet != "جميع الأقسام":
+            df_temp = all_sheets[selected_sheet]
+            equipment_list = get_equipment_list_from_sheet(df_temp)
+        else:
+            all_eq = set()
+            for sh_name in allowed_sections:
+                df_temp = all_sheets[sh_name]
+                all_eq.update(get_equipment_list_from_sheet(df_temp))
+            equipment_list = sorted(all_eq)
+        filter_equipment = st.selectbox("فلتر حسب الماكينة:", ["الكل"] + equipment_list, key="search_eq")
+        
+        # ----- حقول البحث المحسنة -----
+        col1, col2 = st.columns(2)
+        with col1:
+            general_search = st.text_input("🔍 كلمة البحث العامة (في الحدث/الإجراء):", placeholder="مثال: تسريب زيت, قطع سير...")
+        with col2:
+            technician_search = st.text_input("👨‍🔧 بحث بالفني (تم بواسطة):", placeholder="أدخل اسم الفني...")
+        
         st.markdown("#### نطاق التاريخ")
         use_date_filter = st.checkbox("تفعيل البحث بالتاريخ", key="use_date_filter")
         if use_date_filter:
@@ -939,13 +941,10 @@ def search_across_sheets(all_sheets):
             start_date = None
             end_date = None
 
-    view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="search_view_mode")
+        view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="search_view_mode")
 
-    if st.button("بحث", key="search_btn", type="primary"):
-        results = []
-        
-        # ---------- البحث في الأقسام (الأعطال) ----------
-        if search_type == "الأقسام (الأعطال)":
+        if st.button("بحث", key="search_btn", type="primary"):
+            results = []
             sheets_to_search = []
             if selected_sheet != "جميع الأقسام":
                 sheets_to_search = [(selected_sheet, all_sheets[selected_sheet])]
@@ -955,29 +954,98 @@ def search_across_sheets(all_sheets):
             
             for sheet_name, df in sheets_to_search:
                 df_filtered = df.copy()
+                
+                # فلتر الماكينة
                 if filter_equipment != "الكل" and "المعدة" in df_filtered.columns:
                     df_filtered = df_filtered[df_filtered["المعدة"] == filter_equipment]
                 
+                # فلتر التاريخ
                 if "التاريخ" in df_filtered.columns:
                     df_filtered["التاريخ"] = flexible_date_parser(df_filtered["التاريخ"])
                     df_filtered = df_filtered.dropna(subset=["التاريخ"])
+                    if use_date_filter and start_date and end_date:
+                        mask = (df_filtered["التاريخ"] >= pd.to_datetime(start_date)) & (df_filtered["التاريخ"] <= pd.to_datetime(end_date) + timedelta(days=1))
+                        df_filtered = df_filtered[mask]
                 
-                if use_date_filter and start_date and end_date:
-                    mask = (df_filtered["التاريخ"] >= pd.to_datetime(start_date)) & (df_filtered["التاريخ"] <= pd.to_datetime(end_date) + timedelta(days=1))
-                    df_filtered = df_filtered[mask]
+                # البحث العام (فقط في الحدث/العطل والإجراء التصحيحي)
+                if general_search:
+                    event_col = "الحدث/العطل"
+                    action_col = "الإجراء التصحيحي"
+                    mask_general = pd.Series([False] * len(df_filtered))
+                    if event_col in df_filtered.columns:
+                        mask_general = mask_general | df_filtered[event_col].astype(str).str.contains(general_search, case=False, na=False)
+                    if action_col in df_filtered.columns:
+                        mask_general = mask_general | df_filtered[action_col].astype(str).str.contains(general_search, case=False, na=False)
+                    df_filtered = df_filtered[mask_general]
                 
-                if search_term:
-                    search_columns = ["الحدث/العطل", "الإجراء التصحيحي", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "رابط الصورة", "مده الاصلاح"]
-                    mask = pd.Series([False] * len(df_filtered))
-                    for col in search_columns:
-                        if col in df_filtered.columns:
-                            mask = mask | df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
-                    df_filtered = df_filtered[mask]
+                # البحث بالفني
+                if technician_search:
+                    tech_col = "تم بواسطة"
+                    if tech_col in df_filtered.columns:
+                        mask_tech = df_filtered[tech_col].astype(str).str.contains(technician_search, case=False, na=False)
+                        df_filtered = df_filtered[mask_tech]
                 
                 if not df_filtered.empty:
                     df_filtered["القسم"] = sheet_name
                     results.append(df_filtered)
-        
+            
+            # معالجة النتائج وعرضها
+            if results:
+                combined_results = pd.concat(results, ignore_index=True)
+                
+                # توحيد اسم عمود الصورة
+                if "رابط الصورة" in combined_results.columns:
+                    combined_results["رابط_الصورة_موحد"] = combined_results["رابط الصورة"]
+                    combined_results = combined_results.drop(columns=["رابط الصورة"])
+                elif "رابط_الصورة" in combined_results.columns:
+                    combined_results["رابط_الصورة_موحد"] = combined_results["رابط_الصورة"]
+                    combined_results = combined_results.drop(columns=["رابط_الصورة"])
+                else:
+                    combined_results["رابط_الصورة_موحد"] = ""
+                
+                st.success(f"تم العثور على {len(combined_results)} نتيجة")
+                
+                # ترتيب النتائج حسب التاريخ تنازلياً
+                if "التاريخ" in combined_results.columns:
+                    combined_results["التاريخ"] = pd.to_datetime(combined_results["التاريخ"], errors='coerce')
+                    combined_results = combined_results.dropna(subset=["التاريخ"])
+                    combined_results = combined_results.sort_values(by=["المعدة", "التاريخ"], ascending=[True, False])
+                
+                if view_mode == "جدول":
+                    display_cols = [c for c in combined_results.columns if c not in ["رابط_الصورة_موحد"]]
+                    st.dataframe(combined_results[display_cols], use_container_width=True, height=500)
+                else:
+                    # عرض بطاقات مع الصور
+                    for idx, row in combined_results.iterrows():
+                        with st.container(border=True):
+                            col_img, col_info = st.columns([1, 3])
+                            img_url = row.get("رابط_الصورة_موحد", "")
+                            with col_img:
+                                if img_url and isinstance(img_url, str) and img_url.strip():
+                                    try:
+                                        st.image(img_url, use_container_width=True)
+                                    except:
+                                        st.write("🖼️ (تعذر عرض الصورة)")
+                                else:
+                                    st.write("📄 لا توجد صورة")
+                            with col_info:
+                                st.markdown(f"**📁 القسم:** {row.get('القسم', '')}")
+                                st.markdown(f"**📅 التاريخ:** {row.get('التاريخ', '')}")
+                                st.markdown(f"**⚙️ المعدة:** {row.get('المعدة', '')}")
+                                st.markdown(f"**⚠️ العطل:** {str(row.get('الحدث/العطل', ''))[:150]}")
+                                st.markdown(f"**🔧 الإجراء:** {str(row.get('الإجراء التصحيحي', ''))[:150]}")
+                                st.markdown(f"**👨‍🔧 تم بواسطة:** {row.get('تم بواسطة', '')}")
+                                if img_url:
+                                    st.caption(f"[🔗 رابط الصورة]({img_url})")
+                
+                # تصدير Excel
+                export_df = combined_results.drop(columns=["رابط_الصورة_موحد"])
+                excel_file = export_filtered_results_to_excel(export_df, "نتائج_البحث")
+                st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
+            else:
+                st.warning("لا توجد نتائج مطابقة للبحث")
+    
+   
         # ---------- البحث في قطع الغيار ----------
         elif search_type == "قطع الغيار":
             spare_df = load_spare_parts()
