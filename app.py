@@ -885,9 +885,99 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
         all_sheets_excel = export_all_sheets_to_excel({sheet_name: df})
         st.download_button("📥 تحميل جميع البيانات كملف Excel", all_sheets_excel, f"all_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"export_all_{unique_id}")
 
-def search_across_sheets
+def search_across_sheets(all_sheets):
+    st.subheader("بحث متقدم في السجلات")
+    if not all_sheets:
+        st.warning("لا توجد بيانات للبحث")
+        return
+
+    username = st.session_state.get("username")
     
-   
+    # خيار نوع البحث
+    search_type = st.selectbox("نوع البيانات المراد البحث فيها:", ["الأقسام (الأعطال)", "قطع الغيار", "الصيانة الوقائية"], key="search_type")
+
+    # الأقسام المسموحة للمستخدم (لجميع أنواع البحث)
+    allowed_sections = get_allowed_sections(all_sheets, username, "view")
+    
+    # متغير لتخزين القسم المختار (لقطع الغيار والصيانة)
+    selected_section_filter = "جميع الأقسام"
+    if search_type in ["قطع الغيار", "الصيانة الوقائية"] and allowed_sections:
+        section_options = ["جميع الأقسام"] + allowed_sections
+        selected_section_filter = st.selectbox("🏭 القسم:", section_options, key="section_filter")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if search_type == "الأقسام (الأعطال)":
+            # قائمة الأقسام للبحث في الأعطال
+            sheet_options = ["جميع الأقسام"] + allowed_sections
+            selected_sheet = st.selectbox("اختر القسم للبحث:", sheet_options, key="search_sheet")
+            if selected_sheet != "جميع الأقسام":
+                df_temp = all_sheets[selected_sheet]
+                equipment_list = get_equipment_list_from_sheet(df_temp)
+            else:
+                all_eq = set()
+                for sh_name in allowed_sections:
+                    df_temp = all_sheets[sh_name]
+                    all_eq.update(get_equipment_list_from_sheet(df_temp))
+                equipment_list = sorted(all_eq)
+            filter_equipment = st.selectbox("فلتر حسب الماكينة:", ["الكل"] + equipment_list, key="search_eq")
+        else:
+            # لقطع الغيار والصيانة، لا نحتاج فلتر ماكينة هنا (سيتم من خلال القسم)
+            filter_equipment = "الكل"
+        search_term = st.text_input("كلمة البحث:", placeholder="أدخل نصاً للبحث...", key="search_term")
+        
+    with col2:
+        st.markdown("#### نطاق التاريخ")
+        use_date_filter = st.checkbox("تفعيل البحث بالتاريخ", key="use_date_filter")
+        if use_date_filter:
+            col_date1, col_date2 = st.columns(2)
+            with col_date1:
+                start_date = st.date_input("من تاريخ:", value=None, key="start_date")
+            with col_date2:
+                end_date = st.date_input("إلى تاريخ:", value=None, key="end_date")
+        else:
+            start_date = None
+            end_date = None
+
+    view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="search_view_mode")
+
+    if st.button("بحث", key="search_btn", type="primary"):
+        results = []
+        
+        # ---------- البحث في الأقسام (الأعطال) ----------
+        if search_type == "الأقسام (الأعطال)":
+            sheets_to_search = []
+            if selected_sheet != "جميع الأقسام":
+                sheets_to_search = [(selected_sheet, all_sheets[selected_sheet])]
+            else:
+                for sheet_name in allowed_sections:
+                    sheets_to_search.append((sheet_name, all_sheets[sheet_name]))
+            
+            for sheet_name, df in sheets_to_search:
+                df_filtered = df.copy()
+                if filter_equipment != "الكل" and "المعدة" in df_filtered.columns:
+                    df_filtered = df_filtered[df_filtered["المعدة"] == filter_equipment]
+                
+                if "التاريخ" in df_filtered.columns:
+                    df_filtered["التاريخ"] = flexible_date_parser(df_filtered["التاريخ"])
+                    df_filtered = df_filtered.dropna(subset=["التاريخ"])
+                
+                if use_date_filter and start_date and end_date:
+                    mask = (df_filtered["التاريخ"] >= pd.to_datetime(start_date)) & (df_filtered["التاريخ"] <= pd.to_datetime(end_date) + timedelta(days=1))
+                    df_filtered = df_filtered[mask]
+                
+                if search_term:
+                    search_columns = ["الحدث/العطل", "الإجراء التصحيحي", "قطع غيار مستخدمة", "نوع العطل", "قدرة الفني (حل/تفكير/مبادرة/قرار)", "الالتزام بتعليمات السلامة", "رابط الصورة", "مده الاصلاح"]
+                    mask = pd.Series([False] * len(df_filtered))
+                    for col in search_columns:
+                        if col in df_filtered.columns:
+                            mask = mask | df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
+                    df_filtered = df_filtered[mask]
+                
+                if not df_filtered.empty:
+                    df_filtered["القسم"] = sheet_name
+                    results.append(df_filtered)
+        
         # ---------- البحث في قطع الغيار ----------
         elif search_type == "قطع الغيار":
             spare_df = load_spare_parts()
