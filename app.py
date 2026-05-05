@@ -12,6 +12,59 @@ import uuid
 from PIL import Image
 from github import Github, GithubException
 
+PENDING_OPS_FILE = "pending_operations.json"
+
+def load_pending_operations():
+    """تحميل العمليات المعلقة من ملف JSON (إن وجد) أو من session_state."""
+    if "pending_operations" not in st.session_state:
+        st.session_state.pending_operations = []
+        # محاولة تحميل من الملف إذا كان موجوداً (للحفاظ على العمليات بين الجلسات)
+        if os.path.exists(PENDING_OPS_FILE):
+            try:
+                with open(PENDING_OPS_FILE, "r", encoding="utf-8") as f:
+                    st.session_state.pending_operations = json.load(f)
+            except:
+                pass
+    return st.session_state.pending_operations
+
+def save_pending_operations():
+    """حفظ العمليات المعلقة إلى ملف JSON و session_state."""
+    try:
+        with open(PENDING_OPS_FILE, "w", encoding="utf-8") as f:
+            json.dump(st.session_state.pending_operations, f, indent=2, ensure_ascii=False)
+    except:
+        pass  # في بيئة Streamlit Cloud قد لا يسمح بالكتابة، نكتفي بـ session_state
+
+def add_pending_operation(op_type, data):
+    """إضافة عملية جديدة إلى قائمة الانتظار."""
+    op = {
+        "id": str(uuid.uuid4()),
+        "type": op_type,
+        "data": data,
+        "timestamp": datetime.now().isoformat(),
+        "retries": 0
+    }
+    pending = load_pending_operations()
+    pending.append(op)
+    save_pending_operations()
+    return op["id"]
+
+def remove_pending_operation(op_id):
+    """حذف عملية من القائمة بعد نجاحها أو بعد فشل متكرر."""
+    pending = load_pending_operations()
+    pending = [op for op in pending if op["id"] != op_id]
+    st.session_state.pending_operations = pending
+    save_pending_operations()
+
+def is_github_accessible():
+    """التحقق من إمكانية الوصول إلى GitHub."""
+    try:
+        # محاولة جلب ملف صغير من المستودع (مثل users.json)
+        response = requests.get("https://raw.githubusercontent.com/mahmedabdallh123/Elqds/main/users.json", timeout=5)
+        return response.status_code == 200
+    except:
+        return False
+
 # ------------------------------- الإعدادات الثابتة -------------------------------
 APP_CONFIG = {
     "APP_TITLE": "القدس - CMMS",
@@ -67,6 +120,85 @@ GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
 GITHUB_AVAILABLE = GITHUB_TOKEN is not None
 ACTIVITY_LOG_FILE = "activity_log.json"
 
+
+def save_with_offline_support(sheets_edit, operation_name, operation_type, operation_data):
+    """يحفظ محلياً ثم يحاول الرفع إلى GitHub. إذا فشل الرفع، يضيف العملية لقائمة المعلقة."""
+    # 1. حفظ محلياً دائماً
+    if not save_excel_locally(sheets_edit):
+        st.error("❌ فشل الحفظ المحلي!")
+        return False
+    
+    # 2. محاولة الرفع إلى GitHub
+    if is_github_accessible():
+        if push_to_github():
+            st.success(f"✅ {operation_name} - تم الحفظ والرفع إلى GitHub.")
+            # إذا كانت العملية موجودة في المعلقة (مثلاً أعيدت المحاولة) نزيلها
+            # يمكن تمرير op_id اختيارياً
+            return True
+        else:
+            st.warning(f"⚠️ {operation_name} - فشل الرفع إلى GitHub، تم الحفظ محلياً وسيتم إعادة المحاولة لاحقاً.")
+            add_pending_operation(operation_type, operation_data)
+            return True
+    else:
+        st.info(f"📴 وضع عدم الاتصال: '{operation_name}' تم الحفظ محلياً. سيتم المزامنة تلقائياً عند استعادة الاتصال.")
+        add_pending_operation(operation_type, operation_data)
+        return True
+
+def execute_pending_add_event(sheets_edit, data):
+    """تنفيذ إضافة حدث مخزنة مسبقاً."""
+    sheet_name = data["sheet_name"]
+    new_row = data["new_row"]
+    if sheet_name not in sheets_edit:
+        return False
+    df = sheets_edit[sheet_name]
+    new_df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+    sheets_edit[sheet_name] = new_df
+    return True
+
+def sync_pending_operations(sheets_edit):
+    """محاولة تنفيذ جميع العمليات المعلقة بالترتيب."""
+    if not is_github_accessible():
+        st.warning("🌐 لا يوجد اتصال بالإنترنت، لا يمكن المزامنة الآن.")
+        return sheets_edit
+    
+    pending = load_pending_operations()
+    if not pending:
+        return sheets_edit
+    
+    st.info(f"🔄 جاري مزامنة {len(pending)} عملية معلقة...")
+    progress_bar = st.progress(0)
+    successfully_removed = []
+    
+    for i, op in enumerate(pending):
+        success = False
+        try:
+            if op["type"] == "add_event":
+                success = execute_pending_add_event(sheets_edit, op["data"])
+            # يمكنك إضافة أنواع أخرى هنا لاحقاً
+            else:
+                st.error(f"نوع العملية غير معروف: {op['type']}")
+        except Exception as e:
+            st.error(f"خطأ في تنفيذ العملية {op['id']}: {e}")
+        
+        if success:
+            successfully_removed.append(op["id"])
+        else:
+            op["retries"] += 1
+            if op["retries"] >= 5:
+                st.error(f"تم التخلي عن العملية {op['id']} بعد 5 محاولات فاشلة.")
+                successfully_removed.append(op["id"])
+        progress_bar.progress((i+1)/len(pending))
+    
+    # إزالة العمليات الناجحة أو المتخلى عنها
+    st.session_state.pending_operations = [op for op in pending if op["id"] not in successfully_removed]
+    save_pending_operations()
+    
+    if save_excel_locally(sheets_edit) and push_to_github():
+        st.success("✅ تمت مزامنة جميع العمليات ورفعها إلى GitHub.")
+    else:
+        st.warning("⚠️ تم تنفيذ العمليات ولكن فشل الرفع النهائي، سيتم إعادة المحاولة لاحقاً.")
+    return sheets_edit
+
 # ------------------------------- دوال رفع الصور -------------------------------
 def upload_image_to_github(image_file, entity_type, entity_id, custom_filename=None):
     if not GITHUB_AVAILABLE:
@@ -106,6 +238,111 @@ def get_image_component(image_url, caption=""):
     except:
         st.warning(f"⚠️ تعذر عرض الصورة: {image_url}")
         return None
+
+def execute_pending_add_event(sheets_edit, data):
+    """تنفيذ إضافة حدث مخزنة مسبقاً."""
+    sheet_name = data["sheet_name"]
+    new_row = data["new_row"]
+    if sheet_name not in sheets_edit:
+        return False
+    df = sheets_edit[sheet_name]
+    new_df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+    sheets_edit[sheet_name] = new_df
+    return True  # الحفظ المحلي سيتم لاحقاً بعد تجميع العمليات
+
+
+def sync_pending_operations(sheets_edit):
+    """محاولة تنفيذ جميع العمليات المعلقة بالترتيب، مع حذف الناجحة."""
+    if not is_github_accessible():
+        st.warning("🌐 لا يوجد اتصال بالإنترنت، لا يمكن المزامنة الآن.")
+        return sheets_edit
+    
+    pending = load_pending_operations()
+    if not pending:
+        return sheets_edit
+    
+    st.info(f"🔄 جاري مزامنة {len(pending)} عملية معلقة...")
+    progress_bar = st.progress(0)
+    successfully_removed = []
+    for i, op in enumerate(pending):
+        success = False
+        try:
+            if op["type"] == "add_event":
+                success = execute_pending_add_event(sheets_edit, op["data"])
+            # elif op["type"] == "add_spare_part": ...
+            # أضف باقي الأنواع حسب احتياجاتك
+            else:
+                st.error(f"نوع العملية غير معروف: {op['type']}")
+        except Exception as e:
+            st.error(f"خطأ في تنفيذ العملية {op['id']}: {e}")
+        
+        if success:
+            successfully_removed.append(op["id"])
+        else:
+            op["retries"] += 1
+            if op["retries"] >= 5:
+                st.error(f"تم التخلي عن العملية {op['id']} بعد 5 محاولات فاشلة.")
+                successfully_removed.append(op["id"])
+        progress_bar.progress((i+1)/len(pending))
+    
+    # إزالة العمليات الناجحة أو المتخلى عنها
+    st.session_state.pending_operations = [op for op in pending if op["id"] not in successfully_removed]
+    save_pending_operations()
+    
+    # حفظ التغييرات المحلية بعد تنفيذ العمليات
+    if save_excel_locally(sheets_edit) and push_to_github():
+        st.success("✅ تمت مزامنة جميع العمليات ورفعها إلى GitHub.")
+    else:
+        st.warning("⚠️ تم تنفيذ العمليات ولكن فشل الرفع النهائي، سيتم إعادة المحاولة لاحقاً.")
+    return sheets_edit
+
+def sync_pending_operations(sheets_edit):
+    """محاولة تنفيذ جميع العمليات المعلقة بالترتيب، مع حذف الناجحة."""
+    if not is_github_accessible():
+        st.warning("🌐 لا يوجد اتصال بالإنترنت، لا يمكن المزامنة الآن.")
+        return sheets_edit
+    
+    pending = load_pending_operations()
+    if not pending:
+        return sheets_edit
+    
+    st.info(f"🔄 جاري مزامنة {len(pending)} عملية معلقة...")
+    progress_bar = st.progress(0)
+    successfully_removed = []
+    for i, op in enumerate(pending):
+        success = False
+        try:
+            if op["type"] == "add_event":
+                success = execute_pending_add_event(sheets_edit, op["data"])
+            # elif op["type"] == "add_spare_part": ...
+            # أضف باقي الأنواع حسب احتياجاتك
+            else:
+                st.error(f"نوع العملية غير معروف: {op['type']}")
+        except Exception as e:
+            st.error(f"خطأ في تنفيذ العملية {op['id']}: {e}")
+        
+        if success:
+            successfully_removed.append(op["id"])
+        else:
+            op["retries"] += 1
+            if op["retries"] >= 5:
+                st.error(f"تم التخلي عن العملية {op['id']} بعد 5 محاولات فاشلة.")
+                successfully_removed.append(op["id"])
+        progress_bar.progress((i+1)/len(pending))
+    
+    # إزالة العمليات الناجحة أو المتخلى عنها
+    st.session_state.pending_operations = [op for op in pending if op["id"] not in successfully_removed]
+    save_pending_operations()
+    
+    # حفظ التغييرات المحلية بعد تنفيذ العمليات
+    if save_excel_locally(sheets_edit) and push_to_github():
+        st.success("✅ تمت مزامنة جميع العمليات ورفعها إلى GitHub.")
+    else:
+        st.warning("⚠️ تم تنفيذ العمليات ولكن فشل الرفع النهائي، سيتم إعادة المحاولة لاحقاً.")
+    return sheets_edit
+
+
+
 
 # ------------------------------- دوال قطع الغيار -------------------------------
 def load_spare_parts():
@@ -825,6 +1062,27 @@ def save_and_push_to_github(sheets_dict, operation_name):
         st.error("❌ فشل الحفظ المحلي")
         return False
 
+def save_with_offline_support(sheets_edit, operation_name, operation_type, operation_data):
+    """يحفظ محلياً ثم يحاول الرفع إلى GitHub. إذا فشل الرفع، يضيف العملية لقائمة المعلقة."""
+    if not save_excel_locally(sheets_edit):
+        st.error("❌ فشل الحفظ المحلي!")
+        return False
+    
+    if is_github_accessible():
+        if push_to_github():
+            st.success(f"✅ {operation_name} - تم الحفظ والرفع إلى GitHub.")
+            return True
+        else:
+            st.warning(f"⚠️ {operation_name} - فشل الرفع إلى GitHub، تم الحفظ محلياً وسيتم إعادة المحاولة لاحقاً.")
+            add_pending_operation(operation_type, operation_data)
+            return True
+    else:
+        st.info(f"📴 وضع عدم الاتصال: '{operation_name}' تم الحفظ محلياً. سيتم المزامنة لاحقاً.")
+        add_pending_operation(operation_type, operation_data)
+        return True
+
+
+
 # ------------------------------- دوال التصدير والعرض -------------------------------
 def export_sheet_to_excel(sheets_dict, sheet_name):
     output = io.BytesIO()
@@ -1432,17 +1690,28 @@ def add_new_event(sheets_edit, sheet_name):
             if "temp_spare_parts_df" in st.session_state:
                 sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = st.session_state.temp_spare_parts_df
                 del st.session_state.temp_spare_parts_df
-            if save_and_push_to_github(sheets_edit, f"إضافة حدث عطل مع استخدام قطعة {part_name}"):
-                st.cache_data.clear()
-                log_activity("add_event", f"تم إضافة عطل: {event_desc[:50]} للماكينة {selected_equipment}")
-                st.success("✅ تم إضافة الحدث بنجاح ورفعه إلى GitHub!")
-                if warning_msg:
-                    st.warning(warning_msg)
-                st.rerun()
-            else:
-                st.error("❌ فشل الحفظ")
-    return sheets_edit
+# تحضير البيانات اللازمة لعملية المزامنة لاحقاً (في حالة عدم الاتصال)
+offline_data = {
+    "sheet_name": sheet_name,
+    "new_row": new_row,
+    "part_name": part_name,
+    "consume_qty": consume_qty,
+    "image_url": image_url,
+    "event_desc": event_desc,
+    "selected_equipment": selected_equipment,
+    "warning_msg": warning_msg
+}
 
+if save_with_offline_support(sheets_edit, f"إضافة حدث عطل مع استخدام قطعة {part_name}", "add_event", offline_data):
+    st.cache_data.clear()
+    log_activity("add_event", f"تم إضافة عطل: {event_desc[:50]} للماكينة {selected_equipment}")
+    # رسالة النجاح تم عرضها داخل save_with_offline_support حسب حالة الاتصال
+    if warning_msg:
+        st.warning(warning_msg)
+    st.rerun()
+else:
+    st.error("❌ فشل الحفظ (حتى الحفظ المحلي لم ينجح)")
+return sheets_edit
 # ------------------------------- دوال مساعدة للصيانة الوقائية -------------------------------
 def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
     df = sheets_edit.get(APP_CONFIG["MAINTENANCE_SHEET"])
@@ -1978,14 +2247,36 @@ with st.sidebar:
         if st.button("مسح مهملات"):
             st.cache_data.clear()
             st.rerun()
-        if st.button("🚪 تسجيل الخروج"):
-            logout_action()
+    # ... بعد زر تسجيل الخروج ...
+    if st.button("🚪 تسجيل الخروج"):
+        logout_action()
+    
+    # أضف هذا الكود الجديد:
+    pending = load_pending_operations()
+    if pending:
+        st.sidebar.markdown("---")
+        st.sidebar.warning(f"⏳ عمليات معلقة: {len(pending)}")
+        if st.sidebar.button("🔄 مزامنة الآن"):
+            sheets_edit = load_sheets_for_edit()
+            sheets_edit = sync_pending_operations(sheets_edit)
+            st.rerun()
+        with st.sidebar.expander("عرض التفاصيل"):
+            for op in pending:
+                st.write(f"- {op['type']} | {op['timestamp'][:16]} | محاولات: {op['retries']}")
+                if st.button(f"🗑️ حذف {op['id'][:8]}", key=f"del_{op['id']}"):
+                    remove_pending_operation(op['id'])
+                    st.rerun()
         # إدارة الصلاحيات (للمدير فقط) - تم حذفها من الكود للاختصار، يمكن إضافتها
         # ولكنها طويلة وقد تم تضمينها سابقاً في الكود الأصلي.
+
+
 
 # ------------------------------- تحميل البيانات الرئيسية -------------------------------
 all_sheets = load_all_sheets()
 sheets_edit = load_sheets_for_edit()
+# أضف السطرين التاليين:
+if is_github_accessible() and load_pending_operations():
+    sheets_edit = sync_pending_operations(sheets_edit)
 st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
 user_role = st.session_state.get("user_role", "viewer")
 user_permissions = st.session_state.get("user_permissions", ["view"])
