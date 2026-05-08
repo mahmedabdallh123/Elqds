@@ -46,5 +46,11 @@
     "username": "admin",
     "action_type": "add_spare_part",
     "details": "تم تعديل قطعة غيار 'فاصل زيت كبير' للقسم الضواغط"
+  },
+  {
+    "timestamp": "2026-05-08T15:26:57.523657",
+    "username": "admin",
+    "action_type": "delete_section",
+    "details": "تم حذف القسم 'Sheet1' وقطع الغيار التابعة له"
   }
 ]
