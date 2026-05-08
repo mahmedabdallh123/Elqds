@@ -34,23 +34,23 @@ APP_CONFIG = {
     "GENERAL_SECTION": "عام"
 }
 
+# ------------------------------- إعدادات خدمة الكرد -------------------------------
+SERVICE_CONFIG = {
+    "FILE_PATH": "Machine_Service_Lookup.xlsx",
+    "LOCAL_FILE": "Machine_Service_Lookup.xlsx",
+}
+SERVICE_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME']}/{APP_CONFIG['BRANCH']}/{SERVICE_CONFIG['FILE_PATH']}"
+
 # ------------------------------- إعداد الصفحة -------------------------------
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 
-# ------------------------------- استيرادات إضافية مع معالجة الأخطاء -------------------------------
+# ------------------------------- استيرادات إضافية -------------------------------
 try:
     import plotly.express as px
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
-    try:
-        import matplotlib.pyplot as plt
-        import matplotlib.dates as mdates
-        plt.rcParams['font.family'] = 'Arial'
-        MATPLOTLIB_AVAILABLE = True
-    except ImportError:
-        MATPLOTLIB_AVAILABLE = False
 
 # ------------------------------- ثوابت إضافية -------------------------------
 USERS_FILE = "users.json"
@@ -60,9 +60,9 @@ MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
 EQUIPMENT_CONFIG_FILE = "equipment_config.json"
 
-GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
-GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/Elqds/refs/heads/main/users.json"
-GITHUB_REPO_USERS = "mahmedabdallh123/Elqds"
+GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME']}/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
+GITHUB_USERS_URL = f"https://raw.githubusercontent.com/{APP_CONFIG['REPO_NAME']}/{APP_CONFIG['BRANCH']}/users.json"
+GITHUB_REPO_USERS = APP_CONFIG["REPO_NAME"]
 GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
 GITHUB_AVAILABLE = GITHUB_TOKEN is not None
 ACTIVITY_LOG_FILE = "activity_log.json"
@@ -156,27 +156,21 @@ def get_critical_spare_parts():
     df = load_spare_parts()
     if df.empty:
         return []
-    # تنظيف البيانات
     df["الرصيد الموجود"] = pd.to_numeric(df["الرصيد الموجود"], errors='coerce').fillna(0)
     if "حد_الإنذار" not in df.columns:
         df["حد_الإنذار"] = 1
     else:
         df["حد_الإنذار"] = pd.to_numeric(df["حد_الإنذار"], errors='coerce').fillna(1)
-    # التأكد من أن عمود "القسم" موجود وليس فارغاً
     if "القسم" not in df.columns:
         return []
     df["القسم"] = df["القسم"].fillna("").astype(str)
-    # فقط القطع التي لها قسم صالح (غير فارغ)
     df = df[df["القسم"].str.strip() != ""]
-    # فقط القطع الضرورية
     df["ضرورية"] = df["ضرورية"].astype(str).str.strip()
     critical = df[(df["ضرورية"] == "نعم") & (df["الرصيد الموجود"] < df["حد_الإنذار"])]
     result = critical[["اسم القطعة", "القسم", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
     return result
-    
-# ------------------------------- دوال سجل النشاطات -------------------------------
-ACTIVITY_LOG_FILE = "activity_log.json"
 
+# ------------------------------- دوال سجل النشاطات -------------------------------
 def log_activity(action_type, details, username=None):
     if username is None:
         username = st.session_state.get("username", "غير معروف")
@@ -278,58 +272,13 @@ def get_upcoming_maintenance(days_ahead=3):
     return overdue, upcoming
 
 # ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
-# ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
-# ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
 def flexible_date_parser(date_series):
-    """تحويل سلسلة من التواريخ بتنسيقات متعددة إلى datetime، مع تجاهل الأخطاء."""
     def parse_single(val):
         if pd.isna(val) or val == "":
             return pd.NaT
         if isinstance(val, (pd.Timestamp, datetime)):
             return val
-        val_str = str(val).strip()
-        # استبدال الشرطات المائلة العكسية بشرطات عادية
-        val_str = val_str.replace('\\', '/')
-        
-        # تنسيق YYYY-MM-DD
-        try:
-            return pd.to_datetime(val_str, format='%Y-%m-%d', errors='raise')
-        except:
-            pass
-        # تنسيق DD/MM/YYYY
-        try:
-            return pd.to_datetime(val_str, format='%d/%m/%Y', errors='raise')
-        except:
-            pass
-        # تنسيق DD-MM-YYYY
-        try:
-            return pd.to_datetime(val_str, format='%d-%m-%Y', errors='raise')
-        except:
-            pass
-        # تنسيق DD.MM.YYYY
-        try:
-            return pd.to_datetime(val_str, format='%d.%m.%Y', errors='raise')
-        except:
-            pass
-        # تنسيق YYYY/MM/DD
-        try:
-            return pd.to_datetime(val_str, format='%Y/%m/%d', errors='raise')
-        except:
-            pass
-        # أخيراً، ترك pandas يحاول
-        return pd.to_datetime(val_str, errors='coerce')
-    return date_series.apply(parse_single)
-
-# ------------------------------- دوال تحليل الأعطال المتقدمة -------------------------------
-def flexible_date_parser(date_series):
-    """تحويل سلسلة من التواريخ بتنسيقات متعددة إلى datetime، مع تجاهل الأخطاء."""
-    def parse_single(val):
-        if pd.isna(val) or val == "":
-            return pd.NaT
-        if isinstance(val, (pd.Timestamp, datetime)):
-            return val
-        val_str = str(val).strip()
-        val_str = val_str.replace('\\', '/')
+        val_str = str(val).strip().replace('\\', '/')
         try:
             return pd.to_datetime(val_str, format='%Y-%m-%d', errors='raise')
         except:
@@ -354,21 +303,16 @@ def flexible_date_parser(date_series):
     return date_series.apply(parse_single)
 
 def analyze_time_between_corrections(df, filter_text=None):
-    """تحليل المدة الزمنية بين الإجراءات التصحيحية المتكررة (حسب كلمة البحث)"""
     if df is None or df.empty:
         return pd.DataFrame()
     data = df.copy()
     if "التاريخ" not in data.columns or "المعدة" not in data.columns or "الإجراء التصحيحي" not in data.columns:
         return pd.DataFrame()
-    
     data["التاريخ"] = flexible_date_parser(data["التاريخ"])
     data = data.dropna(subset=["التاريخ"]).sort_values(["المعدة", "التاريخ"])
-    
-    # إذا كان هناك نص بحث، نصفي الإجراءات التصحيحية التي تحتوي عليه
     if filter_text:
         data["الإجراء التصحيحي"] = data["الإجراء التصحيحي"].fillna("").astype(str)
         data = data[data["الإجراء التصحيحي"].str.contains(filter_text, case=False, na=False)]
-    
     results = []
     for equipment in data["المعدة"].unique():
         eq_data = data[data["المعدة"] == equipment].copy()
@@ -380,7 +324,6 @@ def analyze_time_between_corrections(df, filter_text=None):
             gap_days = (next_row["التاريخ"] - current["التاريخ"]).total_seconds() / (24 * 3600)
             prev_correction = eq_data.iloc[i-1]["الإجراء التصحيحي"] if i > 0 else None
             prev_date = eq_data.iloc[i-1]["التاريخ"] if i > 0 else None
-            
             results.append({
                 "المعدة": equipment,
                 "الإجراء السابق": prev_correction if prev_correction else "---",
@@ -400,44 +343,32 @@ def failures_analysis_tab(all_sheets):
     if not all_sheets:
         st.warning("لا توجد بيانات للتحليل")
         return
-    
-    # اختيار القسم
     all_section_names = [name for name in all_sheets.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
     if not all_section_names:
         st.warning("لا توجد أقسام متاحة للتحليل")
         return
-    
     selected_section = st.selectbox("🏭 اختر القسم:", all_section_names, key="analysis_section")
     df = all_sheets[selected_section].copy()
-    
     if "المعدة" not in df.columns:
         st.error(f"⚠️ القسم '{selected_section}' لا يحتوي على عمود 'المعدة'")
         return
-    
     df["المعدة"] = df["المعدة"].astype(str).str.strip()
-    
     equipment_list = get_equipment_list_from_sheet(df)
     if not equipment_list:
         st.warning(f"⚠️ لا توجد ماكينات مسجلة في قسم '{selected_section}'")
         return
-    
     equipment_options = ["جميع الماكينات"] + equipment_list
     selected_equipment = st.selectbox("🔧 اختر الماكينة:", equipment_options, key="analysis_equipment")
-    
     col1, col2 = st.columns(2)
     with col1:
         start_date = st.date_input("📅 من تاريخ (اختياري):", value=None, key="start_date_filter")
     with col2:
         end_date = st.date_input("📅 إلى تاريخ (اختياري):", value=None, key="end_date_filter")
-    
     search_text = st.text_input("🔍 كلمة البحث في الإجراء التصحيحي (اختياري):", placeholder="مثال: سير, كويلر, 1270", key="search_text_analysis")
-    
     if st.button("🔄 تشغيل التحليل", key="run_analysis", type="primary"):
         filtered_df = df.copy()
-        
         if selected_equipment != "جميع الماكينات":
             filtered_df = filtered_df[filtered_df["المعدة"] == selected_equipment]
-        
         if "التاريخ" in filtered_df.columns:
             filtered_df["التاريخ"] = flexible_date_parser(filtered_df["التاريخ"])
             filtered_df = filtered_df.dropna(subset=["التاريخ"])
@@ -445,48 +376,36 @@ def failures_analysis_tab(all_sheets):
                 filtered_df = filtered_df[filtered_df["التاريخ"] >= pd.to_datetime(start_date)]
             if end_date:
                 filtered_df = filtered_df[filtered_df["التاريخ"] <= pd.to_datetime(end_date) + timedelta(days=1)]
-        
         if filtered_df.empty:
             st.warning("⚠️ لا توجد بيانات تطابق معايير التصفية")
             return
-        
         details_gaps = analyze_time_between_corrections(filtered_df, search_text if search_text else None)
-        
-        # الأعطال الأكثر تكراراً (اختياري: يمكن إزالته إذا لم ترغب فيه)
         if "الإجراء التصحيحي" in filtered_df.columns:
             top_corrections = filtered_df["الإجراء التصحيحي"].value_counts().reset_index().head(10)
             top_corrections.columns = ["الإجراء التصحيحي", "عدد المرات"]
         else:
             top_corrections = pd.DataFrame()
-        
         if selected_equipment == "جميع الماكينات" and "المعدة" in filtered_df.columns:
             top_equipment = filtered_df["المعدة"].value_counts().reset_index().head(10)
             top_equipment.columns = ["المعدة", "عدد الأعطال"]
         else:
             top_equipment = pd.DataFrame()
-        
         st.success(f"✅ تم العثور على {len(filtered_df)} إجراء تصحيحي")
-        
         if not top_corrections.empty:
             st.subheader("🔝 أكثر الإجراءات التصحيحية تكراراً")
             st.dataframe(top_corrections, use_container_width=True)
-        
         if not top_equipment.empty:
             st.subheader("🏭 أكثر الماكينات التي تحتاج إجراءات تصحيحية")
             st.dataframe(top_equipment, use_container_width=True)
-        
         st.subheader("📋 الفجوات الزمنية التفصيلية بين الإجراءات التصحيحية المتكررة")
         if search_text:
             st.info(f"ℹ️ يتم حساب الفجوات فقط بين الإجراءات التي تحتوي على النص: **'{search_text}'**")
-        
         if details_gaps.empty:
             st.info("ℹ️ لا توجد بيانات كافية لحساب الفجوات (يلزم على الأقل إجراءان لنفس الماكينة ويحتويان على كلمة البحث إن وجدت)")
         else:
             st.dataframe(details_gaps, use_container_width=True, height=500)
             csv = details_gaps.to_csv(index=False).encode('utf-8')
             st.download_button("📥 تحميل الفجوات التفصيلية CSV", csv, "detailed_corrections_gaps.csv", "text/csv")
-        
-        # تصدير كامل
         st.markdown("---")
         st.subheader("📥 تصدير التقرير كامل (Excel)")
         excel_buffer = io.BytesIO()
@@ -505,6 +424,8 @@ def failures_analysis_tab(all_sheets):
             f"corrections_analysis_{selected_section}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+# ------------------------------- دوال تحميل المستخدمين والصلاحيات -------------------------------
 def download_users_from_github():
     try:
         response = requests.get(GITHUB_USERS_URL, timeout=10)
@@ -673,7 +594,6 @@ def login_ui():
             logout_action()
         return True
 
-# ------------------------------- دوال الصلاحيات -------------------------------
 def get_user_permissions(username):
     users = load_users()
     if username not in users:
@@ -704,7 +624,6 @@ def has_section_permission(username, section_name, required_permission="view"):
     return required_permission in section_perms
 
 def get_allowed_sections(all_sheets, username, required_permission="view"):
-    """إرجاع قائمة الأقسام الحقيقية التي يسمح للمستخدم بالوصول إليها (بدون إضافة 'عام')"""
     allowed = []
     for sheet_name in all_sheets.keys():
         if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
@@ -885,30 +804,22 @@ def display_sheet_data(sheet_name, df, unique_id, sheets_edit):
         all_sheets_excel = export_all_sheets_to_excel({sheet_name: df})
         st.download_button("📥 تحميل جميع البيانات كملف Excel", all_sheets_excel, f"all_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"export_all_{unique_id}")
 
+# ------------------------------- دوال البحث المتقدم (معدلة لتشمل السيرفيس) -------------------------------
 def search_across_sheets(all_sheets):
     st.subheader("بحث متقدم في السجلات")
     if not all_sheets:
         st.warning("لا توجد بيانات للبحث")
         return
-
     username = st.session_state.get("username")
-    
-    # خيار نوع البحث
     search_type = st.selectbox("نوع البيانات المراد البحث فيها:", ["الأقسام (الأعطال)", "قطع الغيار", "الصيانة الوقائية"], key="search_type")
-
-    # الأقسام المسموحة للمستخدم
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
-    
     selected_section_filter = "جميع الأقسام"
     if search_type in ["قطع الغيار", "الصيانة الوقائية"] and allowed_sections:
         section_options = ["جميع الأقسام"] + allowed_sections
         selected_section_filter = st.selectbox("🏭 القسم:", section_options, key="section_filter")
-
-    # ================== الأقسام (الأعطال) ==================
     if search_type == "الأقسام (الأعطال)":
         sheet_options = ["جميع الأقسام"] + allowed_sections
         selected_sheet = st.selectbox("اختر القسم للبحث:", sheet_options, key="search_sheet")
-        
         if selected_sheet != "جميع الأقسام":
             df_temp = all_sheets[selected_sheet]
             equipment_list = get_equipment_list_from_sheet(df_temp)
@@ -919,14 +830,11 @@ def search_across_sheets(all_sheets):
                 all_eq.update(get_equipment_list_from_sheet(df_temp))
             equipment_list = sorted(all_eq)
         filter_equipment = st.selectbox("فلتر حسب الماكينة:", ["الكل"] + equipment_list, key="search_eq")
-        
-        # حقول البحث المخصصة للأعطال
         col1, col2 = st.columns(2)
         with col1:
             general_search = st.text_input("🔍 كلمة البحث العامة (في الحدث/الإجراء):", placeholder="مثال: تسريب زيت, قطع سير...")
         with col2:
             technician_search = st.text_input("👨‍🔧 بحث بالفني (تم بواسطة):", placeholder="أدخل اسم الفني...")
-        
         st.markdown("#### نطاق التاريخ")
         use_date_filter = st.checkbox("تفعيل البحث بالتاريخ", key="use_date_filter_failures")
         if use_date_filter:
@@ -938,9 +846,7 @@ def search_across_sheets(all_sheets):
         else:
             start_date = None
             end_date = None
-
         view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="search_view_mode_failures")
-
         if st.button("بحث", key="search_btn_failures", type="primary"):
             results = []
             sheets_to_search = []
@@ -949,23 +855,16 @@ def search_across_sheets(all_sheets):
             else:
                 for sheet_name in allowed_sections:
                     sheets_to_search.append((sheet_name, all_sheets[sheet_name]))
-            
             for sheet_name, df in sheets_to_search:
                 df_filtered = df.copy()
-                
-                # فلتر الماكينة
                 if filter_equipment != "الكل" and "المعدة" in df_filtered.columns:
                     df_filtered = df_filtered[df_filtered["المعدة"] == filter_equipment]
-                
-                # فلتر التاريخ
                 if "التاريخ" in df_filtered.columns:
                     df_filtered["التاريخ"] = flexible_date_parser(df_filtered["التاريخ"])
                     df_filtered = df_filtered.dropna(subset=["التاريخ"])
                     if use_date_filter and start_date and end_date:
                         mask = (df_filtered["التاريخ"] >= pd.to_datetime(start_date)) & (df_filtered["التاريخ"] <= pd.to_datetime(end_date) + timedelta(days=1))
                         df_filtered = df_filtered[mask]
-                
-                # البحث العام (فقط في الحدث/العطل والإجراء التصحيحي)
                 if general_search:
                     event_col = "الحدث/العطل"
                     action_col = "الإجراء التصحيحي"
@@ -975,19 +874,14 @@ def search_across_sheets(all_sheets):
                     if action_col in df_filtered.columns:
                         mask_general = mask_general | df_filtered[action_col].astype(str).str.contains(general_search, case=False, na=False)
                     df_filtered = df_filtered[mask_general]
-                
-                # البحث بالفني
                 if technician_search:
                     tech_col = "تم بواسطة"
                     if tech_col in df_filtered.columns:
                         mask_tech = df_filtered[tech_col].astype(str).str.contains(technician_search, case=False, na=False)
                         df_filtered = df_filtered[mask_tech]
-                
                 if not df_filtered.empty:
                     df_filtered["القسم"] = sheet_name
                     results.append(df_filtered)
-            
-            # عرض النتائج (نفس الكود السابق)
             if results:
                 combined_results = pd.concat(results, ignore_index=True)
                 if "رابط الصورة" in combined_results.columns:
@@ -998,14 +892,11 @@ def search_across_sheets(all_sheets):
                     combined_results = combined_results.drop(columns=["رابط_الصورة"])
                 else:
                     combined_results["رابط_الصورة_موحد"] = ""
-                
                 st.success(f"تم العثور على {len(combined_results)} نتيجة")
-                
                 if "التاريخ" in combined_results.columns:
                     combined_results["التاريخ"] = pd.to_datetime(combined_results["التاريخ"], errors='coerce')
                     combined_results = combined_results.dropna(subset=["التاريخ"])
                     combined_results = combined_results.sort_values(by=["المعدة", "التاريخ"], ascending=[True, False])
-                
                 if view_mode == "جدول":
                     display_cols = [c for c in combined_results.columns if c not in ["رابط_الصورة_موحد"]]
                     st.dataframe(combined_results[display_cols], use_container_width=True, height=500)
@@ -1031,14 +922,11 @@ def search_across_sheets(all_sheets):
                                 st.markdown(f"**👨‍🔧 تم بواسطة:** {row.get('تم بواسطة', '')}")
                                 if img_url:
                                     st.caption(f"[🔗 رابط الصورة]({img_url})")
-                
                 export_df = combined_results.drop(columns=["رابط_الصورة_موحد"])
                 excel_file = export_filtered_results_to_excel(export_df, "نتائج_البحث")
                 st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
             else:
                 st.warning("لا توجد نتائج مطابقة للبحث")
-    
-    # ================== قطع الغيار (يبقى كما هو مع استخدام search_term) ==================
     elif search_type == "قطع الغيار":
         spare_df = load_spare_parts()
         if spare_df.empty:
@@ -1047,8 +935,6 @@ def search_across_sheets(all_sheets):
         df_filtered = spare_df.copy()
         if selected_section_filter != "جميع الأقسام":
             df_filtered = df_filtered[df_filtered["القسم"] == selected_section_filter]
-        
-        # حقل البحث الخاص بقطع الغيار
         search_term = st.text_input("🔍 كلمة البحث (اسم القطعة، المقاس، القسم...):", key="search_term_spare")
         if search_term:
             search_columns = ["اسم القطعة", "المقاس", "قوه الشد", "مدة التوريد", "القسم", "رابط_الصورة"]
@@ -1057,7 +943,6 @@ def search_across_sheets(all_sheets):
                 if col in df_filtered.columns:
                     mask = mask | df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
             df_filtered = df_filtered[mask]
-        
         if not df_filtered.empty:
             st.success(f"تم العثور على {len(df_filtered)} قطعة")
             st.dataframe(df_filtered, use_container_width=True)
@@ -1065,28 +950,21 @@ def search_across_sheets(all_sheets):
             st.download_button("📥 تحميل النتائج", excel_file, f"spare_parts_search_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else:
             st.warning("لا توجد نتائج")
-
-    # ================== الصيانة الوقائية (يبقى كما هو مع استخدام search_term) ==================
     else:
         maint_df = load_maintenance_tasks()
         if maint_df.empty:
             st.warning("لا توجد بيانات في الصيانة الوقائية")
             return
-        
-        # بناء علاقة الماكينة -> القسم
         equipment_to_section = {}
         for sheet_name in allowed_sections:
             df_sheet = all_sheets[sheet_name]
             if "المعدة" in df_sheet.columns:
                 for eq in df_sheet["المعدة"].dropna().unique():
                     equipment_to_section[str(eq).strip()] = sheet_name
-        
         df_filtered = maint_df.copy()
         if selected_section_filter != "جميع الأقسام":
             allowed_equipment = [eq for eq, sec in equipment_to_section.items() if sec == selected_section_filter]
             df_filtered = df_filtered[df_filtered["المعدة"].isin(allowed_equipment)]
-        
-        # حقل البحث الخاص بالصيانة الوقائية
         search_term = st.text_input("🔍 كلمة البحث (المعدة، البند، الملاحظات...):", key="search_term_maintenance")
         if search_term:
             search_columns = ["المعدة", "نوع_الصيانة", "اسم_البند", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية", "رابط_الصورة"]
@@ -1095,7 +973,6 @@ def search_across_sheets(all_sheets):
                 if col in df_filtered.columns:
                     mask = mask | df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
             df_filtered = df_filtered[mask]
-        
         if not df_filtered.empty:
             df_filtered["القسم"] = df_filtered["المعدة"].map(equipment_to_section).fillna("غير محدد")
             st.success(f"تم العثور على {len(df_filtered)} مهمة صيانة")
@@ -1104,6 +981,7 @@ def search_across_sheets(all_sheets):
             st.download_button("📥 تحميل النتائج", excel_file, f"maintenance_search_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else:
             st.warning("لا توجد نتائج")
+
 # ------------------------------- دوال إدارة المعدات والأقسام -------------------------------
 def load_equipment_config():
     if not os.path.exists(EQUIPMENT_CONFIG_FILE):
@@ -1217,7 +1095,6 @@ def add_new_department(sheets_edit):
             else:
                 st.error("❌ فشل حفظ القسم")
                 return sheets_edit
-
         st.markdown("---")
         st.subheader("🗑️ حذف قسم موجود")
         st.warning("⚠️ انتبه: حذف القسم سيؤدي إلى حذف جميع بياناته (ماكينات، أعطال، قطع غيار) نهائياً ولا يمكن استرجاعها.")
@@ -1231,13 +1108,11 @@ def add_new_department(sheets_edit):
                 confirm = st.text_input("لتأكيد الحذف، اكتب اسم القسم هنا:", key="delete_confirm")
                 if confirm == selected_dept:
                     if st.button("🗑️ حذف القسم نهائياً", key="delete_department_btn", type="primary"):
-                        # 1. حذف قطع الغيار المرتبطة بهذا القسم
                         spare_df = load_spare_parts()
                         if not spare_df.empty:
                             spare_df = spare_df[spare_df["القسم"] != selected_dept]
                             sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = spare_df
                             st.info(f"🗑️ تم حذف قطع الغيار التابعة للقسم '{selected_dept}'.")
-                        # 2. حذف القسم نفسه (الشيت)
                         del sheets_edit[selected_dept]
                         if save_and_push_to_github(sheets_edit, f"حذف قسم: {selected_dept}"):
                             log_activity("delete_section", f"تم حذف القسم '{selected_dept}' وقطع الغيار التابعة له")
@@ -1259,7 +1134,7 @@ def add_new_department(sheets_edit):
     else:
         st.info("لا توجد أقسام بعد")
     return sheets_edit
-    
+
 def add_new_machine(sheets_edit, sheet_name):
     st.markdown(f"### 🔧 إضافة ماكينة جديدة في قسم: {sheet_name}")
     df = sheets_edit[sheet_name]
@@ -1443,7 +1318,6 @@ def add_new_event(sheets_edit, sheet_name):
                 st.error("❌ فشل الحفظ")
     return sheets_edit
 
-# ------------------------------- دوال مساعدة للصيانة الوقائية -------------------------------
 def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
     df = sheets_edit.get(APP_CONFIG["MAINTENANCE_SHEET"])
     if df is None:
@@ -1502,15 +1376,12 @@ def add_maintenance_as_event(sheets_edit, equipment_name, task_name, execution_d
     sheets_edit[target_sheet] = pd.concat([target_df, new_row_df], ignore_index=True)
     return True, f"تم تسجيل الصيانة كحدث في قسم '{target_sheet}' بواسطة {performed_by}"
 
-# ------------------------------- تبويب قطع الغيار والصيانة الوقائية -------------------------------
 def manage_spare_parts_tab(sheets_edit):
     st.header("📦 إدارة قطع الغيار")
     st.info("هنا يمكنك إضافة وتعديل قطع الغيار المرتبطة بكل قسم. القطع المضافة للقسم 'عام' تكون متاحة لجميع الأقسام.")
     username = st.session_state.get("username")
     all_sheets = load_all_sheets()
-    # جلب الأقسام الحقيقية (بدون عام)
     real_sections = get_allowed_sections(all_sheets, username, "view")
-    # إضافة القسم العام إذا كان المستخدم لديه أي صلاحية (أو هو admin)
     allowed_sections = real_sections.copy()
     if real_sections or username == "admin":
         if APP_CONFIG["GENERAL_SECTION"] not in allowed_sections:
@@ -1519,7 +1390,6 @@ def manage_spare_parts_tab(sheets_edit):
         st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
         return sheets_edit
     selected_section = st.selectbox("🏭 اختر القسم:", allowed_sections, key="spare_section")
-    # ... باقي الكود (بدون تغيير)
     spare_df = load_spare_parts()
     view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="spare_view_mode")
     st.subheader("📋 قائمة قطع الغيار")
@@ -1625,7 +1495,7 @@ def manage_spare_parts_tab(sheets_edit):
                                                 st.rerun()
                                             else:
                                                 st.error("فشل الحفظ")
-        st.subheader("➕ إضافة قطعة غيار جديدة")
+    st.subheader("➕ إضافة قطعة غيار جديدة")
     with st.form(key="add_spare_part_form"):
         col1, col2 = st.columns(2)
         with col1:
@@ -1679,19 +1549,17 @@ def preventive_maintenance_tab(sheets_edit):
     st.info("إدارة بنود الصيانة الدورية. يتم حفظ البيانات تلقائياً في ملف Excel.")
     username = st.session_state.get("username")
     all_sheets = load_all_sheets()
-    # نستخدم الأقسام الحقيقية فقط (بدون عام)
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
     if not allowed_sections:
         st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
         return sheets_edit
     selected_section = st.selectbox("🏭 اختر القسم:", allowed_sections, key="pm_section")
-    df_section = sheets_edit[selected_section]   # الآن selected_section حقيقي دائماً
+    df_section = sheets_edit[selected_section]
     equipment_list = get_equipment_list_from_sheet(df_section)
     if not equipment_list:
         st.warning(f"⚠️ لا توجد ماكينات في قسم '{selected_section}'.")
         return sheets_edit
     selected_equipment = st.selectbox("🔧 اختر المعدة:", equipment_list, key="pm_equipment")
-    # باقي الكود كما هو...
     if APP_CONFIG["MAINTENANCE_SHEET"] in sheets_edit:
         tasks_df = sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]].copy()
     else:
@@ -1821,63 +1689,63 @@ def preventive_maintenance_tab(sheets_edit):
                                                 st.rerun()
                                             else:
                                                 st.error("فشل الحفظ")
-        st.markdown("---")
-        st.subheader("✅ تنفيذ صيانة")
-        task_options = tasks_df["اسم_البند"].tolist()
-        if task_options:
-            selected_task = st.selectbox("اختر البند المنفذ:", task_options, key="execute_task_select")
-            if selected_task:
-                execution_date = st.date_input("📅 تاريخ التنفيذ:", value=datetime.now().date(), key="execution_date_input")
-                performed_by = st.text_input("👨‍🔧 تم بواسطة:", key="maintenance_performed_by", placeholder="اسم الشخص الذي نفذ الصيانة")
-                spare_parts_list = get_spare_parts_for_section(selected_section)
-                st.markdown("**🔩 استهلاك قطع غيار (اختياري)**")
-                part_name = ""
-                consume_qty = 0
-                use_part = True
-                if spare_parts_list:
-                    part_names = [""] + [f"{name} (الرصيد: {qty})" for name, qty in spare_parts_list]
-                    selected_part_display = st.selectbox("اختر قطعة:", part_names, key="pm_spare_part")
-                    if selected_part_display:
-                        part_name = selected_part_display.split(" (")[0]
-                        current_qty = next((qty for name, qty in spare_parts_list if name == part_name), 0)
-                        st.caption(f"الرصيد الحالي: {current_qty}")
-                        consume_qty = st.number_input("الكمية المستخدمة:", min_value=1, max_value=max(1, current_qty), value=1, step=1, key="pm_consume_qty")
-                        if consume_qty > current_qty:
-                            st.error(f"⚠️ الرصيد غير كافٍ")
-                            use_part = False
+    st.markdown("---")
+    st.subheader("✅ تنفيذ صيانة")
+    task_options = tasks_df["اسم_البند"].tolist()
+    if task_options:
+        selected_task = st.selectbox("اختر البند المنفذ:", task_options, key="execute_task_select")
+        if selected_task:
+            execution_date = st.date_input("📅 تاريخ التنفيذ:", value=datetime.now().date(), key="execution_date_input")
+            performed_by = st.text_input("👨‍🔧 تم بواسطة:", key="maintenance_performed_by", placeholder="اسم الشخص الذي نفذ الصيانة")
+            spare_parts_list = get_spare_parts_for_section(selected_section)
+            st.markdown("**🔩 استهلاك قطع غيار (اختياري)**")
+            part_name = ""
+            consume_qty = 0
+            use_part = True
+            if spare_parts_list:
+                part_names = [""] + [f"{name} (الرصيد: {qty})" for name, qty in spare_parts_list]
+                selected_part_display = st.selectbox("اختر قطعة:", part_names, key="pm_spare_part")
+                if selected_part_display:
+                    part_name = selected_part_display.split(" (")[0]
+                    current_qty = next((qty for name, qty in spare_parts_list if name == part_name), 0)
+                    st.caption(f"الرصيد الحالي: {current_qty}")
+                    consume_qty = st.number_input("الكمية المستخدمة:", min_value=1, max_value=max(1, current_qty), value=1, step=1, key="pm_consume_qty")
+                    if consume_qty > current_qty:
+                        st.error(f"⚠️ الرصيد غير كافٍ")
+                        use_part = False
+            else:
+                st.info("لا توجد قطع غيار مسجلة لهذا القسم")
+            execution_image = st.file_uploader("🖼️ رفع صورة للصيانة المنفذة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], key="maintenance_execution_image")
+            link_to_event = st.checkbox("🔗 تسجيل هذه الصيانة كحدث عطل", value=False)
+            if st.button("✅ تم تنفيذ الصيانة", type="primary"):
+                if not performed_by:
+                    st.error("❌ الرجاء إدخال اسم المنفذ")
+                elif not use_part:
+                    st.error("لا يمكن التنفيذ بسبب نقص الرصيد")
                 else:
-                    st.info("لا توجد قطع غيار مسجلة لهذا القسم")
-                execution_image = st.file_uploader("🖼️ رفع صورة للصيانة المنفذة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"], key="maintenance_execution_image")
-                link_to_event = st.checkbox("🔗 تسجيل هذه الصيانة كحدث عطل", value=False)
-                if st.button("✅ تم تنفيذ الصيانة", type="primary"):
-                    if not performed_by:
-                        st.error("❌ الرجاء إدخال اسم المنفذ")
-                    elif not use_part:
-                        st.error("لا يمكن التنفيذ بسبب نقص الرصيد")
-                    else:
-                        image_url = None
-                        if execution_image:
-                            maint_id = str(uuid.uuid4())[:8]
-                            image_url = upload_image_to_github(execution_image, "maintenance_execution", maint_id)
-                        success, msg = execute_maintenance_with_date(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, part_name, consume_qty, image_url)
-                        if success:
-                            if link_to_event:
-                                event_success, event_msg = add_maintenance_as_event(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, part_name, consume_qty, image_url)
-                                if event_success:
-                                    st.success(f"✅ {msg} وتم تسجيله كحدث عطل")
-                                else:
-                                    st.warning(f"✅ {msg} لكن فشل تسجيل الحدث: {event_msg}")
+                    image_url = None
+                    if execution_image:
+                        maint_id = str(uuid.uuid4())[:8]
+                        image_url = upload_image_to_github(execution_image, "maintenance_execution", maint_id)
+                    success, msg = execute_maintenance_with_date(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, part_name, consume_qty, image_url)
+                    if success:
+                        if link_to_event:
+                            event_success, event_msg = add_maintenance_as_event(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, part_name, consume_qty, image_url)
+                            if event_success:
+                                st.success(f"✅ {msg} وتم تسجيله كحدث عطل")
                             else:
-                                st.success(msg)
-                            if "temp_spare_parts_df" in st.session_state:
-                                sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = st.session_state.temp_spare_parts_df
-                                del st.session_state.temp_spare_parts_df
-                            if save_and_push_to_github(sheets_edit, f"تنفيذ صيانة '{selected_task}' لـ {selected_equipment} بواسطة {performed_by}"):
-                                st.rerun()
+                                st.warning(f"✅ {msg} لكن فشل تسجيل الحدث: {event_msg}")
                         else:
-                            st.error(msg)
-        else:
-            st.info("لا توجد بنود صيانة لتنفيذها")
+                            st.success(msg)
+                        if "temp_spare_parts_df" in st.session_state:
+                            sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = st.session_state.temp_spare_parts_df
+                            del st.session_state.temp_spare_parts_df
+                        if save_and_push_to_github(sheets_edit, f"تنفيذ صيانة '{selected_task}' لـ {selected_equipment} بواسطة {performed_by}"):
+                            st.rerun()
+                    else:
+                        st.error(msg)
+    else:
+        st.info("لا توجد بنود صيانة لتنفيذها")
     st.markdown("---")
     st.subheader("➕ إضافة بند صيانة جديد")
     use_custom_start = st.checkbox("📅 تحديد تاريخ بدء الصيانة", key="use_custom_start_checkbox")
@@ -1911,7 +1779,6 @@ def preventive_maintenance_tab(sheets_edit):
                     st.error("❌ فشل الحفظ")
     return sheets_edit
 
-# ------------------------------- دالة إدارة البيانات الرئيسية -------------------------------
 def manage_data_edit(sheets_edit):
     if sheets_edit is None:
         st.warning("الملف غير موجود. استخدم زر 'تحديث من GitHub' في الشريط الجانبي أولاً")
@@ -1958,6 +1825,262 @@ def manage_data_edit(sheets_edit):
         sheets_edit = preventive_maintenance_tab(sheets_edit)
     return sheets_edit
 
+# ------------------------------- دوال خدمة الكرد (سيرفيس الكرد) -------------------------------
+def fetch_service_file_from_github():
+    """تحميل ملف خدمة الكرد من GitHub"""
+    try:
+        response = requests.get(SERVICE_EXCEL_URL, stream=True, timeout=15)
+        response.raise_for_status()
+        with open(SERVICE_CONFIG["LOCAL_FILE"], "wb") as f:
+            shutil.copyfileobj(response.raw, f)
+        st.cache_data.clear()
+        return True
+    except Exception as e:
+        st.error(f"فشل تحميل ملف خدمة الكرد: {e}")
+        return False
+
+@st.cache_data(show_spinner=False)
+def load_service_sheets():
+    """تحميل جميع الشيتات من ملف خدمة الكرد"""
+    if not os.path.exists(SERVICE_CONFIG["LOCAL_FILE"]):
+        return None
+    try:
+        sheets = pd.read_excel(SERVICE_CONFIG["LOCAL_FILE"], sheet_name=None)
+        if not sheets:
+            return None
+        for name, df in sheets.items():
+            df.columns = df.columns.astype(str).str.strip()
+        return sheets
+    except Exception as e:
+        st.error(f"خطأ في تحميل ملف الخدمة: {e}")
+        return None
+
+def check_machine_status(card_num, current_tons, service_sheets):
+    """فحص الماكينة وعرض الخدمات المطلوبة والمنفذة - مأخوذ من كود CMMS BELYARN"""
+    if not service_sheets:
+        st.error("❌ لم يتم تحميل أي شيتات من ملف الخدمة.")
+        return
+    if "ServicePlan" not in service_sheets:
+        st.error("❌ ملف الخدمة لا يحتوي على شيت ServicePlan.")
+        return
+    service_plan_df = service_sheets["ServicePlan"]
+    card_sheet_name = f"Card{card_num}"
+    if card_sheet_name not in service_sheets:
+        st.warning(f"⚠ لا يوجد شيت باسم {card_sheet_name}")
+        return
+    card_df = service_sheets[card_sheet_name]
+
+    if "view_option" not in st.session_state:
+        st.session_state.view_option = "الشريحة الحالية فقط"
+
+    st.subheader("⚙ نطاق العرض")
+    view_option = st.radio(
+        "اختر نطاق العرض:",
+        ("الشريحة الحالية فقط", "كل الشرائح الأقل", "كل الشرائح الأعلى", "نطاق مخصص", "كل الشرائح"),
+        horizontal=True,
+        key="service_view_option"
+    )
+
+    min_range = st.session_state.get("service_min_range", max(0, current_tons - 500))
+    max_range = st.session_state.get("service_max_range", current_tons + 500)
+    if view_option == "نطاق مخصص":
+        col1, col2 = st.columns(2)
+        with col1:
+            min_range = st.number_input("من (طن):", min_value=0, step=100, value=min_range, key="service_min_range")
+        with col2:
+            max_range = st.number_input("إلى (طن):", min_value=min_range, step=100, value=max_range, key="service_max_range")
+
+    if view_option == "الشريحة الحالية فقط":
+        selected_slices = service_plan_df[(service_plan_df["Min_Tones"] <= current_tons) & (service_plan_df["Max_Tones"] >= current_tons)]
+    elif view_option == "كل الشرائح الأقل":
+        selected_slices = service_plan_df[service_plan_df["Max_Tones"] <= current_tons]
+    elif view_option == "كل الشرائح الأعلى":
+        selected_slices = service_plan_df[service_plan_df["Min_Tones"] >= current_tons]
+    elif view_option == "نطاق مخصص":
+        selected_slices = service_plan_df[(service_plan_df["Min_Tones"] >= min_range) & (service_plan_df["Max_Tones"] <= max_range)]
+    else:
+        selected_slices = service_plan_df.copy()
+
+    if selected_slices.empty:
+        st.warning("⚠ لا توجد شرائح مطابقة حسب النطاق المحدد.")
+        return
+
+    all_results = []
+    for _, current_slice in selected_slices.iterrows():
+        slice_min = current_slice["Min_Tones"]
+        slice_max = current_slice["Max_Tones"]
+        needed_service_raw = current_slice.get("Service", "")
+        needed_parts = split_needed_services(needed_service_raw)
+        needed_norm = [normalize_name(p) for p in needed_parts]
+
+        mask = (card_df.get("Min_Tones", 0).fillna(0) <= slice_max) & (card_df.get("Max_Tones", 0).fillna(0) >= slice_min)
+        matching_rows = card_df[mask]
+
+        if not matching_rows.empty:
+            for _, row in matching_rows.iterrows():
+                done_services_set = set()
+                metadata_columns = {
+                    "card", "Tones", "Min_Tones", "Max_Tones", "Date", 
+                    "Other", "Servised by", "Event", "Correction",
+                    "Card", "TONES", "MIN_TONES", "MAX_TONES", "DATE",
+                    "OTHER", "EVENT", "CORRECTION", "SERVISED BY",
+                    "servised by", "Servised By", 
+                    "Serviced by", "Service by", "Serviced By", "Service By",
+                    "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة"
+                }
+                all_columns = set(card_df.columns)
+                service_columns = all_columns - metadata_columns
+                final_service_columns = set()
+                for col in service_columns:
+                    col_normalized = normalize_name(col)
+                    metadata_normalized = {normalize_name(mc) for mc in metadata_columns}
+                    if col_normalized not in metadata_normalized:
+                        final_service_columns.add(col)
+                for col in final_service_columns:
+                    val = str(row.get(col, "")).strip()
+                    if val and val.lower() not in ["nan", "none", "", "null", "0"]:
+                        if val.lower() not in ["no", "false", "not done", "لم تتم", "x", "-"]:
+                            done_services_set.add(col)
+
+                current_date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
+                current_tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
+                current_other = str(row.get("Other", "")).strip() if pd.notna(row.get("Other")) else "-"
+                
+                event_value = "-"
+                event_columns = ["Event", "EVENT", "event", "Events", "events", "الحدث", "الأحداث"]
+                for potential_col in event_columns:
+                    if potential_col in card_df.columns:
+                        value = row.get(potential_col)
+                        if pd.notna(value) and str(value).strip() != "":
+                            event_value = str(value).strip()
+                            break
+                if event_value == "-":
+                    for col in card_df.columns:
+                        col_normalized = normalize_name(col)
+                        if col_normalized in ["event", "events", "الحدث", "الأحداث"]:
+                            value = row.get(col)
+                            if pd.notna(value) and str(value).strip() != "":
+                                event_value = str(value).strip()
+                                break
+                
+                correction_value = "-"
+                correction_columns = ["Correction", "CORRECTION", "correction", "Correct", "correct", "تصحيح", "تصويب", "تصحيحات"]
+                for potential_col in correction_columns:
+                    if potential_col in card_df.columns:
+                        value = row.get(potential_col)
+                        if pd.notna(value) and str(value).strip() != "":
+                            correction_value = str(value).strip()
+                            break
+                if correction_value == "-":
+                    for col in card_df.columns:
+                        col_normalized = normalize_name(col)
+                        if col_normalized in ["correction", "correct", "تصحيح", "تصويب"]:
+                            value = row.get(col)
+                            if pd.notna(value) and str(value).strip() != "":
+                                correction_value = str(value).strip()
+                                break
+                
+                servised_by_value = "-"
+                servised_by_columns = [
+                    "Servised by", "SERVISED BY", "servised by", "Servised By",
+                    "Serviced by", "Service by", "Serviced By", "Service By",
+                    "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة"
+                ]
+                for potential_col in servised_by_columns:
+                    if potential_col in card_df.columns:
+                        value = row.get(potential_col)
+                        if pd.notna(value) and str(value).strip() != "":
+                            servised_by_value = str(value).strip()
+                            break
+                if servised_by_value == "-":
+                    for col in card_df.columns:
+                        col_normalized = normalize_name(col)
+                        if col_normalized in ["servisedby", "servicedby", "serviceby", "خدمبواسطة"]:
+                            value = row.get(col)
+                            if pd.notna(value) and str(value).strip() != "":
+                                servised_by_value = str(value).strip()
+                                break
+
+                done_services = sorted(list(done_services_set))
+                done_norm = [normalize_name(c) for c in done_services]
+                
+                not_done = []
+                for needed_part, needed_norm_part in zip(needed_parts, needed_norm):
+                    if needed_norm_part not in done_norm:
+                        not_done.append(needed_part)
+
+                all_results.append({
+                    "Card Number": card_num,
+                    "Min_Tons": slice_min,
+                    "Max_Tons": slice_max,
+                    "Service Needed": " + ".join(needed_parts) if needed_parts else "-",
+                    "Service Done": ", ".join(done_services) if done_services else "-",
+                    "Service Didn't Done": ", ".join(not_done) if not_done else "-",
+                    "Tones": current_tones,
+                    "Event": event_value,
+                    "Correction": correction_value,
+                    "Servised by": servised_by_value,
+                    "Date": current_date
+                })
+        else:
+            all_results.append({
+                "Card Number": card_num,
+                "Min_Tons": slice_min,
+                "Max_Tons": slice_max,
+                "Service Needed": " + ".join(needed_parts) if needed_parts else "-",
+                "Service Done": "-",
+                "Service Didn't Done": ", ".join(needed_parts) if needed_parts else "-",
+                "Tones": "-",
+                "Event": "-",
+                "Correction": "-",
+                "Servised by": "-",
+                "Date": "-"
+            })
+
+    result_df = pd.DataFrame(all_results).dropna(how="all").reset_index(drop=True)
+    st.markdown("### 📋 نتائج الفحص - جميع الأحداث")
+    st.dataframe(result_df.style.apply(style_table, axis=1), use_container_width=True)
+    buffer = io.BytesIO()
+    result_df.to_excel(buffer, index=False, engine="openpyxl")
+    st.download_button(
+        label="💾 حفظ النتائج كـ Excel",
+        data=buffer.getvalue(),
+        file_name=f"Service_Report_Card{card_num}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+def split_needed_services(needed_service_str):
+    if not isinstance(needed_service_str, str) or needed_service_str.strip() == "":
+        return []
+    parts = re.split(r"\+|,|\n|;", needed_service_str)
+    return [p.strip() for p in parts if p.strip() != ""]
+
+def normalize_name(s):
+    if s is None: return ""
+    s = str(s).replace("\n", "+")
+    s = re.sub(r"[^0-9a-zA-Z\u0600-\u06FF\+\s_/.-]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip().lower()
+    return s
+
+def highlight_cell(val, col_name):
+    color_map = {
+        "Service Needed": "background-color: #fff3cd; color:#856404; font-weight:bold;",
+        "Service Done": "background-color: #d4edda; color:#155724; font-weight:bold;",
+        "Service Didn't Done": "background-color: #f8d7da; color:#721c24; font-weight:bold;",
+        "Date": "background-color: #e7f1ff; color:#004085; font-weight:bold;",
+        "Tones": "background-color: #e8f8f5; color:#0d5c4a; font-weight:bold;",
+        "Min_Tons": "background-color: #ebf5fb; color:#154360; font-weight:bold;",
+        "Max_Tons": "background-color: #f9ebea; color:#641e16; font-weight:bold;",
+        "Event": "background-color: #e2f0d9; color:#2e6f32; font-weight:bold;",
+        "Correction": "background-color: #fdebd0; color:#7d6608; font-weight:bold;",
+        "Servised by": "background-color: #f0f0f0; color:#333; font-weight:bold;",
+        "Card Number": "background-color: #ebdef0; color:#4a235a; font-weight:bold;"
+    }
+    return color_map.get(col_name, "")
+
+def style_table(row):
+    return [highlight_cell(row[col], col) for col in row.index]
+
 # ------------------------------- الواجهة الرئيسية -------------------------------
 with st.sidebar:
     st.header("الجلسة")
@@ -1972,25 +2095,25 @@ with st.sidebar:
             mins, secs = divmod(int(rem.total_seconds()), 60)
             st.success(f"👋 {username} | ⏳ {mins:02d}:{secs:02d}")
         st.markdown("---")
-        if st.button("🔄 تحديث  "):
+        if st.button("🔄 تحديث البيانات الرئيسية"):
             if fetch_from_github_requests():
                 st.rerun()
-        if st.button("مسح مهملات"):
+        if st.button("🗑 مسح الكاش"):
             st.cache_data.clear()
             st.rerun()
         if st.button("🚪 تسجيل الخروج"):
             logout_action()
-        # إدارة الصلاحيات (للمدير فقط) - تم حذفها من الكود للاختصار، يمكن إضافتها
-        # ولكنها طويلة وقد تم تضمينها سابقاً في الكود الأصلي.
 
-# ------------------------------- تحميل البيانات الرئيسية -------------------------------
+# ------------------------------- تحميل البيانات -------------------------------
 all_sheets = load_all_sheets()
 sheets_edit = load_sheets_for_edit()
 st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
+
 user_role = st.session_state.get("user_role", "viewer")
 user_permissions = st.session_state.get("user_permissions", ["view"])
 can_edit = (user_role == "admin" or user_role == "editor" or "edit" in user_permissions)
-tabs_list = ["🔍 بحث متقدم", "📊 تحليل الأعطال", "🔔 الإشعارات"]
+
+tabs_list = ["🔍 بحث متقدم", "📊 تحليل الأعطال", "🔔 الإشعارات", "🔧 سيرفيس الكرد"]
 if can_edit:
     tabs_list.append("🛠 تعديل وإدارة البيانات")
 tabs = st.tabs(tabs_list)
@@ -2003,7 +2126,6 @@ with tabs[1]:
 
 with tabs[2]:
     st.header("🔔 الإشعارات")
-    # عرض سجل النشاطات للمدير فقط
     if st.session_state.get("username") == "admin":
         st.subheader("📋 آخر النشاطات")
         activity_log = load_activity_log()
@@ -2054,6 +2176,29 @@ with tabs[2]:
         else:
             st.info("✅ لا توجد صيانات قادمة")
 
-if can_edit and len(tabs) > 3:
-    with tabs[3]:
+with tabs[3]:
+    st.header("🔧 سيرفيس الكرد - فحص الماكينات")
+    if not os.path.exists(SERVICE_CONFIG["LOCAL_FILE"]):
+        if st.button("📥 تحميل ملف خدمة الكرد من GitHub"):
+            if fetch_service_file_from_github():
+                st.rerun()
+        else:
+            st.info("لم يتم العثور على ملف خدمة الكرد محلياً. اضغط الزر لتحميله.")
+            st.stop()
+    service_sheets = load_service_sheets()
+    if service_sheets is None:
+        st.warning("⚠️ لم يتم تحميل ملف الخدمة. تأكد من وجود الملف أو استخدم زر التحميل.")
+        st.stop()
+    col1, col2 = st.columns(2)
+    with col1:
+        card_num = st.number_input("🔢 رقم الماكينة (Card Number):", min_value=1, step=1, key="service_card")
+    with col2:
+        current_tons = st.number_input("⚙️ عدد الأطنان الحالية:", min_value=0, step=100, key="service_tons")
+    if st.button("🔍 فحص الماكينة", type="primary"):
+        st.session_state["service_show_results"] = True
+    if st.session_state.get("service_show_results", False):
+        check_machine_status(card_num, current_tons, service_sheets)
+
+if can_edit and len(tabs) > 4:
+    with tabs[4]:
         sheets_edit = manage_data_edit(sheets_edit)
