@@ -36,8 +36,8 @@ APP_CONFIG = {
 
 # ------------------------------- إعدادات خدمة الكرد -------------------------------
 SERVICE_CONFIG = {
-    "FILE_PATH": "Machine_Service_Lookup.xlsx",
-    "LOCAL_FILE": "Machine_Service_Lookup.xlsx",
+    "FILE_PATH": "l4.xlsx",
+    "LOCAL_FILE": "l4.xlsx",
 }
 SERVICE_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME']}/{APP_CONFIG['BRANCH']}/{SERVICE_CONFIG['FILE_PATH']}"
 
