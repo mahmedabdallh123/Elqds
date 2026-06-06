@@ -270,11 +270,9 @@ def admin_users_management_tab():
     st.header("👥 إدارة المستخدمين والصلاحيات")
     st.info("هنا يمكنك إضافة، تعديل، أو حذف المستخدمين وتحديد صلاحياتهم على الأقسام.")
     
-    # تحميل المستخدمين الحاليين
     users = load_users_from_github()
     sections_list = get_all_sections_from_excel()
     
-    # عرض المستخدمين الحاليين
     st.subheader("📋 قائمة المستخدمين")
     for username, info in users.items():
         with st.expander(f"👤 {username} (الدور: {info.get('role', 'viewer')})"):
@@ -290,7 +288,12 @@ def admin_users_management_tab():
                         else:
                             st.error("فشل حفظ التغييرات")
             with col2:
-                new_role = st.selectbox(f"الدور لـ {username}", ["admin", "editor", "viewer"], index=["admin","editor","viewer"].index(info.get("role","viewer")), key=f"role_{username}")
+                current_role = info.get("role", "viewer")
+                # التأكد من أن current_role موجودة في قائمة الأدوار المتاحة
+                role_options = ["admin", "editor", "viewer"]
+                if current_role not in role_options:
+                    current_role = "viewer"
+                new_role = st.selectbox(f"الدور لـ {username}", role_options, index=role_options.index(current_role), key=f"role_{username}")
                 if new_role != info.get("role"):
                     users[username]["role"] = new_role
                     if save_users_to_github(users):
@@ -298,7 +301,6 @@ def admin_users_management_tab():
                         st.rerun()
             
             st.markdown("#### صلاحيات الأقسام")
-            # خيار الوصول لجميع الأقسام
             all_sections_access = st.checkbox("منح الوصول إلى جميع الأقسام (بدون تفصيل)", value=info.get("permissions", {}).get("all_sections", False), key=f"all_sections_{username}")
             if all_sections_access:
                 users[username]["permissions"] = {"all_sections": True}
@@ -347,7 +349,6 @@ def admin_users_management_tab():
                     elif confirm:
                         st.warning("لم يتم التأكيد، اكتب YES")
     
-    # إضافة مستخدم جديد
     st.subheader("➕ إضافة مستخدم جديد")
     with st.form("add_user_form"):
         new_username = st.text_input("اسم المستخدم")
