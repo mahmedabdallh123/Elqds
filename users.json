@@ -20,7 +20,7 @@
         "permissions": {
             "all_sections": false
         },
-        "role": "viewer",
+        "role": "user",
         "sections_permissions": {
             "البرم": [
                 "view",
@@ -37,14 +37,6 @@
         },
         "role": "viewer",
         "sections_permissions": {
-            "البرم": [],
-            "التفتيح": [],
-            "الضواغط": [],
-            "الغزل": [],
-            "الكرد": [],
-            "المحطات": [],
-            "المخزن": [],
-            "المكبس": [],
             "تمشيط": [
                 "view",
                 "edit",
