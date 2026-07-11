@@ -1,5 +1,7 @@
 {
     "admin": {
+        "active": false,
+        "created_at": "2026-07-11T15:49:01.059582",
         "password": "1234",
         "permissions": {
             "all_sections": true
@@ -8,6 +10,8 @@
         "sections_permissions": {}
     },
     "مدير_صيانة": {
+        "active": false,
+        "created_at": "2026-07-11T15:49:01.059596",
         "password": "12345",
         "permissions": {
             "all_sections": true
@@ -16,6 +20,8 @@
         "sections_permissions": {}
     },
     "مشرف_البرم": {
+        "active": false,
+        "created_at": "2026-07-11T15:49:01.059599",
         "password": "12345678",
         "permissions": {
             "all_sections": false
@@ -42,6 +48,8 @@
         }
     },
     "مشرف_التمشيط": {
+        "active": false,
+        "created_at": "2026-07-11T15:49:01.059601",
         "password": "1234567",
         "permissions": {
             "all_sections": false
@@ -79,6 +87,8 @@
         }
     },
     "مشرف_الضواغط": {
+        "active": false,
+        "created_at": "2026-07-11T15:49:01.059603",
         "password": "3333",
         "permissions": {
             "all_sections": false
@@ -104,6 +114,8 @@
         }
     },
     "مشرف_الغزل": {
+        "active": false,
+        "created_at": "2026-07-11T15:49:01.059605",
         "password": "123456789",
         "permissions": {
             "all_sections": false
@@ -129,6 +141,8 @@
         }
     },
     "مشرف_المكابس": {
+        "active": false,
+        "created_at": "2026-07-11T15:49:01.059607",
         "password": "2222",
         "permissions": {
             "all_sections": false
@@ -154,6 +168,8 @@
         }
     },
     "مشرف_تحضيرات": {
+        "active": false,
+        "created_at": "2026-07-11T15:49:01.059610",
         "password": "5555",
         "permissions": {
             "all_sections": false
