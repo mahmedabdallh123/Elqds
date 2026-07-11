@@ -1,7 +1,7 @@
 {
     "admin": {
         "active": false,
-        "created_at": "2026-07-11T15:50:25.295730",
+        "created_at": "2026-07-11T15:50:26.909397",
         "password": "1234",
         "permissions": {
             "all_sections": true
@@ -11,7 +11,7 @@
     },
     "مدير_صيانة": {
         "active": false,
-        "created_at": "2026-07-11T15:50:25.295741",
+        "created_at": "2026-07-11T15:50:26.909407",
         "password": "12345",
         "permissions": {
             "all_sections": true
@@ -21,7 +21,7 @@
     },
     "مشرف_البرم": {
         "active": false,
-        "created_at": "2026-07-11T15:50:25.295743",
+        "created_at": "2026-07-11T15:50:26.909410",
         "password": "12345678",
         "permissions": {
             "all_sections": false
@@ -49,7 +49,7 @@
     },
     "مشرف_التمشيط": {
         "active": false,
-        "created_at": "2026-07-11T15:50:25.295745",
+        "created_at": "2026-07-11T15:50:26.909412",
         "password": "1234567",
         "permissions": {
             "all_sections": false
@@ -88,7 +88,7 @@
     },
     "مشرف_الضواغط": {
         "active": false,
-        "created_at": "2026-07-11T15:50:25.295747",
+        "created_at": "2026-07-11T15:50:26.909414",
         "password": "3333",
         "permissions": {
             "all_sections": false
@@ -115,7 +115,7 @@
     },
     "مشرف_الغزل": {
         "active": false,
-        "created_at": "2026-07-11T15:50:25.295749",
+        "created_at": "2026-07-11T15:50:26.909416",
         "password": "123456789",
         "permissions": {
             "all_sections": false
@@ -142,7 +142,7 @@
     },
     "مشرف_المكابس": {
         "active": false,
-        "created_at": "2026-07-11T15:50:25.295751",
+        "created_at": "2026-07-11T15:50:26.909418",
         "password": "2222",
         "permissions": {
             "all_sections": false
@@ -169,7 +169,7 @@
     },
     "مشرف_تحضيرات": {
         "active": false,
-        "created_at": "2026-07-11T15:50:25.295753",
+        "created_at": "2026-07-11T15:50:26.909420",
         "password": "5555",
         "permissions": {
             "all_sections": false
